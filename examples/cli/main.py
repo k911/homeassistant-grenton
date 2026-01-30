@@ -10,16 +10,18 @@ sys.path.insert(0, str(custom_components_path))
 
 from commands import create_parser
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s: %(message)s",
-)
-
 
 def main() -> None:
     """Main entry point for CLI application."""
     parser = create_parser()
     args = parser.parse_args()
+    
+    # Configure logging based on debug flag
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(levelname)s: %(message)s",
+    )
     
     if not args.command:
         parser.print_help()
