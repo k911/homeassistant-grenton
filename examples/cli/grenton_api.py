@@ -60,22 +60,24 @@ class GrentonManager:
     
     async def test_connection(self, config_path) -> None:
         """Test connection using saved configuration."""
-        result = load_configuration(config_path)
-        if not result:
+        config = load_configuration(config_path)
+        if not config:
             sys.exit(1)
         
-        encryption, clus = result
-        await self._test_clus(clus, encryption)
+        await self._test_clus(config.clus, config.encryption)
     
     async def view_clu_state(self, config_path, clu_name: str) -> None:
         """View CLU state with all attributes and variables using coordinator pattern."""
         from homeassistant_grenton.state import GrentonState, GrentonCluState, GrentonCluStateVariableKey, GrentonCluStateAttributeKey
         
-        result = load_configuration(config_path)
-        if not result:
+        config = load_configuration(config_path)
+        if not config:
             sys.exit(1)
         
-        encryption, clus = result
+        # Use values from GrentonConfig
+        encryption = config.encryption
+        clus = config.clus
+        cache_path = config.cache_path
         
         # Find CLU by name
         target_clu = next((c for c in clus if c.name == clu_name), None)
@@ -110,8 +112,9 @@ class GrentonManager:
             # Register component states to get initial values
             _LOGGER.info("Fetching CLU state...")
 
-            result_vars: list[str] = []
-            result_attrs: list[str] = []
+            # Collect results grouped by label -> list[items]
+            result_vars_by_label: dict[str, list[str]] = {}
+            result_attrs_by_label: dict[str, list[str]] = {}
 
             if clu_state.has_states_to_register():
                 keys = clu_state.get_subscription_order()
@@ -125,34 +128,40 @@ class GrentonManager:
 
                             label = variable_labels.get(key.name, key.name)
                             object_name = target_clu.id
-                            result_vars.append(f"{label} - {object_name} [{key.name}] - {value}")
+                            item = f"{object_name} [{key.name}] - {value}"
+                            result_vars_by_label.setdefault(label, []).append(item)
 
                         elif isinstance(key, GrentonCluStateAttributeKey):
                             clu_state.set_attribute(key, value)
 
                             label = attribute_labels.get((key.object_name, key.name), f"{key.object_name}.{key.name}")
-                            result_attrs.append(f"{label} - {key.object_name} [{key.name}] - {value}")
+                            item = f"{key.object_name} [{key.name}] - {value}"
+                            result_attrs_by_label.setdefault(label, []).append(item)
 
             else:
                 _LOGGER.debug("[%s] No component states to register", target_clu.id)
 
             await api_client.disconnect()
 
-            # Display grouped results
-            if result_vars or result_attrs:
+            # Display grouped results (label followed by its items)
+            if result_vars_by_label or result_attrs_by_label:
                 print("\n" + "=" * 80)
                 print(f"CLU STATE: {target_clu.name} (ID: {target_clu.id})")
                 print("=" * 80)
-                if result_vars:
+                if result_vars_by_label:
                     print("\nVARIABLES:")
                     print("-" * 80)
-                    for line in result_vars:
-                        print(line)
-                if result_attrs:
+                    for label, items in result_vars_by_label.items():
+                        print(f"{label}")
+                        for it in items:
+                            print(f"  {it}")
+                if result_attrs_by_label:
                     print("\nATTRIBUTES:")
                     print("-" * 80)
-                    for line in result_attrs:
-                        print(line)
+                    for label, items in result_attrs_by_label.items():
+                        print(f"{label}")
+                        for it in items:
+                            print(f"  {it}")
                 print("=" * 80 + "\n")
             else:
                 print("\n  No VARIABLE/ATTRIBUTE widgets registered for this CLU in the interface cache\n")
