@@ -16,7 +16,7 @@ Examples:
   %(prog)s configure --pin 1234
   %(prog)s configure --url http://192.168.1.100:9998 --pin 5678
   %(prog)s test
-  %(prog)s test --config ~/.grenton/config.json
+  %(prog)s test --config ~/.grenton/config.yaml
         """,
     )
     
@@ -40,7 +40,7 @@ Examples:
     configure_parser.add_argument(
         "--config",
         default=None,
-        help="Configuration file path (default: ~/.grenton/config.json)",
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
     configure_parser.set_defaults(handler=configure_command)
     
@@ -49,7 +49,7 @@ Examples:
     test_parser.add_argument(
         "--config",
         default=None,
-        help="Configuration file path (default: ~/.grenton/config.json)",
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
     test_parser.set_defaults(handler=test_command)
     
@@ -63,7 +63,7 @@ Examples:
     view_state_parser.add_argument(
         "--config",
         default=None,
-        help="Configuration file path (default: ~/.grenton/config.json)",
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
     view_state_parser.set_defaults(handler=view_state_command)
     
