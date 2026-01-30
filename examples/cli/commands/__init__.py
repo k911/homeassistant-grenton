@@ -3,6 +3,7 @@ import argparse
 
 from .configure import configure_command
 from .test import test_command
+from .view_state import view_state_command
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -17,6 +18,13 @@ Examples:
   %(prog)s test
   %(prog)s test --config ~/.grenton/config.json
         """,
+    )
+    
+    # Global options
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
     )
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -44,5 +52,19 @@ Examples:
         help="Configuration file path (default: ~/.grenton/config.json)",
     )
     test_parser.set_defaults(handler=test_command)
+    
+    # View state command
+    view_state_parser = subparsers.add_parser("view-state", help="Display CLU state and attributes")
+    view_state_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name to view state for (default: CLU_Z_WAVE_1)",
+    )
+    view_state_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.json)",
+    )
+    view_state_parser.set_defaults(handler=view_state_command)
     
     return parser
