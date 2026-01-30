@@ -1,11 +1,13 @@
 """Configuration management utilities."""
 import json
 import logging
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import sys
 import yaml
+
 custom_components_path = Path(__file__).parent.parent.parent / "custom_components"
 sys.path.insert(0, str(custom_components_path))
 
@@ -15,13 +17,13 @@ from homeassistant_grenton.dto.clu import GrentonCluDto
 from homeassistant_grenton.dto.encryption import GrentonEncryptionDto
 
 _LOGGER = logging.getLogger(__name__)
+_DEFAULT_CACHE_PATH = Path.home() / ".grenton" / "cache" / "interface.json"
+_DEFAULT_CONFIG_PATH = Path.home() / ".grenton" / "config.yaml"
 
 
 def get_config_path(config_arg: Optional[str] = None) -> Path:
-    """Get configuration file path from argument or default (YAML)."""
-    if config_arg:
-        return Path(config_arg).expanduser()
-    return Path.home() / ".grenton" / "config.yaml"
+    """Get configuration file path from argument or default."""
+    return Path(config_arg).expanduser() if config_arg else _DEFAULT_CONFIG_PATH
 
 
 def ensure_config_dir(config_path: Path) -> None:
@@ -47,25 +49,51 @@ def save_configuration(interface_data: dict, config_path: Path) -> None:
 
 def save_interface_cache(interface_data: dict, cache_path: Optional[Path] = None) -> None:
     """Save full mobile interface data to cache for analysis (JSON by spec)."""
-    if cache_path is None:
-        cache_path = Path.home() / ".grenton" / "cache" / "interface.json"
+    cache_path = cache_path or _DEFAULT_CACHE_PATH
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-
     cache_path.write_text(json.dumps(interface_data, indent=2))
     _LOGGER.info(f"Interface cache saved to {cache_path}")
 
 
-from dataclasses import dataclass, field
-
-
 @dataclass
 class GrentonConfig:
+    """Configuration data container with tracked objects per CLU."""
+
     encryption: GrentonEncryption
     clus: list[GrentonClu]
     cache_path: Path
-    # Tracked objects provided in config.yaml under 'grenton_tracked_objects'
-    # {clu_name: {variables: {label: [..]}, attributes: {label: [..]}}}
     tracked_objects_by_clu: dict[str, dict[str, dict[str, list[dict]]]] = field(default_factory=dict)
+
+
+def _parse_tracked_objects(tracked_objects: dict) -> dict[str, dict[str, dict[str, list[dict]]]]:
+    """Parse tracked objects from config YAML structure (per-CLU)."""
+    result: dict[str, dict[str, dict[str, list[dict]]]] = {}
+    if not isinstance(tracked_objects, dict):
+        return result
+
+    for clu_name, clu_section in tracked_objects.items():
+        if not isinstance(clu_section, dict):
+            continue
+
+        variables = _extract_labeled_items(clu_section.get("variables", {}))
+        attributes = _extract_labeled_items(clu_section.get("attributes", {}))
+
+        result[str(clu_name)] = {"variables": variables, "attributes": attributes}
+
+    return result
+
+
+def _extract_labeled_items(labeled_section: dict) -> dict[str, list[dict]]:
+    """Extract items from a labeled section (e.g., 'variables', 'attributes')."""
+    result: dict[str, list[dict]] = {}
+    if not isinstance(labeled_section, dict):
+        return result
+
+    for label, items in labeled_section.items():
+        if isinstance(items, list):
+            result[str(label)] = [item for item in items if isinstance(item, dict)]
+
+    return result
 
 
 def load_configuration(config_path: Path) -> Optional[GrentonConfig]:
@@ -87,45 +115,13 @@ def load_configuration(config_path: Path) -> Optional[GrentonConfig]:
         encryption = GrentonEncryption.from_dto(encryption_dto)
         clus = [GrentonClu.from_dto(clu_dto) for clu_dto in clus_dto]
 
-        # Resolve cache path if provided in YAML
-        cache_path_value = None
-        if isinstance(config_data.get("cache"), dict):
-            cache_path_value = config_data["cache"].get("interface")
-        if not cache_path_value:
-            cache_path_value = config_data.get("cache_path")
+        # Resolve cache path from config or use default
+        cache_value = config_data.get("cache", {}).get("interface") if isinstance(config_data.get("cache"), dict) else None
+        cache_value = cache_value or config_data.get("cache_path")
+        cache_path = Path(cache_value).expanduser() if cache_value else _DEFAULT_CACHE_PATH
 
-        if cache_path_value:
-            cache_path = Path(cache_path_value).expanduser()
-        else:
-            cache_path = Path.home() / ".grenton" / "cache" / "interface.json"
-
-        tracked_objects_by_clu: dict[str, dict[str, dict[str, list[dict]]]] = {}
-        tracked_objects = config_data.get("grenton_tracked_objects", {})
-        if isinstance(tracked_objects, dict):
-            for clu_name, clu_section in tracked_objects.items():
-                if not isinstance(clu_section, dict):
-                    continue
-                clu_key = str(clu_name)
-                variables_raw = clu_section.get("variables") if isinstance(clu_section, dict) else {}
-                attributes_raw = clu_section.get("attributes") if isinstance(clu_section, dict) else {}
-
-                tracked_variables: dict[str, list[dict]] = {}
-                tracked_attributes: dict[str, list[dict]] = {}
-
-                if isinstance(variables_raw, dict):
-                    for label, items in variables_raw.items():
-                        if isinstance(items, list):
-                            tracked_variables[str(label)] = [item for item in items if isinstance(item, dict)]
-
-                if isinstance(attributes_raw, dict):
-                    for label, items in attributes_raw.items():
-                        if isinstance(items, list):
-                            tracked_attributes[str(label)] = [item for item in items if isinstance(item, dict)]
-
-                tracked_objects_by_clu[clu_key] = {
-                    "variables": tracked_variables,
-                    "attributes": tracked_attributes,
-                }
+        # Parse tracked objects from config (per-CLU structure)
+        tracked_objects_by_clu = _parse_tracked_objects(config_data.get("grenton_tracked_objects", {}))
 
         _LOGGER.info(f"Configuration loaded from {config_path}")
         return GrentonConfig(

@@ -1,4 +1,5 @@
 """Grenton API integration."""
+import json
 import logging
 import sys
 from pathlib import Path
@@ -21,6 +22,13 @@ from homeassistant_grenton.dto.encryption import GrentonEncryptionDto
 from config import load_configuration, save_configuration, save_interface_cache
 
 _LOGGER = logging.getLogger(__name__)
+
+_STATE_TYPES = ("VARIABLE", "ATTRIBUTE")
+_ERROR_MESSAGES = {
+    GrentonObjectManagerAuthError: "✗ Authentication failed: Invalid PIN",
+    GrentonObjectManagerConnectionError: "✗ Connection error: %s",
+    GrentonObjectManagerDataError: "✗ Data error: %s",
+}
 
 
 class GrentonManager:
@@ -48,11 +56,8 @@ class GrentonManager:
         except GrentonObjectManagerAuthError:
             _LOGGER.error("✗ Authentication failed: Invalid PIN")
             sys.exit(1)
-        except GrentonObjectManagerConnectionError as e:
-            _LOGGER.error("✗ Connection error: %s", e)
-            sys.exit(1)
-        except GrentonObjectManagerDataError as e:
-            _LOGGER.error("✗ Data error: %s", e)
+        except (GrentonObjectManagerConnectionError, GrentonObjectManagerDataError) as e:
+            _LOGGER.error(_ERROR_MESSAGES.get(type(e), "✗ Error: %s"), str(e) if str(e) else "")
             sys.exit(1)
         except Exception as e:
             _LOGGER.error("✗ Unexpected error: %s", e)
@@ -205,62 +210,78 @@ class GrentonManager:
             return variable_labels, attribute_labels
 
         try:
-            import json
             interface = json.loads(cache_path.read_text())
-
-            discovered = []
-            for page in interface.get("pages", []):
-                for widget in page.get("widgets", []):
-                    text = widget.get("text")
-                    if text and text.get("callType") in ("VARIABLE", "ATTRIBUTE") and text.get("cluId") == clu_id:
-                        discovered.append({
-                            "label": widget.get("label") or text.get("label") or "",
-                            "cluId": text.get("cluId"),
-                            "objectName": text.get("objectName"),
-                            "index": text.get("index"),
-                            "callType": text.get("callType"),
-                        })
-
-                    for comp in widget.get("components", []):
-                        state = comp.get("state")
-                        if state and state.get("callType") in ("VARIABLE", "ATTRIBUTE") and state.get("cluId") == clu_id:
-                            discovered.append({
-                                "label": comp.get("label") or widget.get("label") or "",
-                                "cluId": state.get("cluId"),
-                                "objectName": state.get("objectName"),
-                                "index": state.get("index"),
-                                "callType": state.get("callType"),
-                            })
-
-            # Deduplicate by (callType, objectName, index, label)
-            seen = set()
-            unique = []
-            for d in discovered:
-                key = (d.get("callType"), d.get("objectName"), d.get("index"), d.get("label"))
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(d)
-
-            for entry in unique:
-                ctype = entry.get("callType")
-                label = (entry.get("label") or "").strip()
-                obj = entry.get("objectName") or entry.get("cluId")
-                idx = entry.get("index")
-
-                if ctype == "VARIABLE" and idx is not None:
-                    idx = str(idx)
-                    if label:
-                        variable_labels.setdefault(idx, []).append(label)
-                elif ctype == "ATTRIBUTE" and obj is not None and idx is not None:
-                    obj = str(obj)
-                    idx = str(idx)
-                    if label:
-                        attribute_labels.setdefault((obj, idx), []).append(label)
-
+            discovered = self._discover_widgets(interface, clu_id)
+            self._process_discovered_widgets(discovered, variable_labels, attribute_labels)
         except Exception as e:
             _LOGGER.error("Failed to parse interface cache: %s", e)
 
         return variable_labels, attribute_labels
+
+    def _discover_widgets(self, interface: dict, clu_id: str) -> list[dict]:
+        """Discover VARIABLE/ATTRIBUTE widgets from interface."""
+        discovered = []
+
+        for page in interface.get("pages", []):
+            for widget in page.get("widgets", []):
+                text = widget.get("text")
+                if text and text.get("callType") in _STATE_TYPES and text.get("cluId") == clu_id:
+                    discovered.append(self._extract_widget_data(widget, text))
+
+                for comp in widget.get("components", []):
+                    state = comp.get("state")
+                    if state and state.get("callType") in _STATE_TYPES and state.get("cluId") == clu_id:
+                        discovered.append(self._extract_component_data(comp, widget, state))
+
+        return discovered
+
+    @staticmethod
+    def _extract_widget_data(widget: dict, text: dict) -> dict:
+        """Extract data from widget's text state."""
+        return {
+            "label": widget.get("label") or text.get("label") or "",
+            "objectName": text.get("objectName"),
+            "index": text.get("index"),
+            "callType": text.get("callType"),
+        }
+
+    @staticmethod
+    def _extract_component_data(comp: dict, widget: dict, state: dict) -> dict:
+        """Extract data from component's state."""
+        return {
+            "label": comp.get("label") or widget.get("label") or "",
+            "objectName": state.get("objectName"),
+            "index": state.get("index"),
+            "callType": state.get("callType"),
+        }
+
+    def _process_discovered_widgets(
+        self,
+        discovered: list[dict],
+        variable_labels: dict[str, list[str]],
+        attribute_labels: dict[tuple[str, str], list[str]],
+    ) -> None:
+        """Process discovered widgets and populate label maps."""
+        # Deduplicate
+        seen = set()
+        unique = []
+        for d in discovered:
+            key = (d["callType"], d["objectName"], d["index"], d["label"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(d)
+
+        # Populate maps
+        for entry in unique:
+            label = (entry.get("label") or "").strip()
+            if not label:
+                continue
+
+            if entry["callType"] == "VARIABLE" and entry["index"] is not None:
+                variable_labels.setdefault(str(entry["index"]), []).append(label)
+            elif entry["callType"] == "ATTRIBUTE" and entry["objectName"] and entry["index"] is not None:
+                key = (str(entry["objectName"]), str(entry["index"]))
+                attribute_labels.setdefault(key, []).append(label)
 
     def _merge_tracked_objects(
         self,
