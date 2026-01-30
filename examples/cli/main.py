@@ -15,18 +15,19 @@ def main() -> None:
     """Main entry point for CLI application."""
     parser = create_parser()
     args = parser.parse_args()
-    
-    # Configure logging based on debug flag
+
+    # Configure logging to stderr based on debug flag
     log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(levelname)s: %(message)s",
+        stream=sys.stderr,
     )
-    
+
     if not args.command:
         parser.print_help()
         sys.exit(1)
-    
+
     # Dispatch to command handler
     args.handler(args)
 

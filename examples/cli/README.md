@@ -6,47 +6,48 @@ A command-line tool for configuring and testing Grenton Object Manager connectio
 
 1. use venv
 
-	```bash
-	export VENV_NAME="venv"
-	python3 -m venv "$VENV_NAME"
-	source "$VENV_NAME/bin/activate"
-	```
+    ```bash
+    export VENV_NAME="venv"
+    python3 -m venv "$VENV_NAME"
+    source "$VENV_NAME/bin/activate"
+    ```
 
 2. Install dependencies:
 
-	```bash
-	brew install jpeg-turbo
-	pip install -r requirements.txt
-	```
+    ```bash
+    brew install jpeg-turbo
+    pip install -r requirements.txt
+    ```
 
 3. Make the script executable:
 
-	```bash
-	chmod +x main.py
-	```
+    ```bash
+    chmod +x main.py
+    ```
 
 ## Usage
 
 ### Basic usage (localhost)
 
-	```bash
-	python3 main.py configure --pin 1234
-	```
+    ```bash
+    python3 main.py configure --pin 1234
+    ```
 
 ### Connect to remote Object Manager
 
-	```bash
-	python3 main.py configure --url http://192.168.1.100:9998 --pin 5678
-	```
+    ```bash
+    python3 main.py configure --url http://192.168.1.100:9998 --pin 5678
+    ```
 
 ### Using custom configuration path
 
-	```bash
-	python3 main.py configure --pin 1234 --config /path/to/custom/config.yaml
+    ```bash
+    python3 main.py configure --pin 1234 --config /path/to/custom/config.yaml
 
-	```
+    ```
 
 ### Help:
+
 ```bash
 python3 main.py --help
 python3 main.py configure --help
@@ -73,7 +74,25 @@ The interface cache (JSON) is stored by default in:
 ```
 
 You can specify a custom config path with the `--config` option. The parent directory will be created automatically if it doesn't exist. Inside `config.yaml` you can optionally set the cache path using either a top-level `cache_path: /path/to/interface.json` or a `cache:
-	interface: /path/to/interface.json` mapping.
+ interface: /path/to/interface.json` mapping.
+
+### Tracked objects (optional)
+
+You can add extra variables/attributes to track even if they are not present in the interface cache. These will be merged with objects discovered from the cache. The mapping is per CLU name.
+
+```yaml
+grenton_tracked_objects:
+  CLU_Z_WAVE_1:
+    variables:
+      "Garage door status":
+        - name: GarageDoorStatusText
+          description: Optional description
+    attributes:
+      "Front door power":
+        - object: DOU0699
+          index: "0"
+          description: Optional description
+```
 
 ## Options
 
