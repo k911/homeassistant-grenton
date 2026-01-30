@@ -25,83 +25,94 @@ _LOGGER = logging.getLogger(__name__)
 
 class GrentonManager:
     """Manages Grenton connections and operations."""
-    
+
     async def configure_and_test(self, url: str, pin: str, config_path) -> None:
         """Configure connection and test CLUs."""
         try:
-            _LOGGER.info(f"Connecting to Grenton Object Manager at {url}")
-            
+            _LOGGER.info("Connecting to Grenton Object Manager at %s", url)
+
             async with GrentonObjectManagerApi(url) as api:
                 interface_data = await api.fetch_mobile_interface(pin)
-            
+
             _LOGGER.info("✓ Successfully fetched mobile interface")
-            _LOGGER.info(f"✓ Interface ID: {interface_data.get('id')}")
-            _LOGGER.info(f"✓ Interface name: {interface_data.get('name')}")
-            _LOGGER.info(f"✓ Version: {interface_data.get('version')}")
-            
+            _LOGGER.info("✓ Interface ID: %s", interface_data.get('id'))
+            _LOGGER.info("✓ Interface name: %s", interface_data.get('name'))
+            _LOGGER.info("✓ Version: %s", interface_data.get('version'))
+
             encryption, clus = self._create_objects(interface_data)
             save_configuration(interface_data, config_path)
             save_interface_cache(interface_data)
-            
+
             await self._test_clus(clus, encryption)
-        
+
         except GrentonObjectManagerAuthError:
             _LOGGER.error("✗ Authentication failed: Invalid PIN")
             sys.exit(1)
         except GrentonObjectManagerConnectionError as e:
-            _LOGGER.error(f"✗ Connection error: {e}")
+            _LOGGER.error("✗ Connection error: %s", e)
             sys.exit(1)
         except GrentonObjectManagerDataError as e:
-            _LOGGER.error(f"✗ Data error: {e}")
+            _LOGGER.error("✗ Data error: %s", e)
             sys.exit(1)
         except Exception as e:
-            _LOGGER.error(f"✗ Unexpected error: {e}")
-            sys.exit(1)
-    
+            _LOGGER.error("✗ Unexpected error: %s", e)
+            raise
+
     async def test_connection(self, config_path) -> None:
         """Test connection using saved configuration."""
         config = load_configuration(config_path)
         if not config:
             sys.exit(1)
-        
+
         await self._test_clus(config.clus, config.encryption)
-    
-    async def view_clu_state(self, config_path, clu_name: str) -> None:
-        """View CLU state with all attributes and variables using coordinator pattern."""
+
+    async def view_clu_state(self, config_path, clu_name: str) -> dict:
+        """View CLU state with all attributes and variables using coordinator pattern.
+
+        Returns a dict with CLU info, variables, and attributes grouped by label.
+        """
         from homeassistant_grenton.state import GrentonState, GrentonCluState, GrentonCluStateVariableKey, GrentonCluStateAttributeKey
-        
+
         config = load_configuration(config_path)
         if not config:
             sys.exit(1)
-        
+
         # Use values from GrentonConfig
         encryption = config.encryption
         clus = config.clus
         cache_path = config.cache_path
-        
+
         # Find CLU by name
         target_clu = next((c for c in clus if c.name == clu_name), None)
         if not target_clu:
             available = ", ".join([c.name for c in clus])
-            _LOGGER.error(f"✗ CLU '{clu_name}' not found. Available CLUs: {available}")
+            _LOGGER.error("✗ CLU '%s' not found. Available CLUs: %s", clu_name, available)
             sys.exit(1)
-        
+
         try:
-            _LOGGER.info(f"Connecting to CLU '{target_clu.name}'")
-            
+            _LOGGER.info("Connecting to CLU '%s'", target_clu.name)
+
             api_client = GrentonCluApi(target_clu, encryption)
             if not await api_client.connect():
                 _LOGGER.error("✗ Failed to connect to CLU")
                 sys.exit(1)
-            
+
             _LOGGER.info("✓ Connected successfully")
-            
-                # Initialize CLU state (using coordinator pattern)
+
+            # Initialize CLU state (using coordinator pattern)
             clu_state = GrentonCluState()
 
-            # Parse the cached interface.json and register discovered states
-            cache_path = Path.home() / ".grenton" / "cache" / "interface.json"
+            # Parse the cached interface.json and merge tracked objects from config
             variable_labels, attribute_labels = self._parse_interface_cache_for_clu(cache_path, target_clu.id)
+            tracked_by_clu = config.tracked_objects_by_clu.get(target_clu.name, {})
+            tracked_variables = tracked_by_clu.get("variables", {})
+            tracked_attributes = tracked_by_clu.get("attributes", {})
+            self._merge_tracked_objects(
+                variable_labels,
+                attribute_labels,
+                tracked_variables,
+                tracked_attributes,
+            )
 
             # Register discovered states into clu_state
             self._register_discovered_states(clu_state, variable_labels, attribute_labels)
@@ -112,9 +123,9 @@ class GrentonManager:
             # Register component states to get initial values
             _LOGGER.info("Fetching CLU state...")
 
-            # Collect results grouped by label -> list[items]
-            result_vars_by_label: dict[str, list[str]] = {}
-            result_attrs_by_label: dict[str, list[str]] = {}
+            # Collect results grouped by label with detailed information
+            result_vars_by_label: dict[str, list[dict]] = {}
+            result_attrs_by_label: dict[str, list[dict]] = {}
 
             if clu_state.has_states_to_register():
                 keys = clu_state.get_subscription_order()
@@ -126,56 +137,68 @@ class GrentonManager:
                         if isinstance(key, GrentonCluStateVariableKey):
                             clu_state.set_variable(key, value)
 
-                            label = variable_labels.get(key.name, key.name)
-                            object_name = target_clu.id
-                            item = f"{object_name} [{key.name}] - {value}"
-                            result_vars_by_label.setdefault(label, []).append(item)
+                            labels = variable_labels.get(key.name) or [key.name]
+                            item = {
+                                "name": key.name,
+                                "value": value,
+                            }
+                            # Add description if available in tracked objects
+                            for tracked_vars in tracked_variables.values():
+                                for var_info in tracked_vars:
+                                    if isinstance(var_info, dict) and var_info.get("name") == key.name:
+                                        if "description" in var_info:
+                                            item["description"] = var_info["description"]
+                                        break
+
+                            for label in labels:
+                                result_vars_by_label.setdefault(label, []).append(item)
 
                         elif isinstance(key, GrentonCluStateAttributeKey):
                             clu_state.set_attribute(key, value)
 
-                            label = attribute_labels.get((key.object_name, key.name), f"{key.object_name}.{key.name}")
-                            item = f"{key.object_name} [{key.name}] - {value}"
-                            result_attrs_by_label.setdefault(label, []).append(item)
+                            labels = attribute_labels.get((key.object_name, key.name)) or [f"{key.object_name}.{key.name}"]
+                            item = {
+                                "object": key.object_name,
+                                "index": key.name,
+                                "value": value,
+                            }
+                            # Add description if available in tracked objects
+                            for tracked_attrs in tracked_attributes.values():
+                                for attr_info in tracked_attrs:
+                                    if isinstance(attr_info, dict) and attr_info.get("object") == key.object_name and attr_info.get("index") == key.name:
+                                        if "description" in attr_info:
+                                            item["description"] = attr_info["description"]
+                                        break
+
+                            for label in labels:
+                                result_attrs_by_label.setdefault(label, []).append(item)
 
             else:
                 _LOGGER.debug("[%s] No component states to register", target_clu.id)
 
             await api_client.disconnect()
 
-            # Display grouped results (label followed by its items)
-            if result_vars_by_label or result_attrs_by_label:
-                print("\n" + "=" * 80)
-                print(f"CLU STATE: {target_clu.name} (ID: {target_clu.id})")
-                print("=" * 80)
-                if result_vars_by_label:
-                    print("\nVARIABLES:")
-                    print("-" * 80)
-                    for label, items in result_vars_by_label.items():
-                        print(f"{label}")
-                        for it in items:
-                            print(f"  {it}")
-                if result_attrs_by_label:
-                    print("\nATTRIBUTES:")
-                    print("-" * 80)
-                    for label, items in result_attrs_by_label.items():
-                        print(f"{label}")
-                        for it in items:
-                            print(f"  {it}")
-                print("=" * 80 + "\n")
-            else:
-                print("\n  No VARIABLE/ATTRIBUTE widgets registered for this CLU in the interface cache\n")
+            # Build output structure
+            output = {
+                "clu": {
+                    "name": target_clu.name,
+                    "id": target_clu.id,
+                },
+                "variables": result_vars_by_label if result_vars_by_label else {},
+                "attributes": result_attrs_by_label if result_attrs_by_label else {},
+            }
+
             _LOGGER.info("✓ State view completed successfully")
-            sys.exit(0)
-        
+            return output
+
         except Exception as e:
-            _LOGGER.error(f"✗ Error viewing CLU state: {e}")
+            _LOGGER.error("✗ Error viewing CLU state: %s", e)
             sys.exit(1)
 
-    def _parse_interface_cache_for_clu(self, cache_path: Path, clu_id: str) -> tuple[dict[str, str], dict[tuple[str, str], str]]:
-        """Parse the cached interface JSON and return variable and attribute label maps for a CLU."""
-        variable_labels: dict[str, str] = {}
-        attribute_labels: dict[tuple[str, str], str] = {}
+    def _parse_interface_cache_for_clu(self, cache_path: Path, clu_id: str) -> tuple[dict[str, list[str]], dict[tuple[str, str], list[str]]]:
+        """Parse the cached interface JSON and return variable/attribute label maps for a CLU."""
+        variable_labels: dict[str, list[str]] = {}
+        attribute_labels: dict[tuple[str, str], list[str]] = {}
 
         if not cache_path.exists():
             _LOGGER.debug("Interface cache not found: %s", cache_path)
@@ -209,32 +232,79 @@ class GrentonManager:
                                 "callType": state.get("callType"),
                             })
 
-            # Deduplicate
+            # Deduplicate by (callType, objectName, index, label)
             seen = set()
             unique = []
             for d in discovered:
-                key = (d.get("callType"), d.get("objectName"), d.get("index"))
+                key = (d.get("callType"), d.get("objectName"), d.get("index"), d.get("label"))
                 if key not in seen:
                     seen.add(key)
                     unique.append(d)
 
             for entry in unique:
                 ctype = entry.get("callType")
-                label = entry.get("label") or ""
+                label = (entry.get("label") or "").strip()
                 obj = entry.get("objectName") or entry.get("cluId")
                 idx = entry.get("index")
 
-                if ctype == "VARIABLE":
-                    variable_labels[idx] = label
-                elif ctype == "ATTRIBUTE":
-                    attribute_labels[(obj, idx)] = label
+                if ctype == "VARIABLE" and idx is not None:
+                    idx = str(idx)
+                    if label:
+                        variable_labels.setdefault(idx, []).append(label)
+                elif ctype == "ATTRIBUTE" and obj is not None and idx is not None:
+                    obj = str(obj)
+                    idx = str(idx)
+                    if label:
+                        attribute_labels.setdefault((obj, idx), []).append(label)
 
         except Exception as e:
             _LOGGER.error("Failed to parse interface cache: %s", e)
 
         return variable_labels, attribute_labels
 
-    def _register_discovered_states(self, clu_state: GrentonCluState, variable_labels: dict[str, str], attribute_labels: dict[tuple[str, str], str]) -> None:
+    def _merge_tracked_objects(
+        self,
+        variable_labels: dict[str, list[str]],
+        attribute_labels: dict[tuple[str, str], list[str]],
+        tracked_variables: dict[str, list[dict]],
+        tracked_attributes: dict[str, list[dict]],
+    ) -> None:
+        """Merge tracked objects from config.yaml into label maps."""
+        for label, items in tracked_variables.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name")
+                if not name:
+                    continue
+                key = str(name)
+                labels = variable_labels.setdefault(key, [])
+                if label not in labels:
+                    labels.append(label)
+
+        for label, items in tracked_attributes.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                obj = item.get("object")
+                idx = item.get("index")
+                if obj is None or idx is None:
+                    continue
+                key = (str(obj), str(idx))
+                labels = attribute_labels.setdefault(key, [])
+                if label not in labels:
+                    labels.append(label)
+
+    def _register_discovered_states(
+        self,
+        clu_state: GrentonCluState,
+        variable_labels: dict[str, list[str]],
+        attribute_labels: dict[tuple[str, str], list[str]],
+    ) -> None:
         """Add discovered variables/attributes to the CLU state object."""
         for idx in variable_labels.keys():
             clu_state.add_variable(idx)
@@ -247,7 +317,7 @@ class GrentonManager:
         if not clus:
             _LOGGER.warning("No CLUs found")
             return
-        
+
         print("\nConfigured CLUs:")
         print("-" * 70)
         for clu in clus:
@@ -255,10 +325,10 @@ class GrentonManager:
             print(f"  ID: {clu.id}")
             print(f"  Serial: {clu.serial_number}")
             print(f"  Address: {clu.ip}:{clu.port}\n")
-        
+
         print("Testing CLU connections:")
         print("-" * 70)
-        
+
         all_connected = True
         for clu in clus:
             try:
@@ -267,18 +337,18 @@ class GrentonManager:
                 if connected:
                     pinged = await api_client.ping()
                     if pinged:
-                        _LOGGER.info(f"✓ CLU '{clu.name}' connected and pinged successfully")
+                        _LOGGER.info("✓ CLU '%s' connected and pinged successfully", clu.name)
                     else:
-                        _LOGGER.error(f"✗ CLU '{clu.name}' ping failed")
+                        _LOGGER.error("✗ CLU '%s' ping failed", clu.name)
                         all_connected = False
                     await api_client.disconnect()
                 else:
-                    _LOGGER.error(f"✗ CLU '{clu.name}' connection failed")
+                    _LOGGER.error("✗ CLU '%s' connection failed", clu.name)
                     all_connected = False
             except Exception as e:
-                _LOGGER.error(f"✗ CLU '{clu.name}' connection error: {e}")
+                _LOGGER.error("✗ CLU '%s' connection error: %s", clu.name, e)
                 all_connected = False
-        
+
         print("-" * 70)
         if all_connected:
             _LOGGER.info("✓ All CLUs connected successfully!")
@@ -286,17 +356,17 @@ class GrentonManager:
         else:
             _LOGGER.error("✗ Some CLUs failed to connect")
             sys.exit(1)
-    
+
     @staticmethod
     def _create_objects(interface_data: dict) -> tuple[GrentonEncryption, list[GrentonClu]]:
         """Create encryption and CLU objects from interface data."""
         encryption_dto = GrentonEncryptionDto(**interface_data.get("encryption", {}))
         encryption = GrentonEncryption.from_dto(encryption_dto)
         _LOGGER.info("✓ Encryption configured")
-        
+
         clus_data = interface_data.get("clus", [])
         clus_dto = [GrentonCluDto(**clu_dict) for clu_dict in clus_data]
         clus = [GrentonClu.from_dto(clu_dto_obj) for clu_dto_obj in clus_dto]
-        _LOGGER.info(f"✓ Loaded {len(clus)} CLU(s)")
-        
+        _LOGGER.info("✓ Loaded %d CLU(s)", len(clus))
+
         return encryption, clus

@@ -19,16 +19,16 @@ Examples:
   %(prog)s test --config ~/.grenton/config.yaml
         """,
     )
-    
+
     # Global options
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
     )
-    
+
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    
+
     # Configure command
     configure_parser = subparsers.add_parser("configure", help="Configure Grenton connection")
     configure_parser.add_argument(
@@ -43,7 +43,7 @@ Examples:
         help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
     configure_parser.set_defaults(handler=configure_command)
-    
+
     # Test command
     test_parser = subparsers.add_parser("test", help="Test Grenton connection")
     test_parser.add_argument(
@@ -52,7 +52,7 @@ Examples:
         help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
     test_parser.set_defaults(handler=test_command)
-    
+
     # View state command
     view_state_parser = subparsers.add_parser("view-state", help="Display CLU state and attributes")
     view_state_parser.add_argument(
@@ -65,6 +65,12 @@ Examples:
         default=None,
         help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
+    view_state_parser.add_argument(
+        "--output",
+        choices=["yaml", "json"],
+        default="yaml",
+        help="Output format: yaml or json (default: yaml)",
+    )
     view_state_parser.set_defaults(handler=view_state_command)
-    
+
     return parser
