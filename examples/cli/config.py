@@ -44,6 +44,15 @@ def save_configuration(interface_data: dict, config_path: Path) -> None:
     _LOGGER.info(f"Configuration saved to {config_path}")
 
 
+def save_interface_cache(interface_data: dict) -> None:
+    """Save full mobile interface data to cache for analysis."""
+    cache_path = Path.home() / ".grenton" / "cache" / "interface.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    cache_path.write_text(json.dumps(interface_data, indent=2))
+    _LOGGER.info(f"Interface cache saved to {cache_path}")
+
+
 def load_configuration(config_path: Path) -> Optional[tuple[GrentonEncryption, list[GrentonClu]]]:
     """Load configuration from file."""
     if not config_path.exists():
