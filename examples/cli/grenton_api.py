@@ -71,6 +71,62 @@ class GrentonManager:
 
         await self._test_clus(config.clus, config.encryption)
 
+    async def execute_action(self, config_path: Path, clu_name: str, object_name: str, action_index: str, action_value: str) -> None:
+        """Execute action on CLU object.
+
+        Creates a GrentonActionMethod message: object_name:execute(action_index, action_value)
+        """
+        from homeassistant_grenton.domain.action import GrentonActionMethod
+        from homeassistant_grenton.domain.enums import GrentonActionEventType
+
+        config = load_configuration(config_path)
+        if not config:
+            sys.exit(1)
+
+        # Find CLU by name
+        target_clu = next((c for c in config.clus if c.name == clu_name), None)
+        if not target_clu:
+            available = ", ".join([c.name for c in config.clus])
+            _LOGGER.error("✗ CLU '%s' not found. Available CLUs: %s", clu_name, available)
+            sys.exit(1)
+
+        try:
+            _LOGGER.info("Connecting to CLU '%s'", target_clu.name)
+
+            api_client = GrentonCluApi(target_clu, config.encryption)
+            if not await api_client.connect():
+                _LOGGER.error("✗ Failed to connect to CLU")
+                sys.exit(1)
+
+            _LOGGER.info("✓ Connected successfully")
+
+            # Create and execute action
+            _LOGGER.info("Executing: %s.execute(%s, %s)", object_name, action_index, action_value)
+
+            action = GrentonActionMethod(
+                clu_id=target_clu.id,
+                object_name=object_name,
+                event=GrentonActionEventType.CLICK,
+                index=action_index,
+                value=action_value,
+            )
+
+            result = await api_client.execute_action(action)
+
+            await api_client.disconnect()
+
+            if result:
+                _LOGGER.info("✓ Action executed successfully")
+                print(f"✓ {object_name}.execute({action_index}, \"{action_value}\")")
+                sys.exit(0)
+            else:
+                _LOGGER.error("✗ Action execution failed")
+                sys.exit(1)
+
+        except Exception as e:
+            _LOGGER.error("✗ Error executing action: %s", e)
+            sys.exit(1)
+
     async def view_clu_state(self, config_path, clu_name: str) -> dict:
         """View CLU state with all attributes and variables using coordinator pattern.
 
