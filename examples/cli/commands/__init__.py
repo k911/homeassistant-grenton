@@ -4,6 +4,7 @@ import argparse
 from .configure import configure_command
 from .test import test_command
 from .view_state import view_state_command
+from .execute import execute_command
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -73,4 +74,32 @@ Examples:
     )
     view_state_parser.set_defaults(handler=view_state_command)
 
+    # Execute action command
+    execute_parser = subparsers.add_parser("execute", help="Execute action on CLU object")
+    execute_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    execute_parser.add_argument(
+        "--object",
+        required=True,
+        help="Object ID/name (e.g., DOU0699)",
+    )
+    execute_parser.add_argument(
+        "--action",
+        required=True,
+        help="Action index/name (e.g., set, toggle, turnOn)",
+    )
+    execute_parser.add_argument(
+        "--value",
+        required=True,
+        help="Action value (e.g., 1, 0, or command)",
+    )
+    execute_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    execute_parser.set_defaults(handler=execute_command)
     return parser
