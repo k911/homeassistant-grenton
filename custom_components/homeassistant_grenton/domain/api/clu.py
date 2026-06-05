@@ -50,6 +50,10 @@ class GrentonCluApi:
         self.encryption = encryption
         self.cipher = GrentonCipher(encryption)
 
+        # Serialize outgoing actions per-CLU so grouped commands don't burst
+        # the shared UDP socket (CLU drops datagrams under a burst).
+        self._action_lock = asyncio.Lock()
+
         # Main socket — used for pings and actions only.
         self.transport: Optional[asyncio.DatagramTransport] = None
         self.protocol: Optional[GrentonCluApiProtocol] = None
@@ -187,7 +191,8 @@ class GrentonCluApi:
             return False
 
         request = GrentonCluApiActionRequest.from_action(action)
-        wire_message = await self.protocol.send_request(request)
+        async with self._action_lock:
+            wire_message = await self.protocol.send_request(request)
 
         return wire_message is not None
 
