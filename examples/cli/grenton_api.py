@@ -1,7 +1,9 @@
 """Grenton API integration."""
+import asyncio
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 custom_components_path = Path(__file__).parent.parent.parent / "custom_components"
@@ -24,6 +26,7 @@ from config import load_configuration, save_configuration, save_interface_cache
 _LOGGER = logging.getLogger(__name__)
 
 _STATE_TYPES = ("VARIABLE", "ATTRIBUTE")
+_PING_INTERVAL = 5
 _ERROR_MESSAGES = {
     GrentonObjectManagerAuthError: "✗ Authentication failed: Invalid PIN",
     GrentonObjectManagerConnectionError: "✗ Connection error: %s",
@@ -126,6 +129,99 @@ class GrentonManager:
         except Exception as e:
             _LOGGER.error("✗ Error executing action: %s", e)
             sys.exit(1)
+
+    async def watch_variables(
+        self,
+        config_path: Path,
+        clu_name: str,
+        variables: list[str],
+        output_format: str = "text",
+        refresh_interval: int = 45,
+    ) -> None:
+        """Subscribe to CLU variables and print every value change until interrupted."""
+        from homeassistant_grenton.state import GrentonCluStateVariableKey, GrentonValue
+
+        config = load_configuration(config_path)
+        if not config:
+            sys.exit(1)
+
+        target_clu = next((c for c in config.clus if c.name == clu_name), None)
+        if not target_clu:
+            available = ", ".join([c.name for c in config.clus])
+            _LOGGER.error("✗ CLU '%s' not found. Available CLUs: %s", clu_name, available)
+            sys.exit(1)
+
+        keys = [GrentonCluStateVariableKey(name) for name in variables]
+        labels = [key.name for key in keys]
+        last_values: dict[str, GrentonValue] = {}
+
+        def emit(label: str, value: GrentonValue) -> None:
+            timestamp = datetime.now().isoformat(timespec="seconds")
+            if output_format == "json":
+                line = json.dumps(
+                    {"timestamp": timestamp, "clu": target_clu.name, "variable": label, "value": value},
+                    ensure_ascii=False,
+                )
+            else:
+                line = f"{timestamp}  {label} = {value!r}"
+            sys.stdout.write(line + "\n")
+            sys.stdout.flush()
+
+        def apply_values(values: list[GrentonValue]) -> None:
+            for label, value in zip(labels, values):
+                if label in last_values and last_values[label] == value:
+                    continue
+                last_values[label] = value
+                emit(label, value)
+
+        api_client = GrentonCluApi(target_clu, config.encryption)
+
+        _LOGGER.info("Connecting to CLU '%s'", target_clu.name)
+        if not await api_client.connect():
+            _LOGGER.error("✗ Failed to connect to CLU")
+            sys.exit(1)
+
+        try:
+            await api_client.ping()
+
+            _LOGGER.info("Watching %d variable(s) on '%s' (Ctrl+C to stop)", len(keys), target_clu.name)
+            values = await api_client.register_component_states(keys)
+            if values is None:
+                _LOGGER.error("✗ Failed to register variables for subscription")
+                sys.exit(1)
+            apply_values(values)
+
+            async def handle_report(report_values: list[GrentonValue]) -> None:
+                apply_values(report_values)
+
+            if api_client.protocol:
+                api_client.protocol.subscription_callback = handle_report
+            else:
+                _LOGGER.error("✗ No protocol available to receive subscription reports")
+                sys.exit(1)
+
+            # The CLU subscription expires, so ping regularly and re-register periodically.
+            elapsed = 0
+            while True:
+                await asyncio.sleep(_PING_INTERVAL)
+                await api_client.ping()
+
+                elapsed += _PING_INTERVAL
+                if elapsed >= refresh_interval:
+                    elapsed = 0
+                    refreshed = await api_client.register_component_states(keys)
+                    if refreshed is None:
+                        _LOGGER.warning("Subscription refresh failed, retrying on next cycle")
+                    else:
+                        apply_values(refreshed)
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            _LOGGER.error("✗ Error while watching variables: %s", e)
+            sys.exit(1)
+        finally:
+            await api_client.disconnect()
 
     async def view_clu_state(self, config_path, clu_name: str) -> dict:
         """View CLU state with all attributes and variables using coordinator pattern.
