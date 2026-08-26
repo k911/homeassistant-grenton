@@ -5,6 +5,7 @@ from .configure import configure_command
 from .test import test_command
 from .view_state import view_state_command
 from .execute import execute_command
+from .watch_variable import watch_variable_command
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -18,6 +19,8 @@ Examples:
   %(prog)s configure --url http://192.168.1.100:9998 --pin 5678
   %(prog)s test
   %(prog)s test --config ~/.grenton/config.yaml
+  %(prog)s watch-variable --variable myVariable
+  %(prog)s watch-variable --clu CLU_Z_WAVE_1 --variable myVariable --variable otherVariable
         """,
     )
 
@@ -102,4 +105,40 @@ Examples:
         help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
     execute_parser.set_defaults(handler=execute_command)
+
+    # Watch variable command
+    watch_parser = subparsers.add_parser(
+        "watch-variable",
+        help="Subscribe to CLU variables and print value changes",
+    )
+    watch_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    watch_parser.add_argument(
+        "--variable",
+        action="append",
+        required=True,
+        metavar="NAME",
+        help="Variable name to watch (repeat for multiple variables)",
+    )
+    watch_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    watch_parser.add_argument(
+        "--output",
+        choices=["text", "json"],
+        default="text",
+        help="Output format: text or json lines (default: text)",
+    )
+    watch_parser.add_argument(
+        "--refresh-interval",
+        type=int,
+        default=45,
+        help="Seconds between subscription refreshes (default: 45)",
+    )
+    watch_parser.set_defaults(handler=watch_variable_command)
     return parser
