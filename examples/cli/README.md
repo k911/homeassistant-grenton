@@ -115,3 +115,12 @@ grenton_tracked_objects:
 
 - `0`: All CLUs connected successfully
 - `1`: Connection or authentication error
+
+## Watch implementation
+
+The watch commands use `custom_components/homeassistant_grenton/domain/api/clu_cli.py`.
+This CLI-specific implementation keeps subscriptions on one UDP socket and
+parses comma-containing quoted values using the number of registered keys.
+It is intentionally separate from the upstream `clu.py` and
+`clu_messages/client_register.py` files so upstream rebases do not require
+reapplying CLI-specific changes to those files.
