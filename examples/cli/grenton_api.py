@@ -139,7 +139,36 @@ class GrentonManager:
         refresh_interval: int = 45,
     ) -> None:
         """Subscribe to CLU variables and print every value change until interrupted."""
-        from homeassistant_grenton.state import GrentonCluStateVariableKey, GrentonValue
+        from homeassistant_grenton.state import GrentonCluStateVariableKey
+
+        keys = [GrentonCluStateVariableKey(name) for name in variables]
+        await self._watch_states(config_path, clu_name, keys, "variable", output_format, refresh_interval)
+
+    async def watch_attributes(
+        self,
+        config_path: Path,
+        clu_name: str,
+        attributes: list[tuple[str, str]],
+        output_format: str = "text",
+        refresh_interval: int = 45,
+    ) -> None:
+        """Subscribe to CLU object attributes and print every value change until interrupted."""
+        from homeassistant_grenton.state import GrentonCluStateAttributeKey
+
+        keys = [GrentonCluStateAttributeKey(obj, index) for obj, index in attributes]
+        await self._watch_states(config_path, clu_name, keys, "attribute", output_format, refresh_interval)
+
+    async def _watch_states(
+        self,
+        config_path: Path,
+        clu_name: str,
+        keys: list,
+        kind: str,
+        output_format: str,
+        refresh_interval: int,
+    ) -> None:
+        """Subscribe to CLU state keys and print every value change until interrupted."""
+        from homeassistant_grenton.state import GrentonCluStateAttributeKey, GrentonValue
 
         config = load_configuration(config_path)
         if not config:
@@ -151,15 +180,17 @@ class GrentonManager:
             _LOGGER.error("✗ CLU '%s' not found. Available CLUs: %s", clu_name, available)
             sys.exit(1)
 
-        keys = [GrentonCluStateVariableKey(name) for name in variables]
-        labels = [key.name for key in keys]
+        labels = [
+            f"{key.object_name}.{key.name}" if isinstance(key, GrentonCluStateAttributeKey) else key.name
+            for key in keys
+        ]
         last_values: dict[str, GrentonValue] = {}
 
         def emit(label: str, value: GrentonValue) -> None:
             timestamp = datetime.now().isoformat(timespec="seconds")
             if output_format == "json":
                 line = json.dumps(
-                    {"timestamp": timestamp, "clu": target_clu.name, "variable": label, "value": value},
+                    {"timestamp": timestamp, "clu": target_clu.name, kind: label, "value": value},
                     ensure_ascii=False,
                 )
             else:
@@ -184,10 +215,10 @@ class GrentonManager:
         try:
             await api_client.ping()
 
-            _LOGGER.info("Watching %d variable(s) on '%s' (Ctrl+C to stop)", len(keys), target_clu.name)
+            _LOGGER.info("Watching %d %s(s) on '%s' (Ctrl+C to stop)", len(keys), kind, target_clu.name)
             values = await api_client.register_component_states(keys)
             if values is None:
-                _LOGGER.error("✗ Failed to register variables for subscription")
+                _LOGGER.error("✗ Failed to register %ss for subscription", kind)
                 sys.exit(1)
             apply_values(values)
 
@@ -218,7 +249,7 @@ class GrentonManager:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            _LOGGER.error("✗ Error while watching variables: %s", e)
+            _LOGGER.error("✗ Error while watching %ss: %s", kind, e)
             sys.exit(1)
         finally:
             await api_client.disconnect()

@@ -6,6 +6,7 @@ from .test import test_command
 from .view_state import view_state_command
 from .execute import execute_command
 from .watch_variable import watch_variable_command
+from .watch_attribute import watch_attribute_command
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -21,6 +22,8 @@ Examples:
   %(prog)s test --config ~/.grenton/config.yaml
   %(prog)s watch-variable --variable myVariable
   %(prog)s watch-variable --clu CLU_Z_WAVE_1 --variable myVariable --variable otherVariable
+  %(prog)s watch-attribute --attribute DOU0699.value
+  %(prog)s watch-attribute --clu CLU_Z_WAVE_1 --attribute DOU0699.value --attribute DOU0700.value
         """,
     )
 
@@ -107,38 +110,74 @@ Examples:
     execute_parser.set_defaults(handler=execute_command)
 
     # Watch variable command
-    watch_parser = subparsers.add_parser(
+    watch_variable_parser = subparsers.add_parser(
         "watch-variable",
         help="Subscribe to CLU variables and print value changes",
     )
-    watch_parser.add_argument(
+    watch_variable_parser.add_argument(
         "--clu",
         default="CLU_Z_WAVE_1",
         help="CLU name (default: CLU_Z_WAVE_1)",
     )
-    watch_parser.add_argument(
+    watch_variable_parser.add_argument(
         "--variable",
         action="append",
         required=True,
         metavar="NAME",
         help="Variable name to watch (repeat for multiple variables)",
     )
-    watch_parser.add_argument(
+    watch_variable_parser.add_argument(
         "--config",
         default=None,
         help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
-    watch_parser.add_argument(
+    watch_variable_parser.add_argument(
         "--output",
         choices=["text", "json"],
         default="text",
         help="Output format: text or json lines (default: text)",
     )
-    watch_parser.add_argument(
+    watch_variable_parser.add_argument(
         "--refresh-interval",
         type=int,
         default=45,
         help="Seconds between subscription refreshes (default: 45)",
     )
-    watch_parser.set_defaults(handler=watch_variable_command)
+    watch_variable_parser.set_defaults(handler=watch_variable_command)
+
+    # Watch attribute command
+    watch_attribute_parser = subparsers.add_parser(
+        "watch-attribute",
+        help="Subscribe to CLU object attributes and print value changes",
+    )
+    watch_attribute_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    watch_attribute_parser.add_argument(
+        "--attribute",
+        action="append",
+        required=True,
+        metavar="OBJECT.INDEX",
+        help="Attribute to watch, e.g. DOU0699.value (repeat for multiple attributes)",
+    )
+    watch_attribute_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    watch_attribute_parser.add_argument(
+        "--output",
+        choices=["text", "json"],
+        default="text",
+        help="Output format: text or json lines (default: text)",
+    )
+    watch_attribute_parser.add_argument(
+        "--refresh-interval",
+        type=int,
+        default=45,
+        help="Seconds between subscription refreshes (default: 45)",
+    )
+    watch_attribute_parser.set_defaults(handler=watch_attribute_command)
     return parser
