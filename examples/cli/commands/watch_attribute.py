@@ -22,7 +22,7 @@ def _parse_attribute(spec: str) -> tuple[str, str]:
                 return object_name, index
             break
 
-    _LOGGER.error("✗ Invalid --attribute '%s', expected format OBJECT.INDEX (e.g. DOU0699.value)", spec)
+    _LOGGER.error("✗ Invalid --attribute '%s', expected format OBJECT.INDEX (e.g. DIN5696.0)", spec)
     sys.exit(1)
 
 

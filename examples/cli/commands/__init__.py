@@ -22,8 +22,8 @@ Examples:
   %(prog)s test --config ~/.grenton/config.yaml
   %(prog)s watch-variable --variable myVariable
   %(prog)s watch-variable --clu CLU_Z_WAVE_1 --variable myVariable --variable otherVariable
-  %(prog)s watch-attribute --attribute DOU0699.value
-  %(prog)s watch-attribute --clu CLU_Z_WAVE_1 --attribute DOU0699.value --attribute DOU0700.value
+  %(prog)s watch-attribute --attribute DIN5696.0
+  %(prog)s watch-attribute --clu CLU_Z_WAVE_1 --attribute DIN5696.0 --attribute DIN5697.1
         """,
     )
 
@@ -160,7 +160,7 @@ Examples:
         action="append",
         required=True,
         metavar="OBJECT.INDEX",
-        help="Attribute to watch, e.g. DOU0699.value (repeat for multiple attributes)",
+        help="Attribute to watch as OBJECT.INDEX, e.g. DIN5696.0 (repeat for multiple attributes)",
     )
     watch_attribute_parser.add_argument(
         "--config",

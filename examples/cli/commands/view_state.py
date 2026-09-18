@@ -16,6 +16,10 @@ _LOGGER = logging.getLogger(__name__)
 class QuotedDumper(yaml.SafeDumper):
     """Custom YAML dumper that quotes strings with spaces or special characters."""
 
+    def ignore_aliases(self, data) -> bool:
+        """Render repeated values in full instead of emitting YAML anchors."""
+        return True
+
 
 def _represent_str(dumper, data: str) -> yaml.Node:
     """Represent strings, quoting those with spaces or special characters."""

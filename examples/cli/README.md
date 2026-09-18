@@ -46,6 +46,22 @@ A command-line tool for configuring and testing Grenton Object Manager connectio
 
     ```
 
+### Watch attribute changes
+
+Attributes are specified as `OBJECT.INDEX`:
+
+```bash
+python3 main.py watch-attribute --attribute DIN5696.0
+```
+
+Repeat `--attribute` to watch more than one attribute:
+
+```bash
+python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
+  --attribute DIN5696.0 \
+  --attribute DIN5697.1
+```
+
 ### Help:
 
 ```bash
