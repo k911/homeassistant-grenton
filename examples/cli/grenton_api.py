@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import secrets
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,110 @@ _ERROR_MESSAGES = {
     GrentonObjectManagerConnectionError: "✗ Connection error: %s",
     GrentonObjectManagerDataError: "✗ Data error: %s",
 }
+
+
+def _is_escaped(content: str, index: int) -> bool:
+    """Return whether the character at index follows an odd number of slashes."""
+    backslashes = 0
+    cursor = index - 1
+    while cursor >= 0 and content[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
+
+
+def _quote_candidates(content: str, start: int) -> list[int]:
+    """Find quotes that could terminate a value starting at start."""
+    candidates: list[int] = []
+    for index in range(start + 1, len(content)):
+        if content[index] != '"' or _is_escaped(content, index):
+            continue
+        remainder = content[index + 1:].lstrip()
+        if not remainder or remainder.startswith(","):
+            candidates.append(index)
+    return candidates
+
+
+def _scan_unquoted_end(content: str, start: int) -> int:
+    """Find an unquoted value's end while honoring nested brackets."""
+    depth = 0
+    cursor = start
+    while cursor < len(content):
+        character = content[cursor]
+        if character in "{[(":
+            depth += 1
+        elif character in "}])":
+            depth -= 1
+        elif character == "," and depth == 0:
+            break
+        cursor += 1
+    return cursor
+
+
+def _split_watch_values(content: str, start: int, remaining: int) -> list[str] | None:
+    """Split content into exactly remaining values, backtracking at quotes."""
+    while start < len(content) and content[start].isspace():
+        start += 1
+
+    if remaining == 1:
+        return [content[start:]]
+    if start >= len(content):
+        return None
+
+    if content[start] == '"':
+        # A quoted value can itself contain quotes and commas. Prefer the
+        # longest boundary that still leaves exactly the required values.
+        for end in reversed(_quote_candidates(content, start)):
+            separator = end + 1
+            while separator < len(content) and content[separator].isspace():
+                separator += 1
+            if separator >= len(content) or content[separator] != ",":
+                continue
+            tail = _split_watch_values(content, separator + 1, remaining - 1)
+            if tail is not None:
+                return [content[start:end + 1], *tail]
+        return None
+
+    end = _scan_unquoted_end(content, start)
+    if end >= len(content):
+        return None
+    tail = _split_watch_values(content, end + 1, remaining - 1)
+    if tail is None:
+        return None
+    return [content[start:end], *tail]
+
+
+def _parse_watch_report(wire_message: str, expected_count: int) -> list:
+    """Parse a raw clientReport without splitting commas inside values."""
+    from homeassistant_grenton.state import cast_string_to_grenton_value
+
+    wire_parts = wire_message.split(":", 3)
+    if len(wire_parts) != 4:
+        raise ValueError("Invalid wire message format")
+
+    report_parts = wire_parts[3].split(":", 2)
+    if len(report_parts) != 3 or report_parts[0] != "clientReport":
+        raise ValueError("Invalid clientReport payload")
+
+    data = report_parts[2].strip()
+    if not (data.startswith("{") and data.endswith("}")):
+        raise ValueError("Invalid clientReport values")
+
+    content = data[1:-1].strip()
+    if not content:
+        return []
+
+    tokens = _split_watch_values(content, 0, expected_count)
+    if tokens is None:
+        raise ValueError(f"Could not split clientReport into {expected_count} values")
+
+    values = []
+    for token in tokens:
+        token = token.strip()
+        if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
+            token = token[1:-1]
+        values.append(cast_string_to_grenton_value(token))
+    return values
 
 
 class GrentonManager:
@@ -180,11 +285,12 @@ class GrentonManager:
             _LOGGER.error("✗ CLU '%s' not found. Available CLUs: %s", clu_name, available)
             sys.exit(1)
 
-        labels = [
-            f"{key.object_name}.{key.name}" if isinstance(key, GrentonCluStateAttributeKey) else key.name
-            for key in keys
-        ]
         last_values: dict[str, GrentonValue] = {}
+
+        def label_for_key(key) -> str:
+            if isinstance(key, GrentonCluStateAttributeKey):
+                return f"{key.object_name}.{key.name}"
+            return key.name
 
         def emit(label: str, value: GrentonValue) -> None:
             timestamp = datetime.now().isoformat(timespec="seconds")
@@ -198,8 +304,9 @@ class GrentonManager:
             sys.stdout.write(line + "\n")
             sys.stdout.flush()
 
-        def apply_values(values: list[GrentonValue]) -> None:
-            for label, value in zip(labels, values):
+        def apply_values(report_keys: list, values: list[GrentonValue]) -> None:
+            for key, value in zip(report_keys, values):
+                label = label_for_key(key)
                 if label in last_values and last_values[label] == value:
                     continue
                 last_values[label] = value
@@ -215,21 +322,63 @@ class GrentonManager:
         try:
             await api_client.ping()
 
+            async def handle_report(report_values: list[GrentonValue]) -> None:
+                apply_values(keys, report_values)
+
+            protocol = api_client.protocol
+            if not protocol:
+                _LOGGER.error("✗ No protocol available to receive subscription reports")
+                sys.exit(1)
+
+            # The pre-rebase watcher registered and received reports through
+            # the main UDP socket.  Keep that proven transport behavior in the
+            # CLI instead of register_component_states(), whose upstream
+            # implementation now creates separate subscription sockets.
+            protocol.subscription_callback = handle_report
+            watch_message_id = secrets.token_hex(4)
+
+            from homeassistant_grenton.domain.api.clu_messages import GrentonCluApiMessageParser
+
+            process_response = protocol._process_response
+
+            def process_watch_response(wire_message: str) -> None:
+                if not GrentonCluApiMessageParser.is_client_report(wire_message):
+                    process_response(wire_message)
+                    return
+
+                try:
+                    report_values = _parse_watch_report(wire_message, len(keys))
+                except ValueError as error:
+                    _LOGGER.error("Failed to parse subscription report: %s", error)
+                    return
+                asyncio.create_task(handle_report(report_values))
+
+            # Intercept unsolicited reports before the upstream parser loses
+            # value boundaries by splitting quoted JSON at every comma.
+            protocol._process_response = process_watch_response
+
+            async def register_watch() -> list[GrentonValue] | None:
+                from homeassistant_grenton.domain.api.clu_messages import (
+                    GrentonCluApiClientRegisterRequest,
+                )
+
+                request = GrentonCluApiClientRegisterRequest(keys, 0, watch_message_id)
+                wire_message = await protocol.send_request(request)
+                if wire_message is None:
+                    return None
+
+                try:
+                    return _parse_watch_report(wire_message, len(keys))
+                except ValueError as error:
+                    _LOGGER.error("Failed to parse register response: %s", error)
+                    return None
+
             _LOGGER.info("Watching %d %s(s) on '%s' (Ctrl+C to stop)", len(keys), kind, target_clu.name)
-            values = await api_client.register_component_states(keys)
+            values = await register_watch()
             if values is None:
                 _LOGGER.error("✗ Failed to register %ss for subscription", kind)
                 sys.exit(1)
-            apply_values(values)
-
-            async def handle_report(report_values: list[GrentonValue]) -> None:
-                apply_values(report_values)
-
-            if api_client.protocol:
-                api_client.protocol.subscription_callback = handle_report
-            else:
-                _LOGGER.error("✗ No protocol available to receive subscription reports")
-                sys.exit(1)
+            apply_values(keys, values)
 
             # The CLU subscription expires, so ping regularly and re-register periodically.
             elapsed = 0
@@ -240,11 +389,11 @@ class GrentonManager:
                 elapsed += _PING_INTERVAL
                 if elapsed >= refresh_interval:
                     elapsed = 0
-                    refreshed = await api_client.register_component_states(keys)
+                    refreshed = await register_watch()
                     if refreshed is None:
                         _LOGGER.warning("Subscription refresh failed, retrying on next cycle")
                     else:
-                        apply_values(refreshed)
+                        apply_values(keys, refreshed)
 
         except asyncio.CancelledError:
             raise
