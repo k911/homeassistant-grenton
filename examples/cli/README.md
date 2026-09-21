@@ -46,6 +46,24 @@ A command-line tool for configuring and testing Grenton Object Manager connectio
 
     ```
 
+### Update tracked objects from the interface
+
+By default, `configure` leaves `grenton_tracked_objects` unchanged. To discover
+all variables and attributes referenced anywhere in the fetched interface and
+merge missing ones into the configuration, use:
+
+```bash
+python3 main.py configure --pin 1234 --update-tracked-objects
+```
+
+Existing group names and item customisations (for example `description` or
+`sync`) are retained. Variables are matched by CLU name and variable name;
+attributes are matched by object ID and index. Repeated references in the
+interface are added only once, using the first referencing widget/component
+label for a newly created group. Attribute indices are written as numbers. If
+one label contains multiple attributes, their interface object-field names are
+added as descriptions so the entries remain distinguishable.
+
 ### Watch attribute changes
 
 Attributes are specified as `OBJECT.INDEX`:
@@ -106,7 +124,7 @@ grenton_tracked_objects:
     attributes:
       "Front door power":
         - object: DOU0699
-          index: "0"
+          index: 0
           description: Optional description
 ```
 
@@ -115,6 +133,7 @@ grenton_tracked_objects:
 - `--url`: Grenton Object Manager URL (default: `http://localhost:9998`)
 - `--pin`: Grenton Object Manager PIN (required)
 - `--config`: Configuration file path (default: `~/.grenton/config.yaml`)
+- `--update-tracked-objects`: Merge interface variables and attributes into tracked objects
 - `--debug`: Enable debug logging output
 
 ## What it does
