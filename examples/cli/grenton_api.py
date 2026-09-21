@@ -38,7 +38,13 @@ _ERROR_MESSAGES = {
 class GrentonManager:
     """Manages Grenton connections and operations."""
 
-    async def configure_and_test(self, url: str, pin: str, config_path) -> None:
+    async def configure_and_test(
+        self,
+        url: str,
+        pin: str,
+        config_path,
+        update_tracked_objects: bool = False,
+    ) -> None:
         """Configure connection and test CLUs."""
         try:
             _LOGGER.info("Connecting to Grenton Object Manager at %s", url)
@@ -52,7 +58,11 @@ class GrentonManager:
             _LOGGER.info("✓ Version: %s", interface_data.get('version'))
 
             encryption, clus = self._create_objects(interface_data)
-            save_configuration(interface_data, config_path)
+            save_configuration(
+                interface_data,
+                config_path,
+                update_tracked_objects=update_tracked_objects,
+            )
             save_interface_cache(interface_data)
 
             await self._test_clus(clus, encryption)
@@ -352,7 +362,11 @@ class GrentonManager:
                             # Add description if available in tracked objects
                             for tracked_attrs in tracked_attributes.values():
                                 for attr_info in tracked_attrs:
-                                    if isinstance(attr_info, dict) and attr_info.get("object") == key.object_name and attr_info.get("index") == key.name:
+                                    if (
+                                        isinstance(attr_info, dict)
+                                        and attr_info.get("object") == key.object_name
+                                        and str(attr_info.get("index")) == key.name
+                                    ):
                                         if "description" in attr_info:
                                             item["description"] = attr_info["description"]
                                         break

@@ -49,6 +49,11 @@ Examples:
         default=None,
         help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
+    configure_parser.add_argument(
+        "--update-tracked-objects",
+        action="store_true",
+        help="Discover interface variables/attributes and merge them into grenton_tracked_objects",
+    )
     configure_parser.set_defaults(handler=configure_command)
 
     # Test command
