@@ -123,15 +123,17 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
     @property
     def native_value(self): # pyright: ignore[reportIncompatibleVariableOverride]
         value = self.coordinator.get_value_for_component(self.state_object)
-        if self.value_type == GrentonValueType.FLOAT and isinstance(value, str):
+        if value is None:
+            return None
+        if self.value_type == GrentonValueType.FLOAT:
             try:
                 return float(value)
-            except ValueError:
+            except (ValueError, TypeError):
                 return value
-        if self.value_type == GrentonValueType.INTEGER and isinstance(value, str):
+        if self.value_type == GrentonValueType.INTEGER:
             try:
-                return int(value)
-            except ValueError:
+                return int(float(value))
+            except (ValueError, TypeError):
                 return value
         return value
 
