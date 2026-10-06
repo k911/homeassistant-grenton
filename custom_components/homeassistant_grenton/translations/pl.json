@@ -84,23 +84,53 @@
         "data": {
           "device_class": "Klasa urządzenia"
         }
+      },
+      "configure_scene_action": {
+        "title": "Konfiguruj {entity_name} - Akcja sceny",
+        "description": "To są bieżące ustawienia akcji. Sprawdź je lub zmień typ wywołania, CLU i nazwę skryptu/obiektu. Zmiany dotyczą tylko Home Assistant.",
+        "data": {
+          "call_type": "Typ wywołania akcji",
+          "clu_id": "CLU",
+          "object_name": "Nazwa skryptu / obiektu"
+        },
+        "data_description": {
+          "object_name": "Nazwa skryptu dla SCRIPT; nazwa obiektu docelowego dla METHOD i ATTRIBUTE. Wywołania VARIABLE korzystają z indeksu w następnym kroku."
+        }
+      },
+      "configure_scene_script_arguments": {
+        "title": "Konfiguruj {entity_name} - Argumenty skryptu",
+        "description": "Sprawdź lub zmień bieżące argumenty skryptu. Użyj składni Lua: 42 dla liczby, \"abc\" dla tekstu lub 42, \"abc\" dla wielu argumentów. Wyczyść pole, aby wywołać skrypt bez argumentów.",
+        "data": {
+          "value": "Argumenty skryptu (Lua)"
+        }
+      },
+      "configure_scene_arguments": {
+        "title": "Konfiguruj {entity_name} - Wartość akcji",
+        "description": "Sprawdź lub zmień bieżący indeks i wartość. Indeks określa metodę, atrybut lub zmienną. Protokół Grenton wysyła wartość jako tekst w cudzysłowie; wpisz treść bez otaczających cudzysłowów. Wyczyść wartość, aby wysłać pusty tekst.",
+        "data": {
+          "index": "Indeks metody / atrybutu / zmiennej",
+          "value": "Argumenty / wartość"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
       "entity_not_configurable": "Ta encja nie może być skonfigurowana."
+    },
+    "error": {
+      "invalid_configuration": "Wybierz poprawne opcje i podaj nazwę skryptu/obiektu oraz indeks tam, gdzie są wymagane."
     }
   },
 
   "services": {
     "run_scene": {
       "name": "Uruchom scenę",
-      "description": "Uruchamia skrypt sceny Grenton, opcjonalnie przekazując parametr.",
+      "description": "Uruchom skonfigurowaną akcję sceny Grenton, opcjonalnie zastępując jej argumenty/wartość dla jednego wywołania.",
       "fields": {
         "parameter": {
           "name": "Parametr",
-          "description": "Opcjonalna wartość przekazywana dosłownie do wywołania skryptu (składnia Lua: \"abc\" dla stringa, 42 dla liczby). Pozostaw puste, aby użyć domyślnej wartości z widgetu."
+          "description": "Pomiń, aby użyć zapisanych argumentów/wartości. Dla skryptów użyj argumentów Lua (\"abc\", 42 lub 42, \"abc\"); dla pozostałych typów wpisz tekst bez otaczających cudzysłowów. Jawnie pusty tekst usuwa argumenty/wartość dla tego wywołania."
         }
       }
     }
@@ -150,7 +180,7 @@
       "name": "Kamera"
     }
   },
-  
+
   "entity": {
     "sensor": {
       "roller_shutter_state": {
@@ -322,6 +352,14 @@
         "weight": "Waga",
         "wind_direction": "Kierunek wiatru",
         "wind_speed": "Prędkość wiatru"
+      }
+    },
+    "scene_call_types": {
+      "options": {
+        "SCRIPT": "Skrypt",
+        "METHOD": "Metoda",
+        "ATTRIBUTE": "Atrybut",
+        "VARIABLE": "Zmienna"
       }
     }
   }

@@ -41,6 +41,7 @@ Your support helps maintain features, fix bugs, and improve documentation.
 | **ROLLER_SHUTTER** | Legacy roller shutter exposed as `sensor` (state enum) plus a `button` action entity. |
 | **ROLLER_SHUTTER_V3** | Roller shutter V3 exposed as a single `cover` entity (position; lamel/tilt when available). |
 | **CAMERA** | Camera stream exposed as `camera`. |
+| **SCENE** | Scene buttons with configurable script, method, attribute, or variable actions and arguments. |
 
 ## 🚀 Installation
 
@@ -85,8 +86,32 @@ After initial setup, you can customize individual entities:
    - **Sensors**: Choose device class and unit of measurement
    - **Sliders (Numbers)**: Set display mode, device class, and unit
    - **Binary Sensors**: Select appropriate device class
+   - **Scenes**: Review or change the action call type, CLU, script/object name, index, and arguments/value
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
+
+### Scene Actions and Arguments
+
+Select a scene button in **Grenton → Configure** to view its current settings.
+The first dialog shows the call type (`SCRIPT`, `METHOD`, `ATTRIBUTE`, or
+`VARIABLE`), CLU, and script/object name. The next dialog shows the current
+arguments/value and, for non-script calls, the method/attribute/variable index.
+Saving applies changes immediately and preserves them across reloads and
+interface refreshes. These settings override the scene in Home Assistant only.
+
+Script arguments use Lua syntax: `42`, `"abc"`, or `42, "abc"` for multiple
+arguments. Clear the field to call the script with no arguments. For method,
+attribute, and variable calls, enter the value without surrounding quotes;
+the existing Grenton protocol sends it as a quoted string.
+
+Open the scene button's entity details and expand **Attributes** to see
+`call_type`, `clu_id`, `object_name`, `event`, `index` (when applicable), `value`,
+and `call`, the exact configured call payload. These are also available in
+**Developer Tools → States**.
+
+The `grenton.run_scene` action can override `parameter` for one invocation.
+Omitting `parameter` uses the saved value; setting `parameter: ""` explicitly
+clears it for that invocation. A regular button press uses the saved settings.
 
 ## 🎨 Device Classes & Units
 

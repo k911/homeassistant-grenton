@@ -84,11 +84,6 @@ class GrentonOptionsFlow(OptionsFlow):
             self.entity_config = {}
             self.current_step_index = 0
         
-        if user_input is not None:
-            # Accumulate data from this step
-            self.entity_config.update(user_input)
-            self.current_step_index += 1
-        
         # Get schema instance
         schema_instance = entity._get_schema_instance()  # type: ignore[reportPrivateUsage]
         if not schema_instance:
@@ -98,6 +93,24 @@ class GrentonOptionsFlow(OptionsFlow):
         steps = getattr(schema_instance, "steps", [])
         if not steps:
             return self.async_abort(reason="entity_not_configurable")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            result = steps[self.current_step_index].builder(
+                current_config, self.entity_config,
+            )
+            try:
+                validated = result.schema(user_input)
+                if result.validator is not None:
+                    validated = result.validator(validated)
+            except vol.Invalid as err:
+                field = str(err.path[0]) if err.path else "base"
+                errors[field] = "invalid_configuration"
+                # Keep entered values visible while the user fixes the error.
+                current_config = {**current_config, **user_input}
+            else:
+                self.entity_config.update(validated)
+                self.current_step_index += 1
 
         # Check if we're done with all steps
         if self.current_step_index >= len(steps):
@@ -136,6 +149,7 @@ class GrentonOptionsFlow(OptionsFlow):
             step_id=step_id,
             data_schema=schema,
             description_placeholders=placeholders,
+            errors=errors,
         )
 
     def _get_configurable_entities(self) -> list[Any]:

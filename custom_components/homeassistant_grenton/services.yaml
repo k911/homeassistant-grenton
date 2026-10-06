@@ -1,6 +1,6 @@
 run_scene:
   name: Run scene
-  description: Run a Grenton SCENE script, optionally passing a parameter.
+  description: Run a configured Grenton scene action, optionally overriding its arguments/value for one call.
   target:
     entity:
       integration: grenton
@@ -9,9 +9,10 @@ run_scene:
     parameter:
       name: Parameter
       description: >
-        Optional parameter passed verbatim into the script call. Use Lua syntax
-        (e.g. quoted "abc" for a string, 42 for a number). Leave empty to run
-        with the default value defined in the scene widget.
+        Omit to use the saved arguments/value. Scripts accept Lua arguments
+        (e.g. quoted "abc", 42, or 42, "abc"). Other call types accept a string
+        value without surrounding quotes. An explicitly empty string clears
+        the arguments/value for this call without changing saved settings.
       example: "\"123\""
       required: false
       selector:
