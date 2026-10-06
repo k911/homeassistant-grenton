@@ -84,23 +84,53 @@
         "data": {
           "device_class": "Device Class"
         }
+      },
+      "configure_scene_action": {
+        "title": "Configure {entity_name} - Scene Action",
+        "description": "These are the current action settings. Review them or change the call type, CLU, and script/object name. Changes apply only in Home Assistant.",
+        "data": {
+          "call_type": "Action call type",
+          "clu_id": "CLU",
+          "object_name": "Script / object name"
+        },
+        "data_description": {
+          "object_name": "Script name for SCRIPT calls; target object name for METHOD and ATTRIBUTE calls. VARIABLE calls use the index on the next step."
+        }
+      },
+      "configure_scene_script_arguments": {
+        "title": "Configure {entity_name} - Script Arguments",
+        "description": "Review or edit the current script arguments. Arguments use Lua syntax: 42 for a number, \"abc\" for a string, or 42, \"abc\" for multiple arguments. Clear the field to call the script with no arguments.",
+        "data": {
+          "value": "Script arguments (Lua)"
+        }
+      },
+      "configure_scene_arguments": {
+        "title": "Configure {entity_name} - Action Value",
+        "description": "Review or edit the current index and value. The index identifies the method, attribute, or variable. The value is sent as a quoted string by the Grenton protocol; enter its contents without surrounding quotes. Clear the value for an empty string.",
+        "data": {
+          "index": "Method / attribute / variable index",
+          "value": "Arguments / value"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
       "entity_not_configurable": "This entity cannot be configured."
+    },
+    "error": {
+      "invalid_configuration": "Select valid options and enter a script/object name and index where required."
     }
   },
 
   "services": {
     "run_scene": {
       "name": "Run scene",
-      "description": "Run a Grenton SCENE script, optionally passing a parameter.",
+      "description": "Run a configured Grenton scene action, optionally overriding its arguments/value for one call.",
       "fields": {
         "parameter": {
           "name": "Parameter",
-          "description": "Optional value passed verbatim into the script call (Lua syntax: \"abc\" for string, 42 for number). Leave empty to use the widget's default value."
+          "description": "Omit to use the saved arguments/value. For scripts, use Lua arguments (\"abc\", 42, or 42, \"abc\"); for other call types, enter the string value without surrounding quotes. An explicitly empty string clears the arguments/value for this call."
         }
       }
     }
@@ -322,6 +352,14 @@
         "weight": "Weight",
         "wind_direction": "Wind direction",
         "wind_speed": "Wind speed"
+      }
+    },
+    "scene_call_types": {
+      "options": {
+        "SCRIPT": "Script",
+        "METHOD": "Method",
+        "ATTRIBUTE": "Attribute",
+        "VARIABLE": "Variable"
       }
     }
   }
