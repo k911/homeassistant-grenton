@@ -8,12 +8,49 @@ run_scene:
   fields:
     parameter:
       name: Parameter
-      description: >
+      description: >-
         Omit to use the saved arguments/value. Scripts accept Lua arguments
         (e.g. quoted "abc", 42, or 42, "abc"). Other call types accept a string
         value without surrounding quotes. An explicitly empty string clears
-        the arguments/value for this call without changing saved settings.
-      example: "\"123\""
+        the arguments/value for this call. Use either parameter or arguments.
+      example: '"123"'
       required: false
       selector:
         text:
+    arguments:
+      name: Typed arguments
+      description: >-
+        Script/method arguments with types. Add, edit, delete, or reorder rows.
+        Omit to use saved arguments; an empty list calls without arguments.
+        Use either parameter or arguments.
+      required: false
+      selector:
+        object:
+          multiple: true
+          translation_key: scene_arguments
+          fields:
+            argument:
+              required: true
+              selector:
+                choose:
+                  translation_key: scene_argument_types
+                  choices:
+                    string:
+                      selector:
+                        text: {}
+                    number:
+                      selector:
+                        number:
+                          mode: box
+                          step: any
+                    boolean:
+                      selector:
+                        boolean: {}
+                    nil:
+                      selector:
+                        constant:
+                          value: nil
+                    lua:
+                      selector:
+                        text:
+                          multiline: true

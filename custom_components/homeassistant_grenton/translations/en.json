@@ -87,29 +87,20 @@
       },
       "configure_scene_action": {
         "title": "Configure {entity_name} - Scene Action",
-        "description": "These are the current action settings. Review them or change the call type, CLU, and script/object name. Changes apply only in Home Assistant.",
+        "description": "Review or change the complete scene action here. Use the call-type dropdown and add, edit, delete, or drag argument rows. Changes apply only in Home Assistant.",
         "data": {
           "call_type": "Action call type",
           "clu_id": "CLU",
-          "object_name": "Script / object name"
+          "object_name": "Script / object name",
+          "index": "Method / attribute / variable index",
+          "arguments": "Script / method arguments",
+          "value": "Attribute / variable value"
         },
         "data_description": {
-          "object_name": "Script name for SCRIPT calls; target object name for METHOD and ATTRIBUTE calls. VARIABLE calls use the index on the next step."
-        }
-      },
-      "configure_scene_script_arguments": {
-        "title": "Configure {entity_name} - Script Arguments",
-        "description": "Review or edit the current script arguments. Arguments use Lua syntax: 42 for a number, \"abc\" for a string, or 42, \"abc\" for multiple arguments. Clear the field to call the script with no arguments.",
-        "data": {
-          "value": "Script arguments (Lua)"
-        }
-      },
-      "configure_scene_arguments": {
-        "title": "Configure {entity_name} - Action Value",
-        "description": "Review or edit the current index and value. The index identifies the method, attribute, or variable. The value is sent as a quoted string by the Grenton protocol; enter its contents without surrounding quotes. Clear the value for an empty string.",
-        "data": {
-          "index": "Method / attribute / variable index",
-          "value": "Arguments / value"
+          "object_name": "Script name for SCRIPT; target object for METHOD and ATTRIBUTE. Ignored for VARIABLE.",
+          "index": "Required for METHOD, ATTRIBUTE, and VARIABLE. Ignored for SCRIPT.",
+          "arguments": "Used by SCRIPT and METHOD. Each row has a type and value. Remove all rows to call without arguments. Imported Lua expressions keep their original syntax.",
+          "value": "Used only by ATTRIBUTE and VARIABLE. Enter the string contents without surrounding quotes."
         }
       }
     },
@@ -119,7 +110,7 @@
       "entity_not_configurable": "This entity cannot be configured."
     },
     "error": {
-      "invalid_configuration": "Select valid options and enter a script/object name and index where required."
+      "invalid_configuration": "Select valid options, provide the required target/index, and enter valid argument values."
     }
   },
 
@@ -130,7 +121,11 @@
       "fields": {
         "parameter": {
           "name": "Parameter",
-          "description": "Omit to use the saved arguments/value. For scripts, use Lua arguments (\"abc\", 42, or 42, \"abc\"); for other call types, enter the string value without surrounding quotes. An explicitly empty string clears the arguments/value for this call."
+          "description": "Omit to use the saved arguments/value. For scripts, use Lua arguments (\"abc\", 42, or 42, \"abc\"); for other call types, enter the string value without surrounding quotes. An explicitly empty string clears the arguments/value for this call. Use either parameter or typed arguments."
+        },
+        "arguments": {
+          "name": "Typed arguments",
+          "description": "Script/method arguments with types. Add, edit, delete, or reorder rows. Omit to use saved arguments; an empty list calls without arguments. Use either parameter or arguments."
         }
       }
     }
@@ -360,6 +355,22 @@
         "METHOD": "Method",
         "ATTRIBUTE": "Attribute",
         "VARIABLE": "Variable"
+      }
+    },
+    "scene_argument_types": {
+      "choices": {
+        "string": "String",
+        "number": "Number",
+        "boolean": "Boolean",
+        "nil": "Nil",
+        "lua": "Lua expression"
+      }
+    },
+    "scene_arguments": {
+      "fields": {
+        "argument": {
+          "name": "Argument type and value"
+        }
       }
     }
   }

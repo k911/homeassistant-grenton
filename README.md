@@ -93,25 +93,34 @@ The integration intelligently filters available options based on your selections
 ### Scene Actions and Arguments
 
 Select a scene button in **Grenton → Configure** to view its current settings.
-The first dialog shows the call type (`SCRIPT`, `METHOD`, `ATTRIBUTE`, or
-`VARIABLE`), CLU, and script/object name. The next dialog shows the current
-arguments/value and, for non-script calls, the method/attribute/variable index.
+One dialog shows the call-type dropdown (`SCRIPT`, `METHOD`, `ATTRIBUTE`, or
+`VARIABLE`), CLU, script/object name, index, and arguments/value together.
+The index is required for method, attribute, and variable calls and ignored
+for scripts. The value field is used only for attribute and variable calls.
 Saving applies changes immediately and preserves them across reloads and
 interface refreshes. These settings override the scene in Home Assistant only.
 
-Script arguments use Lua syntax: `42`, `"abc"`, or `42, "abc"` for multiple
-arguments. Clear the field to call the script with no arguments. For method,
-attribute, and variable calls, enter the value without surrounding quotes;
-the existing Grenton protocol sends it as a quoted string.
+For script and method calls, use **Add** in the arguments list to add rows.
+Each row has a type picker: **String**, **Number**, **Boolean**, **Nil**, or
+**Lua expression**. String arguments are quoted and escaped automatically;
+numbers and booleans keep their types. Edit, delete, or drag rows to change the
+arguments and their order. Delete every row to call without arguments.
+Imported script arguments are kept as a Lua expression to preserve their
+existing meaning; imported method values appear as a string argument.
+For attribute and variable calls, enter the value without surrounding quotes.
 
 Open the scene button's entity details and expand **Attributes** to see
 `call_type`, `clu_id`, `object_name`, `event`, `index` (when applicable), `value`,
+`arguments` (including each argument's type and value for scripts/methods),
 and `call`, the exact configured call payload. These are also available in
 **Developer Tools → States**.
 
-The `grenton.run_scene` action can override `parameter` for one invocation.
-Omitting `parameter` uses the saved value; setting `parameter: ""` explicitly
-clears it for that invocation. A regular button press uses the saved settings.
+The `grenton.run_scene` action also offers a typed arguments list for one-time
+script/method overrides. Omit it to use the saved settings, or set
+`arguments: []` to call without arguments. The existing `parameter` field
+remains available for raw script arguments or a single method/attribute/variable
+string value. Use either `parameter` or `arguments` in a call. A regular button
+press uses the saved settings.
 
 ## 🎨 Device Classes & Units
 

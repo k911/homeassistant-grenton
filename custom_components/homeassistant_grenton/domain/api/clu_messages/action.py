@@ -35,7 +35,11 @@ class GrentonCluApiActionRequest(GrentonCluApiRequest):
         elif isinstance(action, GrentonActionAttribute):
             payload = f'{action.object_name}:set({action.index},"{action.value}")'
         elif isinstance(action, GrentonActionMethod):
-            payload = f'{action.object_name}:execute({action.index},"{action.value}")'
+            if action.arguments is None:
+                payload = f'{action.object_name}:execute({action.index},"{action.value}")'
+            else:
+                parameters = ", ".join((action.index, *action.arguments))
+                payload = f'{action.object_name}:execute({parameters})'
         elif isinstance(action, GrentonActionScript):
             payload = f'{action.object_name}({action.value})'
         else:
