@@ -1,5 +1,5 @@
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .enums import GrentonActionEventType
 
@@ -56,6 +56,9 @@ class GrentonActionVariable(GrentonAction):
 @dataclass
 class GrentonActionMethod(GrentonAction):
     index: str
+    # None preserves imported/mobile-interface calls using one quoted value.
+    # A tuple contains explicitly configured Lua arguments, including no args.
+    arguments: tuple[str, ...] | None = field(default=None, kw_only=True)
 
     @staticmethod
     def create(dto: GrentonActionMethodDto) -> "GrentonActionMethod":

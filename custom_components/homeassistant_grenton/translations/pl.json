@@ -87,29 +87,20 @@
       },
       "configure_scene_action": {
         "title": "Konfiguruj {entity_name} - Akcja sceny",
-        "description": "To są bieżące ustawienia akcji. Sprawdź je lub zmień typ wywołania, CLU i nazwę skryptu/obiektu. Zmiany dotyczą tylko Home Assistant.",
+        "description": "Sprawdź lub zmień całą akcję sceny w tym oknie. Wybierz typ wywołania, dodawaj, edytuj, usuwaj lub przeciągaj argumenty. Zmiany dotyczą tylko Home Assistant.",
         "data": {
           "call_type": "Typ wywołania akcji",
           "clu_id": "CLU",
-          "object_name": "Nazwa skryptu / obiektu"
+          "object_name": "Nazwa skryptu / obiektu",
+          "index": "Indeks metody / atrybutu / zmiennej",
+          "arguments": "Argumenty skryptu / metody",
+          "value": "Wartość atrybutu / zmiennej"
         },
         "data_description": {
-          "object_name": "Nazwa skryptu dla SCRIPT; nazwa obiektu docelowego dla METHOD i ATTRIBUTE. Wywołania VARIABLE korzystają z indeksu w następnym kroku."
-        }
-      },
-      "configure_scene_script_arguments": {
-        "title": "Konfiguruj {entity_name} - Argumenty skryptu",
-        "description": "Sprawdź lub zmień bieżące argumenty skryptu. Użyj składni Lua: 42 dla liczby, \"abc\" dla tekstu lub 42, \"abc\" dla wielu argumentów. Wyczyść pole, aby wywołać skrypt bez argumentów.",
-        "data": {
-          "value": "Argumenty skryptu (Lua)"
-        }
-      },
-      "configure_scene_arguments": {
-        "title": "Konfiguruj {entity_name} - Wartość akcji",
-        "description": "Sprawdź lub zmień bieżący indeks i wartość. Indeks określa metodę, atrybut lub zmienną. Protokół Grenton wysyła wartość jako tekst w cudzysłowie; wpisz treść bez otaczających cudzysłowów. Wyczyść wartość, aby wysłać pusty tekst.",
-        "data": {
-          "index": "Indeks metody / atrybutu / zmiennej",
-          "value": "Argumenty / wartość"
+          "object_name": "Nazwa skryptu dla SCRIPT; obiekt docelowy dla METHOD i ATTRIBUTE. Pomijana dla VARIABLE.",
+          "index": "Wymagany dla METHOD, ATTRIBUTE i VARIABLE. Pomijany dla SCRIPT.",
+          "arguments": "Dla SCRIPT i METHOD. Każdy argument ma typ i wartość. Usuń wszystkie argumenty, aby wywołać bez argumentów. Importowane wyrażenia Lua zachowują oryginalną składnię.",
+          "value": "Tylko dla ATTRIBUTE i VARIABLE. Wpisz treść tekstu bez otaczających cudzysłowów."
         }
       }
     },
@@ -119,7 +110,7 @@
       "entity_not_configurable": "Ta encja nie może być skonfigurowana."
     },
     "error": {
-      "invalid_configuration": "Wybierz poprawne opcje i podaj nazwę skryptu/obiektu oraz indeks tam, gdzie są wymagane."
+      "invalid_configuration": "Wybierz poprawne opcje, podaj wymagany cel/indeks i poprawne wartości argumentów."
     }
   },
 
@@ -130,7 +121,11 @@
       "fields": {
         "parameter": {
           "name": "Parametr",
-          "description": "Pomiń, aby użyć zapisanych argumentów/wartości. Dla skryptów użyj argumentów Lua (\"abc\", 42 lub 42, \"abc\"); dla pozostałych typów wpisz tekst bez otaczających cudzysłowów. Jawnie pusty tekst usuwa argumenty/wartość dla tego wywołania."
+          "description": "Pomiń, aby użyć zapisanych argumentów/wartości. Dla skryptów użyj argumentów Lua (\"abc\", 42 lub 42, \"abc\"); dla pozostałych typów wpisz tekst bez otaczających cudzysłowów. Jawnie pusty tekst usuwa argumenty/wartość dla tego wywołania. Użyj parametru albo argumentów z określonym typem."
+        },
+        "arguments": {
+          "name": "Argumenty z typami",
+          "description": "Argumenty skryptu/metody z typami. Dodawaj, edytuj, usuwaj lub zmieniaj kolejność. Pomiń, aby użyć zapisanych argumentów; pusta lista wywołuje bez argumentów. Użyj parameter albo arguments."
         }
       }
     }
@@ -360,6 +355,22 @@
         "METHOD": "Metoda",
         "ATTRIBUTE": "Atrybut",
         "VARIABLE": "Zmienna"
+      }
+    },
+    "scene_argument_types": {
+      "choices": {
+        "string": "Tekst",
+        "number": "Liczba",
+        "boolean": "Wartość logiczna",
+        "nil": "Nil",
+        "lua": "Wyrażenie Lua"
+      }
+    },
+    "scene_arguments": {
+      "fields": {
+        "argument": {
+          "name": "Typ i wartość argumentu"
+        }
       }
     }
   }

@@ -8,12 +8,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.components.button import ButtonEntity
 
 from . import GrentonConfigEntry
+from .domain.entities.scene_configuration import scene_arguments_selector
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_RUN_SCENE = "run_scene"
 SERVICE_RUN_SCENE_SCHEMA = {
     vol.Optional("parameter"): cv.string,
+    vol.Optional("arguments"): scene_arguments_selector(),
 }
 
 async def async_setup_entry(
