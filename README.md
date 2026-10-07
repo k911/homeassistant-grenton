@@ -210,9 +210,10 @@ Each row has a type picker: **String**, **Number**, **Float**, **Boolean**, **Ni
 numbers and booleans keep their types. Edit a row directly, remove it, or use
 the up/down controls to change the order. Omit trailing arguments to let the
 script/method use its defaults; remove every row to call without arguments.
-Imported script arguments appear as separate rows when they can be safely
-split; complex Lua is preserved as an expression. Imported method values
-appear as a string argument. Attribute/variable calls retain their existing
+Imported script and method arguments appear as separate rows when they can be
+safely split, with types inferred from Lua literals. For example, `800,0` becomes
+two Number arguments, while `"800,0"` remains one String argument. Complex Lua
+is preserved as an expression. Attribute/variable calls retain their existing
 value while their target is configured.
 
 Open the scene button's entity details and expand **Attributes** to see

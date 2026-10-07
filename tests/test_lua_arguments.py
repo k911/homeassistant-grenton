@@ -52,10 +52,38 @@ def test_literals_become_typed_controls_and_expressions_remain_lua(
     assert imported_lua_argument(expression) == expected
 
 
-def test_imported_scene_has_one_row_per_argument():
-    assert imported_arguments("SCRIPT", '0, "bedroom", false, nil') == [
+@pytest.mark.parametrize("call_type", ["SCRIPT", "METHOD"])
+def test_imported_scene_has_one_row_per_argument(call_type):
+    assert imported_arguments(call_type, '0, "bedroom", false, nil') == [
         {"type": "number", "value": 0},
         {"type": "string", "value": "bedroom"},
         {"type": "boolean", "value": False},
         {"type": "nil", "value": None},
     ]
+
+
+@pytest.mark.parametrize("call_type", ["SCRIPT", "METHOD"])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("800,0", [{"type": "number", "value": 800}, {"type": "number", "value": 0}]),
+        ('"800,0"', [{"type": "string", "value": "800,0"}]),
+        (
+            '800, OTHER:get(1, 2), "a,b", -0.5, true, nil',
+            [
+                {"type": "number", "value": 800},
+                {"type": "lua", "value": "OTHER:get(1, 2)"},
+                {"type": "string", "value": "a,b"},
+                {"type": "float", "value": -0.5},
+                {"type": "boolean", "value": True},
+                {"type": "nil", "value": None},
+            ],
+        ),
+        ("", []),
+        ("800, unfinished(", [{"type": "lua", "value": "800, unfinished("}]),
+    ],
+)
+def test_method_and_script_argument_import_uses_the_same_lua_parser(
+    call_type, value, expected
+):
+    assert imported_arguments(call_type, value) == expected

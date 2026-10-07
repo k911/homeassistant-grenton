@@ -408,7 +408,7 @@ def test_three_forms_show_current_values_and_retain_invalid_argument_draft():
             action_field = fields(result)["action_on"]
             action_draft = action_field["description"]["suggested_value"]
             assert action_draft["value"] == "1"
-            assert action_draft["arguments"] == [{"type": "string", "value": "1"}]
+            assert action_draft["arguments"] == [{"type": "number", "value": 1}]
             assert action_field["selector"]["grenton_scene"]["editable_value"] is True
             bad_action = {
                 **action_draft,
@@ -426,14 +426,14 @@ def test_three_forms_show_current_values_and_retain_invalid_argument_draft():
                 {"action_on": action_draft}
             )
             off_draft = fields(result)["action_off"]["description"]["suggested_value"]
-            assert off_draft["arguments"] == [{"type": "string", "value": "0"}]
+            assert off_draft["arguments"] == [{"type": "number", "value": 0}]
             result = await flow.async_step_configure_on_off_off_action(
                 {"action_off": {**off_draft, "arguments": []}}
             )
             assert result["type"] == "create_entry"
             assert (
                 GrentonCluApiActionRequest.from_action(entity.action_on).payload
-                == 'DOUT_0:execute(2, "1")'
+                == "DOUT_0:execute(2, 1)"
             )
             assert (
                 GrentonCluApiActionRequest.from_action(entity.action_off).payload
@@ -511,3 +511,71 @@ def test_values_are_lua_escaped_for_editable_set_actions():
         GrentonCluApiActionRequest.from_action(action).payload
         == 'setVar("Office","a\\"b\\\\c\\n")'
     )
+
+
+@pytest.mark.parametrize("entity_type", ["switch", "light"])
+def test_on_off_imports_separate_method_arguments_in_both_action_forms(entity_type):
+    async def run():
+        coord = coordinator()
+        dto = widget()
+        dto.components[0].actions[0].value = "800,0"
+        dto.components[0].actions[1].value = "0,800"
+        device = DeviceMapper.to_domain(dto, coord)
+        entity = device.entities[0]
+        entity.entity_id = "switch.office"
+        coord.config_entry.runtime_data = SimpleNamespace(devices=[device])
+        flow = GrentonOptionsFlow()
+        with patch.object(
+            GrentonOptionsFlow,
+            "config_entry",
+            new_callable=PropertyMock,
+            return_value=coord.config_entry,
+        ):
+            await flow.async_step_entity_list({"entity": entity.entity_id})
+            result = await flow.async_step_configure_on_off_state(
+                {"entity_type": entity_type, "state": entity._config["state"]}
+            )
+
+            def draft(form, key):
+                fields = {
+                    field["name"]: field
+                    for field in to_field_list(
+                        form["data_schema"], custom_serializer=cv.custom_serializer
+                    )
+                }
+                return fields[key]["description"]["suggested_value"]
+
+            on_draft = draft(result, "action_on")
+            assert on_draft["arguments"] == [
+                {"type": "number", "value": 800},
+                {"type": "number", "value": 0},
+            ]
+            result = await flow.async_step_configure_on_off_on_action(
+                {"action_on": on_draft}
+            )
+            off_draft = draft(result, "action_off")
+            assert off_draft["arguments"] == [
+                {"type": "number", "value": 0},
+                {"type": "number", "value": 800},
+            ]
+            result = await flow.async_step_configure_on_off_off_action(
+                {"action_off": off_draft}
+            )
+            coord.config_entry.options = result["data"]
+        restored = DeviceMapper.to_domain(dto, coord).entities[0]
+        await restored.async_turn_on()
+        await restored.async_turn_off()
+        assert [
+            GrentonCluApiActionRequest.from_action(call.args[0]).payload
+            for call in coord.execute_action.await_args_list
+        ] == ["DOUT_0:execute(2, 800, 0)", "DOUT_0:execute(2, 0, 800)"]
+        assert (
+            restored.extra_state_attributes["action_on"]["arguments"]
+            == on_draft["arguments"]
+        )
+        assert (
+            restored.extra_state_attributes["action_off"]["arguments"]
+            == off_draft["arguments"]
+        )
+
+    asyncio.run(run())

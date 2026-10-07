@@ -708,3 +708,60 @@ def test_scene_runtime_parameter_overrides_typed_method_arguments_only_for_one_c
         ).payload
         == "Evening:execute(7, 1)"
     )
+
+
+def test_imported_method_list_is_editable_as_separate_numbers_and_saved_correctly(
+    coordinator,
+):
+    entity = make_scene(coordinator, GrentonActionMethod, value="800,0")
+    flow, entry_patch = make_flow(coordinator, entity)
+
+    async def run():
+        with entry_patch:
+            result = await flow.async_step_entity_list({"entity": entity.entity_id})
+            draft = editor_draft(result)
+            assert draft["arguments"] == [
+                {"type": "number", "value": 800},
+                {"type": "number", "value": 0},
+            ]
+            result = await submit_flow(flow, draft)
+            coordinator.config_entry.options = result["data"]
+        restored = make_scene(coordinator, GrentonActionMethod)
+        await restored.async_press()
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                coordinator.execute_action.await_args.args[0]
+            ).payload
+            == "Evening:execute(7, 800, 0)"
+        )
+        assert restored.extra_state_attributes["arguments"] == draft["arguments"]
+
+    asyncio.run(run())
+
+
+def test_saved_explicit_string_argument_with_a_comma_stays_a_single_field(coordinator):
+    entity = make_scene(coordinator, GrentonActionMethod, value="800,0")
+
+    async def run():
+        result = await save_scene(
+            coordinator,
+            entity,
+            editor_input("METHOD", arguments=[{"type": "string", "value": "800,0"}]),
+        )
+        coordinator.config_entry.options = result["data"]
+        restored = make_scene(coordinator, GrentonActionMethod, value="800,0")
+        flow, entry_patch = make_flow(coordinator, restored)
+        with entry_patch:
+            result = await flow.async_step_entity_list({"entity": restored.entity_id})
+        assert editor_draft(result)["arguments"] == [
+            {"type": "string", "value": "800,0"}
+        ]
+        await restored.async_press()
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                coordinator.execute_action.await_args.args[0]
+            ).payload
+            == 'Evening:execute(7, "800,0")'
+        )
+
+    asyncio.run(run())
