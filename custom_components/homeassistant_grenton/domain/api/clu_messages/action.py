@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from ...action import (
     GrentonAction,
-    GrentonActionVariable,
     GrentonActionAttribute,
     GrentonActionMethod,
     GrentonActionScript,
+    GrentonActionVariable,
 )
+from ...scene_arguments import quote_lua_string
 from .base import GrentonCluApiRequest, GrentonCluApiResponse
 
 
@@ -20,7 +21,7 @@ class GrentonCluApiActionRequest(GrentonCluApiRequest):
     def from_action(
         action: GrentonAction,
         msg_id: str | None = None
-    ) -> 'GrentonCluApiActionRequest':
+    ) -> GrentonCluApiActionRequest:
         """Create request from a GrentonAction.
         
         Args:
@@ -31,12 +32,12 @@ class GrentonCluApiActionRequest(GrentonCluApiRequest):
             GrentonCluApiActionRequest with appropriate payload
         """
         if isinstance(action, GrentonActionVariable):
-            payload = f'setVar("{action.index}","{action.value}")'
+            payload = f'setVar({quote_lua_string(action.index)},{quote_lua_string(action.value)})'
         elif isinstance(action, GrentonActionAttribute):
-            payload = f'{action.object_name}:set({action.index},"{action.value}")'
+            payload = f'{action.object_name}:set({action.index},{quote_lua_string(action.value)})'
         elif isinstance(action, GrentonActionMethod):
             if action.arguments is None:
-                payload = f'{action.object_name}:execute({action.index},"{action.value}")'
+                payload = f'{action.object_name}:execute({action.index},{quote_lua_string(action.value)})'
             else:
                 parameters = ", ".join((action.index, *action.arguments))
                 payload = f'{action.object_name}:execute({parameters})'

@@ -78,22 +78,32 @@ class GrentonSceneSelector(selector.Selector):
         {
             vol.Required("clus"): [{"value": str, "label": str}],
             vol.Optional("default_value", default=""): str,
+            vol.Optional("mode", default="action"): vol.In(["action", "state"]),
+            vol.Optional("editable_value", default=False): bool,
         }
     )
 
     def __call__(self, data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             raise vol.Invalid("Scene action must be an object")
+        if self.config["mode"] == "state" and data.get("call_type") not in (
+            "ATTRIBUTE",
+            "VARIABLE",
+        ):
+            raise vol.Invalid("Select Attribute or Variable", path=["call_type"])
         if not isinstance(data.get("clu_id"), str) or data["clu_id"] not in {
             clu["value"] for clu in self.config["clus"]
         }:
             raise vol.Invalid("Select a CLU", path=["clu_id"])
-        return validate_scene_action(
+        config = validate_scene_action(
             {
                 "value": self.config["default_value"],
                 **data,
             }
         )
+        if self.config["mode"] == "state":
+            config.pop("value", None)
+        return config
 
 
 @dataclass

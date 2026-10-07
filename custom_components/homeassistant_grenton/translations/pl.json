@@ -1,6 +1,5 @@
 {
   "title": "Grenton Home Assistant",
-
   "config": {
     "step": {
       "user": {
@@ -33,7 +32,6 @@
       "wrong_interface": "Pobrany interfejs należy do innej instalacji niż ta, która jest rekonfigurowana."
     }
   },
-
   "options": {
     "step": {
       "entity_list": {
@@ -91,6 +89,28 @@
         "data": {
           "action": "Wywołanie sceny"
         }
+      },
+      "configure_on_off_state": {
+        "title": "Konfiguracja {entity_name} - Stan (1/3)",
+        "description": "Wybierz przełącznik lub światło i skonfiguruj cechę lub zmienną, która udostępnia aktualny stan. Zmiana typu encji zmienia jej identyfikator; po zapisaniu zaktualizuj odwołania w panelach i automatyzacjach.",
+        "data": {
+          "entity_type": "Typ encji",
+          "state": "Źródło stanu"
+        }
+      },
+      "configure_on_off_on_action": {
+        "title": "Konfiguracja {entity_name} - Włączanie (2/3)",
+        "description": "Wybierz typ wywołania i skonfiguruj obiekt, wartość lub argumenty akcji włączania.",
+        "data": {
+          "action_on": "Akcja włączania"
+        }
+      },
+      "configure_on_off_off_action": {
+        "title": "Konfiguracja {entity_name} - Wyłączanie (3/3)",
+        "description": "Wybierz typ wywołania i skonfiguruj obiekt, wartość lub argumenty akcji wyłączania. Zapisanie przeładowuje integrację i stosuje ustawienia ze wszystkich trzech formularzy.",
+        "data": {
+          "action_off": "Akcja wyłączania"
+        }
       }
     },
     "abort": {
@@ -99,10 +119,9 @@
       "entity_not_configurable": "Ta encja nie może być skonfigurowana."
     },
     "error": {
-      "invalid_configuration": "Wybierz typ wywołania i CLU, uzupełnij pola celu i podaj poprawne wartości argumentów."
+      "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości."
     }
   },
-
   "services": {
     "run_script": {
       "name": "Uruchom skrypt",
@@ -119,7 +138,6 @@
       }
     }
   },
-
   "device": {
     "scene": {
       "name": "Scena"
@@ -164,7 +182,6 @@
       "name": "Kamera"
     }
   },
-
   "entity": {
     "sensor": {
       "roller_shutter_state": {
@@ -181,7 +198,6 @@
       }
     }
   },
-
   "selector": {
     "slider_modes": {
       "options": {
@@ -406,7 +422,19 @@
         "arguments": {
           "name": "Argumenty",
           "description": "Pomiń końcowe argumenty, aby użyć wartości domyślnych skryptu lub metody."
+        },
+        "state_call_type": {
+          "name": "Typ źródła stanu"
+        },
+        "set_value": {
+          "name": "Ustawiana wartość"
         }
+      }
+    },
+    "on_off_entity_types": {
+      "options": {
+        "switch": "Przełącznik",
+        "light": "Światło"
       }
     }
   }
