@@ -36,7 +36,7 @@ const argumentRows = (rows) => rows?.map((row) => {
   const type = row.argument.active_choice;
   return { type, value: type === "nil" ? null : row.argument[type] };
 });
-const TYPES = ["string", "number", "boolean", "nil", "lua"];
+const TYPES = ["string", "number", "float", "boolean", "nil", "lua"];
 const CALL_TYPES = ["SCRIPT", "METHOD", "ATTRIBUTE", "VARIABLE"];
 
 class GrentonEditor extends HTMLElement {
@@ -209,7 +209,7 @@ class GrentonEditor extends HTMLElement {
       const heading = document.createElement("div");
       heading.className = "heading";
       const title = document.createElement("strong");
-      title.textContent = this._label("argument", "Argument {number}").replace("{number}", index + 1);
+      title.textContent = `${this._label("argument", "Argument")} ${index + 1}`;
       const buttons = document.createElement("div");
       buttons.className = "buttons";
       const move = (offset) => {
@@ -229,14 +229,16 @@ class GrentonEditor extends HTMLElement {
         value, label: this._text(`scene_argument_types.choices.${value}`, value),
       })), argument.type, (value) => {
         argument.type = value;
-        argument.value = value === "nil" ? null : value === "boolean" ? false : value === "number" ? 0 : "";
+        argument.value = value === "nil" ? null : value === "boolean" ? false
+          : value === "number" || value === "float" ? 0 : "";
         onRowsChange(rows);
         this._render();
       });
       const input = this._input(`argument_${index}_value`,
         argument.type === "nil" ? "nil" : argument.value,
         (value) => { argument.value = value; onRowsChange(rows); },
-        argument.type === "boolean" ? "checkbox" : argument.type === "number" ? "number"
+        argument.type === "boolean" ? "checkbox"
+          : argument.type === "number" || argument.type === "float" ? "number"
           : argument.type === "lua" ? "lua" : "text", argument.type !== "string");
       if (argument.type === "nil") input.disabled = true;
       inputs.append(

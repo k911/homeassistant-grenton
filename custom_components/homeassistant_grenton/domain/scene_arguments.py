@@ -5,7 +5,7 @@ from typing import Any
 
 from .lua_arguments import imported_lua_argument, split_lua_arguments
 
-ARGUMENT_TYPES = ("string", "number", "boolean", "nil", "lua")
+ARGUMENT_TYPES = ("string", "number", "float", "boolean", "nil", "lua")
 
 
 def normalize_arguments(arguments: Any) -> list[dict[str, Any]]:
@@ -36,16 +36,24 @@ def normalize_arguments(arguments: Any) -> list[dict[str, Any]]:
                 argument_type == "lua" and not value.strip()
             ):
                 raise ValueError(f"Argument {position} must contain text")
-        elif argument_type == "number":
+        elif argument_type in ("number", "float"):
             if isinstance(value, bool) or not isinstance(value, (int, float, str)):
                 raise ValueError(f"Argument {position} must be a number")
             try:
-                value = value if isinstance(value, int) else float(value)
+                value = (
+                    value
+                    if argument_type == "number" and isinstance(value, int)
+                    else float(value)
+                )
             except (ValueError, OverflowError) as err:
                 raise ValueError(f"Argument {position} must be a number") from err
             if isinstance(value, float) and not math.isfinite(value):
                 raise ValueError(f"Argument {position} must be a finite number")
-            if isinstance(value, float) and value.is_integer():
+            if (
+                argument_type == "number"
+                and isinstance(value, float)
+                and value.is_integer()
+            ):
                 value = int(value)
         elif argument_type == "boolean":
             if not isinstance(value, bool):

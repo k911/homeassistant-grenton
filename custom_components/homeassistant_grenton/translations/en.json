@@ -350,6 +350,7 @@
       "choices": {
         "string": "String",
         "number": "Number",
+        "float": "Float",
         "boolean": "Boolean",
         "nil": "Nil",
         "lua": "Lua expression"
@@ -379,7 +380,7 @@
           "name": "Variable name"
         },
         "argument": {
-          "name": "Argument {number}"
+          "name": "Argument"
         },
         "argument_type": {
           "name": "Type"

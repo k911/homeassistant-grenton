@@ -350,6 +350,7 @@
       "choices": {
         "string": "Tekst",
         "number": "Liczba",
+        "float": "Liczba zmiennoprzecinkowa",
         "boolean": "Wartość logiczna",
         "nil": "Nil",
         "lua": "Wyrażenie Lua"
@@ -379,7 +380,7 @@
           "name": "Nazwa zmiennej"
         },
         "argument": {
-          "name": "Argument {number}"
+          "name": "Argument"
         },
         "argument_type": {
           "name": "Typ"

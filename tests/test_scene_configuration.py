@@ -197,7 +197,7 @@ def test_argument_types_are_encoded_in_order_and_persist(
 ):
     entity = make_scene(coordinator)
     arguments = [
-        {"type": "number", "value": -1.25},
+        {"type": "float", "value": -1.25},
         {"type": "string", "value": 'room "A"\\door\nnext'},
         {"type": "boolean", "value": False},
         {"type": "nil", "value": None},
@@ -222,6 +222,36 @@ def test_argument_types_are_encoded_in_order_and_persist(
         ).payload
         == expected
     )
+
+
+@pytest.mark.parametrize("call_type", ["SCRIPT", "METHOD"])
+def test_whole_float_arguments_keep_their_type_after_save_and_reload(
+    coordinator, call_type
+):
+    entity = make_scene(coordinator)
+    result = asyncio.run(
+        save_scene(
+            coordinator,
+            entity,
+            editor_input(
+                call_type,
+                [{"type": "float", "value": 1}],
+            ),
+        )
+    )
+    saved = result["data"]["entities"]["scene_1"]["arguments"][0]
+    assert saved["type"] == "float"
+    assert isinstance(saved["value"], float)
+    assert saved["value"] == 1.0
+    coordinator.config_entry.options = result["data"]
+    restored = make_scene(coordinator)
+    assert restored.extra_state_attributes["call"] == (
+        "Evening(1.0)" if call_type == "SCRIPT" else "Evening:execute(7, 1.0)"
+    )
+    flow, entry_patch = make_flow(coordinator, restored)
+    with entry_patch:
+        form = asyncio.run(flow.async_step_entity_list({"entity": restored.entity_id}))
+    assert editor_draft(form)["arguments"] == [saved]
 
 
 def test_save_updates_state_and_keeps_unrelated_options(coordinator):
@@ -309,6 +339,10 @@ def test_invalid_settings_keep_the_combined_dialog_open(coordinator, field, valu
         ("number", "NaN"),
         ("number", "Infinity"),
         ("number", "not numeric"),
+        ("float", "NaN"),
+        ("float", "Infinity"),
+        ("float", "not numeric"),
+        ("float", True),
         ("boolean", "false"),
         ("string", 42),
         ("nil", "invalid"),
@@ -660,7 +694,15 @@ def test_scene_editor_and_service_controls_have_translations(coordinator, langua
     assert set(translations["selector"]["scene_argument_types"]["choices"]) == set(
         ARGUMENT_TYPES
     )
-    assert translations["selector"]["scene_editor"]["fields"]["argument"]["name"]
+    # Home Assistant formats this string without an ICU context. Append the
+    # position in the editor, after translating the word, rather than here.
+    assert (
+        translations["selector"]["scene_editor"]["fields"]["argument"]["name"]
+        == "Argument"
+    )
+    assert translations["selector"]["scene_argument_types"]["choices"]["float"] == (
+        "Float" if language == "en" else "Liczba zmiennoprzecinkowa"
+    )
     assert set(translations["services"]["run_scene"]["fields"]) == {
         key.schema for key in SERVICE_RUN_SCENE_SCHEMA
     }

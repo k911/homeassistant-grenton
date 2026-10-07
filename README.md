@@ -104,7 +104,7 @@ Saving applies changes immediately and preserves them across reloads and
 interface refreshes. These settings override the scene in Home Assistant only.
 
 For script and method calls, use **Add argument** to add individual input rows.
-Each row has a type picker: **String**, **Number**, **Boolean**, **Nil**, or
+Each row has a type picker: **String**, **Number**, **Float**, **Boolean**, **Nil**, or
 **Lua expression**. String arguments are quoted and escaped automatically;
 numbers and booleans keep their types. Edit a row directly, remove it, or use
 the up/down controls to change the order. Omit trailing arguments to let the
