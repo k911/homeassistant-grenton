@@ -8,6 +8,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .coordinator import GrentonCoordinator
+from .device_configuration import async_setup_device_configuration, configuration_url
 from .domain.clu import GrentonClu
 from .domain.encryption import GrentonEncryption
 from .domain.entities.clu import GrentonCluEntity
@@ -25,6 +26,7 @@ PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.LIGHT, P
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Make CLU actions available even before a config entry is loaded."""
     async_setup_services(hass)
+    async_setup_device_configuration(hass)
     return True
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntry) -> bool:
@@ -47,6 +49,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntr
     
     # Map mobile interface DTO to devices
     devices = DeviceMapper.from_mobile_interface(mobile_interface_dto, coordinator)
+    for device in devices:
+        for entity in device.entities:
+            if info := entity.device_info:
+                info["configuration_url"] = configuration_url(
+                    config_entry.entry_id, device.id
+                )
 
     _LOGGER.debug("Mapped %d device(s) from mobile interface", len(devices))
     _LOGGER.debug("Device details:")
@@ -58,6 +66,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntr
     
     # Store runtime data
     clu_entities = [GrentonCluEntity(coordinator, clu) for clu in clus]
+    for entity in clu_entities:
+        entity.device_info["configuration_url"] = configuration_url(
+            config_entry.entry_id, entity.unique_id
+        )
     config_entry.runtime_data = RuntimeData(
         coordinator=coordinator, devices=devices, clu_entities=clu_entities
     )

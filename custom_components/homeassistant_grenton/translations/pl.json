@@ -116,7 +116,8 @@
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
-      "entity_not_configurable": "Ta encja nie może być skonfigurowana."
+      "entity_not_configurable": "Ta encja nie może być skonfigurowana.",
+      "device_not_found": "Nie znaleziono wybranego widgetu Grenton."
     },
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości."
@@ -445,6 +446,34 @@
       "options": {
         "switch": "Przełącznik",
         "light": "Światło"
+      }
+    },
+    "device_configuration": {
+      "fields": {
+        "title": {
+          "name": "Konfiguruj encje widgetu"
+        },
+        "read_only": {
+          "name": "Tylko do odczytu"
+        },
+        "saved": {
+          "name": "Konfiguracja zapisana"
+        },
+        "no_configuration": {
+          "name": "Te encje nie mają dodatkowych ustawień."
+        },
+        "loading": {
+          "name": "Ładowanie…"
+        },
+        "close": {
+          "name": "Zamknij"
+        },
+        "next": {
+          "name": "Dalej"
+        },
+        "save": {
+          "name": "Zapisz"
+        }
       }
     }
   }
