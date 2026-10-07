@@ -104,17 +104,17 @@
   },
 
   "services": {
-    "run_scene": {
-      "name": "Run scene",
-      "description": "Run a configured Grenton scene action, optionally overriding its arguments/value for one call.",
+    "run_script": {
+      "name": "Run script",
+      "description": "Run a named Grenton script directly on a discovered CLU.",
       "fields": {
-        "parameter": {
-          "name": "Parameter",
-          "description": "Omit to use the saved arguments/value. For scripts, use Lua arguments (\"abc\", 42, or 42, \"abc\"); for other call types, enter the string value without surrounding quotes. An explicitly empty string clears the arguments/value for this call. Use either parameter or typed arguments."
+        "script": {
+          "name": "Script",
+          "description": "Name of the script on the selected CLU, without parentheses or arguments."
         },
         "arguments": {
           "name": "Typed arguments",
-          "description": "Script/method arguments with types. Add, edit, delete, or reorder rows. Omit to use saved arguments; an empty list calls without arguments. Use either parameter or arguments."
+          "description": "Positional arguments. Add, edit, remove, or reorder rows. Omit trailing arguments to use the script's defaults; omit this field or use an empty list to call without arguments."
         }
       }
     }
@@ -175,6 +175,9 @@
           "locked": "locked",
           "unknown": "unknown"
         }
+      },
+      "clu_controller": {
+        "name": "Controller"
       }
     }
   },

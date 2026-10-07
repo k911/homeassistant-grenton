@@ -1,22 +1,30 @@
 import logging
 
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.typing import ConfigType
 
-from .integration_config import GrentonConfigEntry, GrentonConfigEntryData, RuntimeData
 from .coordinator import GrentonCoordinator
-from .mappers.device_mapper import DeviceMapper
-
-from .dto.mobile_interface import GrentonMobileInterfaceDto
-from .domain.encryption import GrentonEncryption
 from .domain.clu import GrentonClu
+from .domain.encryption import GrentonEncryption
+from .domain.entities.clu import GrentonCluEntity
+from .dto.mobile_interface import GrentonMobileInterfaceDto
 from .frontend import async_register_scene_editor
+from .integration_config import GrentonConfigEntry, GrentonConfigEntryData, RuntimeData
+from .mappers.device_mapper import DeviceMapper
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.LIGHT, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.COVER, Platform.CAMERA]
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Make CLU actions available even before a config entry is loaded."""
+    async_setup_services(hass)
+    return True
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntry) -> bool:
     _LOGGER.debug("Initializing Home Assistant Grenton integration")
@@ -48,10 +56,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntr
             _LOGGER.debug("  - Entity %s", entity.name)
     
     # Store runtime data
-    config_entry.runtime_data = RuntimeData(coordinator=coordinator, devices=devices)
+    clu_entities = [GrentonCluEntity(coordinator, clu) for clu in clus]
+    config_entry.runtime_data = RuntimeData(
+        coordinator=coordinator, devices=devices, clu_entities=clu_entities
+    )
 
     # Drop entities and devices that no longer exist in the freshly fetched interface
-    _cleanup_orphans(hass, config_entry, devices)
+    _cleanup_orphans(hass, config_entry, devices, clu_entities)
 
     # Setup the coordinator
     await coordinator.async_setup()
@@ -65,12 +76,12 @@ def _cleanup_orphans(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     devices: list,
+    clu_entities: list[GrentonCluEntity],
 ) -> None:
-    """Remove entity/device registry entries that no longer back a live widget.
+    """Remove entity/device registry entries that no longer back a widget or CLU.
 
-    Why: device_info identifiers and entity unique_ids are derived from widget IDs
-    in the mobile interface JSON. After a reconfigure that drops widgets, the old
-    registry rows would otherwise linger as `unavailable`.
+    Widget and CLU IDs provide stable registry identities. After a reconfigure
+    that drops either, the old rows would otherwise linger as `unavailable`.
     """
     valid_entity_uids: set[str] = {
         entity.unique_id
@@ -81,6 +92,12 @@ def _cleanup_orphans(
     valid_device_identifiers: set[tuple[str, str]] = {
         ("grenton", device.id) for device in devices
     }
+    valid_entity_uids.update(
+        entity.unique_id for entity in clu_entities if entity.unique_id
+    )
+    for entity in clu_entities:
+        if info := entity.device_info:
+            valid_device_identifiers.update(info["identifiers"])
 
     entity_reg = er.async_get(hass)
     for entry in er.async_entries_for_config_entry(entity_reg, config_entry.entry_id):
@@ -92,7 +109,12 @@ def _cleanup_orphans(
     for device in dr.async_entries_for_config_entry(device_reg, config_entry.entry_id):
         if not any(identifier in valid_device_identifiers for identifier in device.identifiers):
             _LOGGER.debug("Removing orphaned device %s", device.id)
-            device_reg.async_update_device(device.id, remove_config_entry_id=config_entry.entry_id)
+            if getattr(device, "config_entry_id", None) == config_entry.entry_id:
+                # Current HA devices belong to one config entry.
+                device_reg.async_remove_device(device.id)
+            else:
+                # Older HA versions can share a device across config entries.
+                device_reg.async_update_device(device.id, remove_config_entry_id=config_entry.entry_id)
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     coordinator: GrentonCoordinator = config_entry.runtime_data.coordinator
