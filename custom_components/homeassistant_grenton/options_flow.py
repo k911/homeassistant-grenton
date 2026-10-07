@@ -5,6 +5,8 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.helpers import selector
 
+from .device_configuration import DEVICE_CONTEXT_KEY
+
 
 class GrentonOptionsFlow(OptionsFlowWithReload):
     """Handle options flow for Grenton integration."""
@@ -28,6 +30,11 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options - show list of entities to configure."""
+        widget_id = self.context.get(DEVICE_CONTEXT_KEY)
+        if widget_id is not None and not any(
+            device.id == widget_id for device in self.config_entry.runtime_data.devices
+        ):
+            return self.async_abort(reason="device_not_found")
         return await self.async_step_entity_list(user_input)
 
     async def async_step_entity_list(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -54,6 +61,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         # Build entity selection schema using EntitySelector with include_entities
         return self.async_show_form(
             step_id="entity_list",
+            last_step=False,
             data_schema=vol.Schema({
                 vol.Required("entity"): selector.EntitySelector(  # type: ignore[misc]
                     selector.EntitySelectorConfig(
@@ -151,6 +159,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         
         return self.async_show_form(
             step_id=step_id,
+            last_step=self.current_step_index == len(steps) - 1,
             data_schema=schema,
             description_placeholders=placeholders,
             errors=errors,
@@ -166,7 +175,10 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         runtime_data = config_entry.runtime_data
         
         entities: list[BaseGrentonEntity] = []
+        widget_id = self.context.get(DEVICE_CONTEXT_KEY)
         for device in runtime_data.devices:
+            if widget_id is not None and device.id != widget_id:
+                continue
             for entity in device.entities:
                 if isinstance(entity, ConfigurableEntity):
                     entities.append(entity)

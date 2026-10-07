@@ -116,7 +116,8 @@
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
-      "entity_not_configurable": "This entity cannot be configured."
+      "entity_not_configurable": "This entity cannot be configured.",
+      "device_not_found": "Selected Grenton widget was not found."
     },
     "error": {
       "invalid_configuration": "Select valid options and enter valid values."
@@ -445,6 +446,34 @@
       "options": {
         "switch": "Switch",
         "light": "Light"
+      }
+    },
+    "device_configuration": {
+      "fields": {
+        "title": {
+          "name": "Configure widget entities"
+        },
+        "read_only": {
+          "name": "Read only"
+        },
+        "saved": {
+          "name": "Configuration saved"
+        },
+        "no_configuration": {
+          "name": "These entities have no additional configuration."
+        },
+        "loading": {
+          "name": "Loading…"
+        },
+        "close": {
+          "name": "Close"
+        },
+        "next": {
+          "name": "Next"
+        },
+        "save": {
+          "name": "Save"
+        }
       }
     }
   }

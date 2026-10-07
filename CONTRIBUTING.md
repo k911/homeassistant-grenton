@@ -73,7 +73,7 @@ Run tests and checks before opening a PR:
 python -m pytest tests
 
 # Frontend regression tests (Node.js; no additional packages)
-node --test tests/scene_editor.test.mjs
+node --test tests/*.test.mjs
 
 # Static type checking
 mypy custom_components/homeassistant_grenton

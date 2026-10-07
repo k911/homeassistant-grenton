@@ -92,6 +92,13 @@ After initial setup, you can customize individual entities:
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
 
+You can also open a Grenton device under **Settings → Devices & Services → Devices**
+and click **Visit device**. This opens a configuration popup listing the entities
+in that widget/device, with entity selection limited to that device. Select an
+editable entity to review and change its settings through the same forms above.
+Entities without additional settings, including CLU controller sensors, are
+listed as read only. Closing the popup before saving leaves the settings unchanged.
+
 ### On/Off Controls as Lights
 
 Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
