@@ -69,7 +69,7 @@ def imported_lua_argument(expression: str) -> dict:
     if re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", expression):
         number = float(expression)
         if math.isfinite(number):
-            return {"type": "number", "value": number}
+            return {"type": "float", "value": number}
     if (
         len(expression) >= 2
         and expression[0] in "\"'"
