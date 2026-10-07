@@ -4,30 +4,17 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ...coordinator import GrentonCoordinator
-from ..action import (
-    GrentonAction,
-    GrentonActionAttribute,
-    GrentonActionMethod,
-    GrentonActionScript,
-    GrentonActionVariable,
+from ..action import GrentonAction, GrentonActionMethod, GrentonActionScript
+from ..action_configuration import (
+    action_configuration,
+    configured_action,
+    normalize_action_configuration,
 )
 from ..api.clu_messages.action import GrentonCluApiActionRequest
-from ..enums import GrentonActionCallType
-from ..scene_arguments import (
-    argument_expressions,
-    imported_arguments,
-    normalize_arguments,
-)
+from ..scene_arguments import imported_arguments
 from .base import BaseGrentonEntity
 from .configurable import ConfigurableEntity
 from .scene_configuration import GrentonEntitySceneConfigurationSchema
-
-ACTION_CLASSES = {
-    GrentonActionCallType.ATTRIBUTE: GrentonActionAttribute,
-    GrentonActionCallType.METHOD: GrentonActionMethod,
-    GrentonActionCallType.SCRIPT: GrentonActionScript,
-    GrentonActionCallType.VARIABLE: GrentonActionVariable,
-}
 
 
 class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -72,47 +59,12 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
                 clu_options.append({"value": clu_id, "label": clu_id})
 
     def default_config(self) -> dict[str, Any]:
-        action = self._widget_action
-        call_type = next(
-            key for key, cls in ACTION_CLASSES.items() if isinstance(action, cls)
-        )
-        config = {
-            "call_type": call_type.value,
-            "clu_id": action.clu_id,
-            "object_name": action.object_name,
-            "value": action.value,
-        }
-        if isinstance(action, GrentonActionVariable):
-            config["variable_name"] = action.index
-            config.pop("object_name")
-        elif isinstance(action, (GrentonActionAttribute, GrentonActionMethod)):
-            config["index"] = action.index
-        return config
+        return action_configuration(self._widget_action)
 
     @property
     def script_action(self) -> GrentonAction:
         """Effective action, including saved Home Assistant overrides."""
-        config = self._config
-        call_type = GrentonActionCallType(config["call_type"])
-        fields = {
-            "clu_id": config["clu_id"],
-            "object_name": config.get("object_name", ""),
-            "event": self._widget_action.event,
-            "value": config["value"],
-        }
-        if "arguments" in config and call_type in (
-            GrentonActionCallType.SCRIPT,
-            GrentonActionCallType.METHOD,
-        ):
-            expressions = argument_expressions(config["arguments"])
-            fields["value"] = ", ".join(expressions)
-            if call_type == GrentonActionCallType.METHOD:
-                fields["arguments"] = expressions
-        if call_type == GrentonActionCallType.VARIABLE:
-            fields["index"] = config["variable_name"]
-        elif call_type != GrentonActionCallType.SCRIPT:
-            fields["index"] = config["index"]
-        return ACTION_CLASSES[call_type](**fields)
+        return configured_action(self._config, self._widget_action.event)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -134,26 +86,7 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
 
     async def apply_configuration(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Apply immediately and return options to persist without a reload."""
-        config = {**user_input, "value": user_input.get("value", "")}
-        if config["call_type"] in (
-            GrentonActionCallType.SCRIPT,
-            GrentonActionCallType.METHOD,
-        ):
-            if "arguments" in config:
-                config["arguments"] = normalize_arguments(config["arguments"])
-                config["value"] = ", ".join(argument_expressions(config["arguments"]))
-        else:
-            config.pop("arguments", None)
-        if config["call_type"] == GrentonActionCallType.SCRIPT:
-            config.pop("index", None)
-        if config["call_type"] == GrentonActionCallType.VARIABLE:
-            config["variable_name"] = config.get(
-                "variable_name", config.get("index", "")
-            )
-            config.pop("index", None)
-            config.pop("object_name", None)
-        else:
-            config.pop("variable_name", None)
+        config = normalize_action_configuration(user_input)
         options = await super().apply_configuration(config)
         if self.hass is not None and self.entity_id is not None:
             self.async_write_ha_state()

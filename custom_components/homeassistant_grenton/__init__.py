@@ -11,6 +11,7 @@ from .coordinator import GrentonCoordinator
 from .domain.clu import GrentonClu
 from .domain.encryption import GrentonEncryption
 from .domain.entities.clu import GrentonCluEntity
+from .domain.entities.on_off import GrentonEntityOnOff, configured_on_off_type
 from .dto.mobile_interface import GrentonMobileInterfaceDto
 from .frontend import async_register_scene_editor
 from .integration_config import GrentonConfigEntry, GrentonConfigEntryData, RuntimeData
@@ -99,9 +100,19 @@ def _cleanup_orphans(
         if info := entity.device_info:
             valid_device_identifiers.update(info["identifiers"])
 
+    on_off_domains = {
+        entity.unique_id: configured_on_off_type(entity.coordinator, entity.unique_id)
+        for device in devices
+        for entity in device.entities
+        if isinstance(entity, GrentonEntityOnOff)
+    }
+
     entity_reg = er.async_get(hass)
     for entry in er.async_entries_for_config_entry(entity_reg, config_entry.entry_id):
-        if entry.unique_id not in valid_entity_uids:
+        if entry.unique_id not in valid_entity_uids or (
+            entry.unique_id in on_off_domains
+            and entry.domain != on_off_domains[entry.unique_id]
+        ):
             _LOGGER.debug("Removing orphaned entity %s (uid=%s)", entry.entity_id, entry.unique_id)
             entity_reg.async_remove(entry.entity_id)
 

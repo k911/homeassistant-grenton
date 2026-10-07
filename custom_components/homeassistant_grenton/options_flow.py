@@ -2,12 +2,14 @@
 from typing import Any
 
 import voluptuous as vol
-
-from homeassistant.config_entries import ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.helpers import selector
 
-class GrentonOptionsFlow(OptionsFlow):
+
+class GrentonOptionsFlow(OptionsFlowWithReload):
     """Handle options flow for Grenton integration."""
+
+    automatic_reload = False
 
     # Persist the selected entity unique_id for stable lookup
     selected_entity_uid: str | None = None
@@ -64,8 +66,8 @@ class GrentonOptionsFlow(OptionsFlow):
 
     async def async_step_configure_entity(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Configure entity - generic step handler."""
-        from .domain.entities.configurable import ConfigurableEntity
         from .domain.entities.base import BaseGrentonEntity
+        from .domain.entities.configurable import ConfigurableEntity
         
         entities = self._get_configurable_entities()
         # Look up by stable unique_id captured during selection
@@ -114,6 +116,7 @@ class GrentonOptionsFlow(OptionsFlow):
 
         # Check if we're done with all steps
         if self.current_step_index >= len(steps):
+            self.automatic_reload = getattr(entity, "reload_after_configuration", False)
             options = await entity.apply_configuration(self.entity_config)
             self.entity_config = None
             self.current_step_index = 0
@@ -124,6 +127,7 @@ class GrentonOptionsFlow(OptionsFlow):
         result = step_def.builder(current_config, self.entity_config)
         # If the schema signals completion, apply and finish
         if getattr(result, "complete", False):
+            self.automatic_reload = getattr(entity, "reload_after_configuration", False)
             options = await entity.apply_configuration(self.entity_config)
             self.entity_config = None
             self.current_step_index = 0
@@ -154,9 +158,9 @@ class GrentonOptionsFlow(OptionsFlow):
 
     def _get_configurable_entities(self) -> list[Any]:
         """Get all configurable entities from the integration."""
+        from .domain.entities.base import BaseGrentonEntity
         from .domain.entities.configurable import ConfigurableEntity
         from .integration_config import GrentonConfigEntry
-        from .domain.entities.base import BaseGrentonEntity
         
         config_entry: GrentonConfigEntry = self.config_entry  # type: ignore
         runtime_data = config_entry.runtime_data

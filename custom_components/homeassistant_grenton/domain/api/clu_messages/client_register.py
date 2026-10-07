@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from ....state import (
-    GrentonCluStateVariableKey,
     GrentonCluStateAttributeKey,
+    GrentonCluStateVariableKey,
     GrentonValue,
     cast_string_to_grenton_value,
 )
-from .base import GrentonCluApiRequest, GrentonCluApiResponse, GrentonCluApiNotification
+from ...scene_arguments import quote_lua_string
+from .base import GrentonCluApiNotification, GrentonCluApiRequest, GrentonCluApiResponse
 
 
 def _parse_client_report(payload: str) -> tuple[int | None, list[GrentonValue]]:
@@ -63,7 +64,7 @@ class GrentonCluApiClientRegisterRequest(GrentonCluApiRequest):
 
         for key in keys:
             if isinstance(key, GrentonCluStateVariableKey):
-                mapped_keys.append(f'"{key.name}"')
+                mapped_keys.append(quote_lua_string(key.name))
             elif isinstance(key, GrentonCluStateAttributeKey): # pyright: ignore[reportUnnecessaryIsInstance]
                 mapped_keys.append(f'{{{key.object_name},{key.name}}}')
 

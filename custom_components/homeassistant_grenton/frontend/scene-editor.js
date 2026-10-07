@@ -279,12 +279,16 @@ class GrentonSceneEditor extends GrentonEditor {
     const parent = this._container();
     const draft = this._value ?? {};
     const type = draft.call_type ?? "";
+    const settings = this.selector?.grenton_scene ?? {};
+    const state = settings.mode === "state";
+    const callTypes = state ? ["ATTRIBUTE", "VARIABLE"] : CALL_TYPES;
     const control = (name, label, value = draft[name]) => this._field(
       this._label(name, label),
       this._input(name, value, (next) => { this._value = { ...this._value, [name]: next }; }),
     );
-    parent.append(this._field(this._label("call_type", "Action call type"), this._select(
-      "call_type", CALL_TYPES.map((value) => ({
+    parent.append(this._field(this._label(state ? "state_call_type" : "call_type",
+      state ? "State source type" : "Action call type"), this._select(
+      "call_type", callTypes.map((value) => ({
         value, label: this._text(`scene_call_types.options.${value}`, value),
       })), type, (value) => {
         this._value = { ...this._value, call_type: value };
@@ -292,12 +296,20 @@ class GrentonSceneEditor extends GrentonEditor {
       },
     )));
     parent.append(this._field(this._label("clu_id", "CLU"), this._select(
-      "clu_id", this.selector?.grenton_scene?.clus ?? [], draft.clu_id,
+      "clu_id", settings.clus ?? [], draft.clu_id,
       (value) => { this._value = { ...this._value, clu_id: value }; },
     )));
-    if (!CALL_TYPES.includes(type)) return;
+    if (!callTypes.includes(type)) return;
+    const renderValue = () => {
+      if (!state && settings.editable_value) {
+        parent.append(this._field(this._label("set_value", "Value to set"),
+          this._input("value", draft.value,
+            (value) => { this._value = { ...this._value, value }; }, "text", false)));
+      }
+    };
     if (type === "VARIABLE") {
       parent.append(control("variable_name", "Variable name", draft.variable_name));
+      renderValue();
       return;
     }
     parent.append(this._field(this._label(type === "SCRIPT" ? "script_name" : "object_name",
@@ -313,6 +325,7 @@ class GrentonSceneEditor extends GrentonEditor {
       this._renderArguments(parent, draft.arguments ?? [],
         (rows) => { this._value = { ...this._value, arguments: rows }; });
     }
+    if (type === "ATTRIBUTE") renderValue();
   }
 }
 

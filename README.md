@@ -31,8 +31,8 @@ Your support helps maintain features, fix bugs, and improve documentation.
 |-----------------------|-------------|
 | **VALUE_V2** | Single numeric value exposed as `sensor` with configurable device class/unit. |
 | **VALUE_DOUBLE** | Dual numeric values exposed as two `sensor` entities (A/B). |
-| **ON_OFF** | Single relay exposed as `switch`. |
-| **ON_OFF_DOUBLE** | Dual relays exposed as two `switch` entities. |
+| **ON_OFF** | Single relay exposed as a configurable `switch` or on/off `light` (default: switch). |
+| **ON_OFF_DOUBLE** | Dual relays with each channel configurable as `switch` or on/off `light`. |
 | **DIMMER_V2** | Dimmable light exposed as `light` with brightness (0-100%). |
 | **LED** | LED or RGB/RGBW light exposed as `light` with brightness and color where available. |
 | **CONTACT_SENSOR** | Contact/door/window sensor exposed as `binary_sensor`. |
@@ -87,9 +87,38 @@ After initial setup, you can customize individual entities:
    - **Sensors**: Choose device class and unit of measurement
    - **Sliders (Numbers)**: Set display mode, device class, and unit
    - **Binary Sensors**: Select appropriate device class
+   - **On/Off controls**: Choose whether the entity is a switch or a light
    - **Scenes**: Review or change the action call type, CLU, script/object name, index, and arguments/value
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
+
+### On/Off Controls as Lights
+
+Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
+forms, prefilled with the current imported or saved settings:
+
+1. **State**: choose Switch or Light and configure the state source (CLU and
+   object/attribute index, or CLU and variable name).
+2. **Turn on**: configure the action's call type, CLU and target.
+3. **Turn off**: configure its action independently and save all settings.
+
+Both actions support Method, Script, Attribute and Variable. Method/script calls
+have typed argument rows that can be added, removed or reordered; omit trailing
+arguments to use defaults. Attribute/variable actions have an editable value to
+set. State sources support Attribute and Variable. The entity's attributes expose
+the effective state source and both actions, including arguments and call payloads.
+
+Existing controls default to Switch. ON_OFF_DOUBLE channels can
+be configured independently.
+
+Saving reloads the integration and creates the selected entity type, preserving
+the Grenton state subscription, ON/OFF actions, and device. Light mode provides
+on/off control without brightness or color controls. The choice persists across
+restarts and interface reconfiguration.
+
+Changing the type changes the entity domain (`switch.…` ↔ `light.…`) and removes
+the previous entity registration. Update dashboards and automations to reference
+the new entity ID. You can change the choice again through the same dialog.
 
 ### CLU Controllers and Scripts
 
