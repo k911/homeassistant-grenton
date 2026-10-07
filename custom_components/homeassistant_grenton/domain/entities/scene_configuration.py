@@ -1,4 +1,4 @@
-"""Scene editor selectors shared by options flows and one-time action calls."""
+"""Typed argument inputs for scene configuration and CLU script calls."""
 
 from copy import deepcopy
 from dataclasses import dataclass

@@ -18,6 +18,7 @@ Your support helps maintain features, fix bugs, and improve documentation.
 ## ✨ Features
 
 - **🔌 Automatic Device Discovery** - Connects to Grenton Object Manager and automatically discovers all configured devices
+- **CLU Controllers and Scripts** - Discovers every CLU from the imported interface and runs its scripts with dynamic typed arguments
 - **🏠 Multiple Widget Types** - Support for lights, switches, dimmers, sensors, covers, and more
 - **⚙️ Per-Entity Configuration** - Customize device class and unit of measurement for each supported entity through the UI
 - **🔄 Real-time Updates** - Automatic state synchronization with Grenton system
@@ -90,6 +91,60 @@ After initial setup, you can customize individual entities:
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
 
+### CLU Controllers and Scripts
+
+Each CLU in the imported configuration is automatically added as a Home
+Assistant device, including CLUs without widgets. Its **Controller**
+sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
+`port`. Each CLU has its own entity, so installations with multiple CLUs can
+select the controller on which to run a script. Refresh the interface through
+**Reconfigure** when CLUs are added or removed.
+
+Use **Developer Tools → Actions → Grenton: Run script** (`grenton.run_script`)
+to select a CLU controller entity or device, enter its script name, and add
+optional typed argument rows. This calls the script directly on the CLU;
+no scene widget or saved button is required. Enter the script name as defined
+on that CLU.
+
+For example, replace the entity ID below with your CLU's Controller sensor:
+
+```yaml
+action: grenton.run_script
+target:
+  entity_id: sensor.main_clu_controller
+data:
+  script: Evening
+  arguments:
+    - type: string
+      value: "living_room"
+    - type: float
+      value: 0.75
+    - type: boolean
+      value: true
+```
+
+This sends `Evening("living_room", 0.75, true)` to the selected CLU. Arguments
+are positional and support `string`, `number`, `float`, `boolean`, `nil`, and
+`lua`. Strings are quoted and escaped automatically. Omit trailing arguments
+to use defaults implemented by the Grenton script. Omit `arguments`, or pass
+`arguments: []`, to call with no arguments.
+
+Automation and Home Assistant script templates can supply both the script name
+and argument values at run time:
+
+```yaml
+action: grenton.run_script
+target:
+  entity_id: sensor.main_clu_controller
+data:
+  script: SetOutput
+  arguments:
+    - type: number
+      value: "{{ states('input_number.output_value') | int }}"
+```
+
+Scene buttons run their saved action when pressed.
+
 ### Scene Actions and Arguments
 
 Select a scene button in **Grenton → Configure** to view its current settings.
@@ -112,8 +167,7 @@ script/method use its defaults; remove every row to call without arguments.
 Imported script arguments appear as separate rows when they can be safely
 split; complex Lua is preserved as an expression. Imported method values
 appear as a string argument. Attribute/variable calls retain their existing
-value while their target is configured; use `grenton.run_scene`'s `parameter`
-for a one-time value override.
+value while their target is configured.
 
 Open the scene button's entity details and expand **Attributes** to see
 `call_type`, `clu_id`, `object_name`, `event`, `index` (for methods/attributes),
@@ -121,13 +175,6 @@ Open the scene button's entity details and expand **Attributes** to see
 `arguments` (including each argument's type and value for scripts/methods),
 and `call`, the exact configured call payload. These are also available in
 **Developer Tools → States**.
-
-The `grenton.run_scene` action also offers a typed arguments list for one-time
-script/method overrides. Omit it to use the saved settings, or set
-`arguments: []` to call without arguments. The existing `parameter` field
-remains available for raw script arguments or a single method/attribute/variable
-string value. Use either `parameter` or `arguments` in a call. A regular button
-press uses the saved settings.
 
 After updating the integration, restart Home Assistant and refresh the browser
 to load the scene editor.
