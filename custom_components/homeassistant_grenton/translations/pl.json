@@ -206,6 +206,22 @@
       },
       "clu_controller": {
         "name": "Sterownik"
+      },
+      "clu_uptime": {
+        "name": "Czas pracy"
+      },
+      "clu_firmware_version": {
+        "name": "Wersja oprogramowania"
+      }
+    },
+    "binary_sensor": {
+      "clu_cloud_connection": {
+        "name": "Połączenie z chmurą"
+      }
+    },
+    "switch": {
+      "clu_use_cloud": {
+        "name": "Używaj chmury"
       }
     }
   },
@@ -473,6 +489,9 @@
         },
         "save": {
           "name": "Zapisz"
+        },
+        "configuration_control": {
+          "name": "Sterowanie konfiguracją"
         }
       }
     }

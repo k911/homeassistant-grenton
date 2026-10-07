@@ -510,7 +510,10 @@ class GrentonDeviceConfiguration extends GrentonEditor {
         const title = document.createElement("strong");
         title.textContent = this.hass.states[entity.entity_id]?.attributes.friendly_name || entity.name;
         const detail = document.createElement("small");
-        detail.textContent = `${entity.entity_id}${entity.configurable ? "" : ` · ${this._label("read_only", "Read only")}`}`;
+        const kind = entity.configuration_control
+          ? this._label("configuration_control", "Configuration control")
+          : this._label("read_only", "Read only");
+        detail.textContent = `${entity.entity_id}${entity.configurable ? "" : ` · ${kind}`}`;
         item.append(title, detail);
         list.append(item);
       }

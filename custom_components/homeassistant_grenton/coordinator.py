@@ -32,6 +32,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=DOMAIN,
+            config_entry=config_entry,
         )
         
         self.config_entry = config_entry
@@ -165,6 +166,10 @@ class GrentonCoordinator(DataUpdateCoordinator):
     
     def register_component_state(self, state: GrentonStateObject) -> None:
         self.state.register_state(state)
+
+    async def async_refresh_clu_state(self, clu_id: str) -> None:
+        """Read back tracked values using the CLU's existing subscription."""
+        await self._send_register(clu_id)
     
     async def async_setup(self) -> None:
         # Connect all APIs

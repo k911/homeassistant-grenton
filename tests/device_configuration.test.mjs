@@ -140,7 +140,11 @@ test("late startup response is cancelled after leaving the panel and read-only d
   finish(structuredClone(inventory)); await flush();
   assert.equal(panel.shadowRoot.children.length, 0);
   assert.deepEqual(calls[1], ["DELETE", "config/config_entries/options/flow/flow1"]);
-  const readOnly = popup({ ...inventory, flow: null }); await flush();
+  const readOnly = popup({ ...inventory, flow: null, entities: [
+    ...inventory.entities,
+    { entity_id: "switch.clu_use_cloud", name: "Use cloud", configurable: false, configuration_control: true },
+  ] }); await flush();
   assert.match(readOnly.panel.text(), /These entities have no additional configuration/);
+  assert.match(readOnly.panel.text(), /switch.clu_use_cloud · Configuration control/);
   assert.deepEqual(descendants(readOnly.panel.shadowRoot).filter((node) => node.tag === "button").map((node) => node.textContent), ["Close"]);
 });

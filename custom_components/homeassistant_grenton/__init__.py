@@ -12,6 +12,8 @@ from .device_configuration import async_setup_device_configuration, configuratio
 from .domain.clu import GrentonClu
 from .domain.encryption import GrentonEncryption
 from .domain.entities.clu import GrentonCluEntity
+from .domain.entities.clu_state import GrentonCluStateEntity
+from .domain.entities.clu_state import clu_entities as create_clu_entities
 from .domain.entities.on_off import GrentonEntityOnOff, configured_on_off_type
 from .dto.mobile_interface import GrentonMobileInterfaceDto
 from .frontend import async_register_scene_editor
@@ -65,10 +67,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntr
             _LOGGER.debug("  - Entity %s", entity.name)
     
     # Store runtime data
-    clu_entities = [GrentonCluEntity(coordinator, clu) for clu in clus]
+    clu_entities = [
+        entity for clu in clus for entity in create_clu_entities(coordinator, clu)
+    ]
     for entity in clu_entities:
         entity.device_info["configuration_url"] = configuration_url(
-            config_entry.entry_id, entity.unique_id
+            config_entry.entry_id, f"clu_{entity.clu.id}"
         )
     config_entry.runtime_data = RuntimeData(
         coordinator=coordinator, devices=devices, clu_entities=clu_entities
@@ -89,7 +93,7 @@ def _cleanup_orphans(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     devices: list,
-    clu_entities: list[GrentonCluEntity],
+    clu_entities: list[GrentonCluEntity | GrentonCluStateEntity],
 ) -> None:
     """Remove entity/device registry entries that no longer back a widget or CLU.
 

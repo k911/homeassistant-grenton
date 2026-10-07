@@ -167,6 +167,7 @@ class GrentonCluApi:
         """
         loop = asyncio.get_event_loop()
         protocol = GrentonCluApiProtocol(self)
+        protocol.subscription_keys = chunk
 
         # Closure binds this chunk's keys to every report arriving on this socket.
         async def on_report(values: list[GrentonValue]) -> None:
@@ -202,7 +203,7 @@ class GrentonCluApi:
         if wire is None:
             return [None] * len(endpoint.keys)
         try:
-            return GrentonCluApiClientRegisterResponse(wire).values
+            return GrentonCluApiClientRegisterResponse(wire, endpoint.keys).values
         except ValueError as e:
             _LOGGER.error("[%s] Failed to parse register response: %s", self.clu.id, e)
             return [None] * len(endpoint.keys)
@@ -235,6 +236,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
         self._pending: Dict[str, asyncio.Future[str]] = {}
         self._pending_lock = asyncio.Lock()
         self._response_timeout = 5.0
+        self.subscription_keys: list[StateKey] | None = None
         self.subscription_callback: Optional[
             Callable[[list[GrentonValue]], Awaitable[None]]
         ] = None
@@ -288,7 +290,9 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
                 if GrentonCluApiMessageParser.is_client_report(wire_message):
                     if self.subscription_callback:
                         try:
-                            notification = GrentonCluApiClientReportNotification(wire_message)
+                            notification = GrentonCluApiClientReportNotification(
+                                wire_message, self.subscription_keys
+                            )
                         except ValueError as e:
                             _LOGGER.error("[%s] Failed to parse client report: %s",
                                           self.api.clu.name, e)
