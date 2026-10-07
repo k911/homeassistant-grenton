@@ -87,20 +87,9 @@
       },
       "configure_scene_action": {
         "title": "Configure {entity_name} - Scene Action",
-        "description": "Review or change the complete scene action here. Use the call-type dropdown and add, edit, delete, or drag argument rows. Changes apply only in Home Assistant.",
+        "description": "Choose the call type, then configure its target and arguments.",
         "data": {
-          "call_type": "Action call type",
-          "clu_id": "CLU",
-          "object_name": "Script / object name",
-          "index": "Method / attribute / variable index",
-          "arguments": "Script / method arguments",
-          "value": "Attribute / variable value"
-        },
-        "data_description": {
-          "object_name": "Script name for SCRIPT; target object for METHOD and ATTRIBUTE. Ignored for VARIABLE.",
-          "index": "Required for METHOD, ATTRIBUTE, and VARIABLE. Ignored for SCRIPT.",
-          "arguments": "Used by SCRIPT and METHOD. Each row has a type and value. Remove all rows to call without arguments. Imported Lua expressions keep their original syntax.",
-          "value": "Used only by ATTRIBUTE and VARIABLE. Enter the string contents without surrounding quotes."
+          "action": "Scene action"
         }
       }
     },
@@ -110,7 +99,7 @@
       "entity_not_configurable": "This entity cannot be configured."
     },
     "error": {
-      "invalid_configuration": "Select valid options, provide the required target/index, and enter valid argument values."
+      "invalid_configuration": "Select a call type and CLU, complete the target fields, and enter valid argument values."
     }
   },
 
@@ -366,10 +355,53 @@
         "lua": "Lua expression"
       }
     },
-    "scene_arguments": {
+    "scene_editor": {
       "fields": {
+        "call_type": {
+          "name": "Action call type"
+        },
+        "clu_id": {
+          "name": "CLU"
+        },
+        "script_name": {
+          "name": "Script name"
+        },
+        "object_name": {
+          "name": "Object name"
+        },
+        "method_index": {
+          "name": "Method index"
+        },
+        "attribute_index": {
+          "name": "Attribute index"
+        },
+        "variable_name": {
+          "name": "Variable name"
+        },
         "argument": {
-          "name": "Argument type and value"
+          "name": "Argument {number}"
+        },
+        "argument_type": {
+          "name": "Type"
+        },
+        "argument_value": {
+          "name": "Value"
+        },
+        "add_argument": {
+          "name": "Add argument"
+        },
+        "remove": {
+          "name": "Remove"
+        },
+        "move_up": {
+          "name": "Move up"
+        },
+        "move_down": {
+          "name": "Move down"
+        },
+        "arguments": {
+          "name": "Arguments",
+          "description": "Omit trailing arguments to use the script or method defaults."
         }
       }
     }

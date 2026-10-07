@@ -1,4 +1,4 @@
-"""One native Home Assistant form for the complete scene action."""
+"""Scene editor selectors shared by options flows and one-time action calls."""
 
 from copy import deepcopy
 from dataclasses import dataclass
@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant.helpers import selector
 
 from ..enums import GrentonActionCallType
-from ..scene_arguments import arguments_to_ui, imported_arguments, normalize_arguments
+from ..scene_arguments import imported_arguments, normalize_arguments
 from .configurable import (
     BaseGrentonEntityConfigurationSchema,
     StepDefinition,
@@ -16,70 +16,89 @@ from .configurable import (
 )
 
 
-def scene_arguments_selector() -> selector.ObjectSelector:
-    """Repeatable rows with a type picker and an appropriate value control."""
-    type_selectors = {
-        "string": selector.TextSelector(),
-        "number": selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                mode=selector.NumberSelectorMode.BOX,
-                step="any",
-            )
-        ),
-        "boolean": selector.BooleanSelector(),
-        "nil": selector.ConstantSelector(selector.ConstantSelectorConfig(value="nil")),
-        "lua": selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-    }
-    return selector.ObjectSelector(
-        selector.ObjectSelectorConfig(
-            multiple=True,
-            translation_key="scene_arguments",
-            fields={
-                "argument": {
-                    "required": True,
-                    "selector": selector.ChooseSelector(
-                        selector.ChooseSelectorConfig(
-                            translation_key="scene_argument_types",
-                            # ChooseSelector validates choices by constructing
-                            # selectors from their serialized definitions.
-                            choices={
-                                name: {"selector": item.serialize()["selector"]}
-                                for name, item in type_selectors.items()
-                            },
-                        )
-                    ),
-                },
-            },
-        )
-    )
+@selector.SELECTORS.register("grenton_arguments")
+class GrentonArgumentsSelector(selector.Selector):
+    """An inline, repeatable list of typed argument inputs."""
+
+    selector_type = "grenton_arguments"
+    CONFIG_SCHEMA = vol.Schema({})
+
+    def __call__(self, data: Any) -> list[dict[str, Any]]:
+        try:
+            return normalize_arguments(data)
+        except (TypeError, ValueError) as err:
+            raise vol.Invalid(str(err)) from err
+
+
+def scene_arguments_selector() -> GrentonArgumentsSelector:
+    return GrentonArgumentsSelector({})
 
 
 def validate_scene_action(data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the applicable fields and preserve explicitly empty arguments."""
-    config = dict(data)
-    call_type = config["call_type"]
-    config["object_name"] = config.get("object_name", "").strip()
-    if call_type != "VARIABLE" and not config["object_name"]:
+    """Validate only fields belonging to the selected call type."""
+    config = {"call_type": data.get("call_type"), "clu_id": data.get("clu_id")}
+    if not isinstance(config["call_type"], str) or config["call_type"] not in {
+        item.value for item in GrentonActionCallType
+    }:
+        raise vol.Invalid("Select a call type", path=["call_type"])
+    # Existing set values stay intact while configuring the action's target.
+    value = data.get("value", "")
+    if not isinstance(value, str):
+        raise vol.Invalid("Value must be text", path=["value"])
+    config["value"] = value
+    if config["call_type"] == "VARIABLE":
+        name = data.get("variable_name", data.get("index", ""))
+        if not isinstance(name, str) or not name.strip():
+            raise vol.Invalid("Enter a variable name", path=["variable_name"])
+        config["variable_name"] = name.strip()
+        return config
+    name = data.get("object_name", "")
+    if not isinstance(name, str) or not name.strip():
         raise vol.Invalid("Enter a script/object name", path=["object_name"])
-    if call_type != "SCRIPT":
-        config["index"] = config.get("index", "").strip()
-        if not config["index"]:
-            raise vol.Invalid("Enter a method/attribute/variable index", path=["index"])
-    if call_type in ("SCRIPT", "METHOD"):
+    config["object_name"] = name.strip()
+    if config["call_type"] != "SCRIPT":
+        index = data.get("index", "")
+        if not isinstance(index, str) or not index.strip():
+            raise vol.Invalid("Enter an index", path=["index"])
+        config["index"] = index.strip()
+    if config["call_type"] in ("SCRIPT", "METHOD"):
         try:
-            config["arguments"] = normalize_arguments(config.get("arguments", []))
+            config["arguments"] = normalize_arguments(data.get("arguments", []))
         except (TypeError, ValueError) as err:
             raise vol.Invalid(str(err), path=["arguments"]) from err
-        config.pop("value", None)
-    else:
-        config.pop("arguments", None)
-        config["value"] = config.get("value", "")
     return config
+
+
+@selector.SELECTORS.register("grenton_scene")
+class GrentonSceneSelector(selector.Selector):
+    """A scene form whose fields respond immediately to the call type."""
+
+    selector_type = "grenton_scene"
+    CONFIG_SCHEMA = vol.Schema(
+        {
+            vol.Required("clus"): [{"value": str, "label": str}],
+            vol.Optional("default_value", default=""): str,
+        }
+    )
+
+    def __call__(self, data: Any) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            raise vol.Invalid("Scene action must be an object")
+        if not isinstance(data.get("clu_id"), str) or data["clu_id"] not in {
+            clu["value"] for clu in self.config["clus"]
+        }:
+            raise vol.Invalid("Select a CLU", path=["clu_id"])
+        return validate_scene_action(
+            {
+                "value": self.config["default_value"],
+                **data,
+            }
+        )
 
 
 @dataclass
 class GrentonEntitySceneConfigurationSchema(BaseGrentonEntityConfigurationSchema):
-    """Keep the call type, target, index and argument list in one dialog."""
+    """Use the Grenton editor inside the standard Home Assistant popup."""
 
     clu_options: list[dict[str, str]]
 
@@ -90,52 +109,32 @@ class GrentonEntitySceneConfigurationSchema(BaseGrentonEntityConfigurationSchema
     def _build_action(
         self, current: dict[str, Any], accumulated: dict[str, Any]
     ) -> StepResult:
-        arguments = current.get(
-            "arguments", imported_arguments(current["call_type"], current["value"])
+        # A rejected form includes the untouched editor draft, including invalid
+        # rows. Do not normalize it until the next submission.
+        submitted = current.get("action", current)
+        draft = deepcopy(
+            submitted
+            if isinstance(submitted, dict)
+            else {key: value for key, value in current.items() if key != "action"}
         )
-        # Typed editor values on a validation error are already in UI format.
-        if isinstance(arguments, list) and all(
-            isinstance(row, dict) and "type" in row for row in arguments
-        ):
-            arguments = arguments_to_ui(arguments)
-        else:
-            # Preserve incomplete/invalid editor rows so they can be corrected.
-            arguments = deepcopy(arguments)
+        draft.setdefault("value", current.get("value", ""))
+        draft.setdefault(
+            "arguments", imported_arguments(draft.get("call_type", ""), draft["value"])
+        )
+        if draft.get("call_type") == "VARIABLE":
+            draft.setdefault("variable_name", draft.get("index", ""))
         return StepResult(
             schema=vol.Schema(
                 {
                     vol.Required(
-                        "call_type", default=current["call_type"]
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[item.value for item in GrentonActionCallType],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                            translation_key="scene_call_types",
-                        ),
+                        "action", description={"suggested_value": draft}
+                    ): GrentonSceneSelector(
+                        {
+                            "clus": self.clu_options,
+                            "default_value": current.get("value", ""),
+                        }
                     ),
-                    vol.Required(
-                        "clu_id", default=current["clu_id"]
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=self.clu_options,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        ),
-                    ),
-                    vol.Optional(
-                        "object_name",
-                        description={"suggested_value": current["object_name"]},
-                    ): selector.TextSelector(),
-                    vol.Optional(
-                        "index",
-                        description={"suggested_value": current.get("index", "")},
-                    ): selector.TextSelector(),
-                    vol.Optional(
-                        "arguments", description={"suggested_value": arguments}
-                    ): scene_arguments_selector(),
-                    vol.Optional(
-                        "value", description={"suggested_value": current["value"]}
-                    ): selector.TextSelector(),
                 }
             ),
-            validator=validate_scene_action,
+            validator=lambda data: data["action"],
         )

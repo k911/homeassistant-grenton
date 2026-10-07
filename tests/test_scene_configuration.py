@@ -102,16 +102,24 @@ def editor_input(call_type="SCRIPT", arguments=None, **overrides):
         "clu_id": "clu1",
         "object_name": "Evening",
         "index": "7",
-        "arguments": arguments_to_ui(arguments or []),
+        "arguments": arguments or [],
         **overrides,
     }
+
+
+async def submit_flow(flow, submitted):
+    return await flow.async_step_configure_scene_action({"action": submitted})
+
+
+def editor_draft(result):
+    return ui_fields(result)["action"]["description"]["suggested_value"]
 
 
 async def save_scene(coordinator, entity, submitted):
     flow, entry_patch = make_flow(coordinator, entity)
     with entry_patch:
         await flow.async_step_entity_list({"entity": entity.entity_id})
-        return await flow.async_step_configure_scene_action(submitted)
+        return await submit_flow(flow, submitted)
 
 
 @pytest.mark.parametrize(
@@ -130,10 +138,14 @@ def test_imported_actions_are_visible_and_executable(
     attributes = entity.extra_state_attributes
     assert attributes["call_type"] == call_type
     assert attributes["clu_id"] == "clu1"
-    assert attributes["object_name"] == "Evening"
+    assert attributes.get("object_name") == (
+        None if call_type == "VARIABLE" else "Evening"
+    )
     assert attributes["event"] == "CLICK"
     assert attributes["call"] == payload
-    assert ("index" in attributes) == (call_type != "SCRIPT")
+    assert ("index" in attributes) == (call_type in ("METHOD", "ATTRIBUTE"))
+    if call_type == "VARIABLE":
+        assert attributes["variable_name"] == "7"
     asyncio.run(entity.async_press())
     assert coordinator.execute_action.await_args.args[0] == entity.script_action
 
@@ -155,42 +167,23 @@ def test_all_settings_and_dynamic_typed_argument_controls_share_one_dialog(
             result = await flow.async_step_entity_list({"entity": entity.entity_id})
             assert result["step_id"] == "configure_scene_action"
             fields = ui_fields(result)
-            assert set(fields) == {
-                "call_type",
-                "clu_id",
-                "object_name",
-                "index",
-                "arguments",
-                "value",
-            }
-            assert fields["call_type"]["selector"]["select"]["mode"] == "dropdown"
-            assert set(fields["call_type"]["selector"]["select"]["options"]) == {
-                "SCRIPT",
-                "METHOD",
-                "ATTRIBUTE",
-                "VARIABLE",
-            }
-            assert (
-                fields["call_type"]["default"]
-                == entity.extra_state_attributes["call_type"]
-            )
-            assert fields["clu_id"]["default"] == "clu1"
-            assert fields["object_name"]["description"]["suggested_value"] == "Evening"
-            object_config = fields["arguments"]["selector"]["object"]
-            assert object_config["multiple"] is True
-            choices = object_config["fields"]["argument"]["selector"]["choose"][
-                "choices"
+            assert set(fields) == {"action"}
+            assert fields["action"]["selector"]["grenton_scene"]["clus"] == [
+                {"value": "clu1", "label": "Main CLU (clu1)"},
+                {"value": "clu2", "label": "Other CLU (clu2)"},
             ]
-            assert set(choices) == {"string", "number", "boolean", "nil", "lua"}
-            assert choices["number"]["selector"]["number"]["step"] == "any"
-            assert "boolean" in choices["boolean"]["selector"]
-            initial_rows = fields["arguments"]["description"]["suggested_value"]
-            submitted = editor_input(
-                fields["call_type"]["default"],
-                arguments=entity.extra_state_attributes["arguments"],
-            )
-            assert submitted["arguments"] == initial_rows
-            result = await flow.async_step_configure_scene_action(submitted)
+            draft = editor_draft(result)
+            assert draft["call_type"] == entity.extra_state_attributes["call_type"]
+            assert draft["clu_id"] == "clu1"
+            assert draft["object_name"] == "Evening"
+            assert draft["arguments"] == entity.extra_state_attributes["arguments"]
+            if action_cls is GrentonActionScript:
+                assert draft["arguments"] == [
+                    {"type": "number", "value": 42},
+                    {"type": "string", "value": "abc"},
+                ]
+            submitted = editor_input(draft["call_type"], arguments=draft["arguments"])
+            result = await submit_flow(flow, submitted)
             assert result["type"] == "create_entry"  # No second dialog.
 
     asyncio.run(run())
@@ -296,22 +289,13 @@ def test_invalid_settings_keep_the_combined_dialog_open(coordinator, field, valu
             await flow.async_step_entity_list({"entity": entity.entity_id})
             submitted = editor_input("METHOD")
             submitted[field] = value
-            result = await flow.async_step_configure_scene_action(submitted)
+            result = await submit_flow(flow, submitted)
             assert result["step_id"] == "configure_scene_action"
-            assert result["errors"] == {field: "invalid_configuration"}
+            assert result["errors"] == {"action": "invalid_configuration"}
             assert flow.current_step_index == 0
             assert entity.extra_state_attributes["call"] == 'Evening(42, "abc")'
-            fields = ui_fields(result)
-            assert (
-                fields[field].get(
-                    "default",
-                    fields[field].get("description", {}).get("suggested_value"),
-                )
-                == value
-            )
-            result = await flow.async_step_configure_scene_action(
-                editor_input("METHOD", index="4")
-            )
+            assert editor_draft(result)[field] == value
+            result = await submit_flow(flow, editor_input("METHOD", index="4"))
             assert result["type"] == "create_entry"
             assert entity.extra_state_attributes["call"] == "Evening:execute(4)"
 
@@ -343,17 +327,33 @@ def test_invalid_arguments_are_retained_for_correction(
             await flow.async_step_entity_list({"entity": entity.entity_id})
             submitted = editor_input()
             submitted["arguments"] = rows
-            result = await flow.async_step_configure_scene_action(submitted)
-            assert result["errors"] == {"arguments": "invalid_configuration"}
-            assert (
-                ui_fields(result)["arguments"]["description"]["suggested_value"] == rows
-            )
+            result = await submit_flow(flow, submitted)
+            assert result["errors"] == {"action": "invalid_configuration"}
+            assert editor_draft(result)["arguments"] == rows
             assert entity.extra_state_attributes["call"] == 'Evening(42, "abc")'
-            result = await flow.async_step_configure_scene_action(
-                editor_input(arguments=[{"type": "string", "value": "fixed"}])
+            result = await submit_flow(
+                flow, editor_input(arguments=[{"type": "string", "value": "fixed"}])
             )
             assert result["type"] == "create_entry"
             assert entity.extra_state_attributes["call"] == 'Evening("fixed")'
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("submitted", [None, [], {}])
+def test_missing_or_malformed_editor_draft_stays_editable(coordinator, submitted):
+    entity = make_scene(coordinator)
+    flow, entry_patch = make_flow(coordinator, entity)
+
+    async def run():
+        with entry_patch:
+            await flow.async_step_entity_list({"entity": entity.entity_id})
+            result = await submit_flow(flow, submitted)
+            assert result["step_id"] == "configure_scene_action"
+            assert result["errors"] == {"action": "invalid_configuration"}
+            assert entity.extra_state_attributes["call"] == 'Evening(42, "abc")'
+            result = await submit_flow(flow, editor_input())
+            assert result["type"] == "create_entry"
 
     asyncio.run(run())
 
@@ -433,7 +433,7 @@ def test_set_value_calls_use_value_and_ignore_stale_argument_rows(
         fields = ui_fields(
             asyncio.run(flow.async_step_entity_list({"entity": entity.entity_id}))
         )
-    assert fields["arguments"]["description"]["suggested_value"] == []
+    assert fields["action"]["description"]["suggested_value"]["arguments"] == []
     result = asyncio.run(
         save_scene(
             coordinator,
@@ -478,7 +478,78 @@ def test_variable_call_does_not_require_an_unused_object_name(coordinator):
     result = asyncio.run(save_scene(coordinator, entity, submitted))
     assert result["type"] == "create_entry"
     assert entity.extra_state_attributes["call"] == 'setVar("level","20")'
-    assert entity.extra_state_attributes["object_name"] == ""
+    assert "object_name" not in entity.extra_state_attributes
+    assert "index" not in entity.extra_state_attributes
+    assert entity.extra_state_attributes["variable_name"] == "level"
+
+
+@pytest.mark.parametrize(
+    "saved_target",
+    [
+        {"index": "saved_level"},
+        {"variable_name": "saved_level"},
+    ],
+)
+def test_variable_target_migrates_without_using_original_widget_index(
+    coordinator, saved_target
+):
+    coordinator.config_entry.options = {
+        "entities": {
+            "scene_1": {
+                "call_type": "VARIABLE",
+                "clu_id": "clu2",
+                "object_name": "old_unused",
+                "value": "10",
+                **saved_target,
+            }
+        }
+    }
+    entity = make_scene(coordinator, GrentonActionMethod, index="7")
+    assert entity.extra_state_attributes["variable_name"] == "saved_level"
+    assert entity.extra_state_attributes["call"] == 'setVar("saved_level","10")'
+    assert "object_name" not in entity.extra_state_attributes
+    assert "index" not in entity.extra_state_attributes
+
+
+@pytest.mark.parametrize("action_cls", [GrentonActionAttribute, GrentonActionVariable])
+def test_target_only_form_preserves_the_existing_set_value(coordinator, action_cls):
+    entity = make_scene(coordinator, action_cls, value="original")
+    submitted = {
+        "call_type": entity.extra_state_attributes["call_type"],
+        "clu_id": "clu2",
+        **(
+            {"variable_name": "bedroom_level"}
+            if action_cls is GrentonActionVariable
+            else {"object_name": "DOUT_Object", "index": "0"}
+        ),
+    }
+    result = asyncio.run(save_scene(coordinator, entity, submitted))
+    assert result["type"] == "create_entry"
+    assert entity.extra_state_attributes["value"] == "original"
+    assert "arguments" not in entity.extra_state_attributes
+    assert entity.extra_state_attributes["call"] == (
+        'setVar("bedroom_level","original")'
+        if action_cls is GrentonActionVariable
+        else 'DOUT_Object:set(0,"original")'
+    )
+
+
+def test_method_number_zero_is_an_optional_argument_not_an_attribute_value(coordinator):
+    entity = make_scene(coordinator)
+    result = asyncio.run(
+        save_scene(
+            coordinator,
+            entity,
+            editor_input(
+                "METHOD",
+                [{"type": "number", "value": 0}],
+                object_name="DOUT_Object",
+                index="2",
+            ),
+        )
+    )
+    assert result["type"] == "create_entry"
+    assert entity.extra_state_attributes["call"] == "DOUT_Object:execute(2, 0)"
 
 
 @pytest.mark.parametrize("call_type", ["SCRIPT", "METHOD", "ATTRIBUTE", "VARIABLE"])
@@ -589,7 +660,7 @@ def test_scene_editor_and_service_controls_have_translations(coordinator, langua
     assert set(translations["selector"]["scene_argument_types"]["choices"]) == set(
         ARGUMENT_TYPES
     )
-    assert translations["selector"]["scene_arguments"]["fields"]["argument"]["name"]
+    assert translations["selector"]["scene_editor"]["fields"]["argument"]["name"]
     assert set(translations["services"]["run_scene"]["fields"]) == {
         key.schema for key in SERVICE_RUN_SCENE_SCHEMA
     }

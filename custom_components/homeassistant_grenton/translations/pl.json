@@ -87,20 +87,9 @@
       },
       "configure_scene_action": {
         "title": "Konfiguruj {entity_name} - Akcja sceny",
-        "description": "Sprawdź lub zmień całą akcję sceny w tym oknie. Wybierz typ wywołania, dodawaj, edytuj, usuwaj lub przeciągaj argumenty. Zmiany dotyczą tylko Home Assistant.",
+        "description": "Wybierz typ wywołania, a następnie skonfiguruj jego cel i argumenty.",
         "data": {
-          "call_type": "Typ wywołania akcji",
-          "clu_id": "CLU",
-          "object_name": "Nazwa skryptu / obiektu",
-          "index": "Indeks metody / atrybutu / zmiennej",
-          "arguments": "Argumenty skryptu / metody",
-          "value": "Wartość atrybutu / zmiennej"
-        },
-        "data_description": {
-          "object_name": "Nazwa skryptu dla SCRIPT; obiekt docelowy dla METHOD i ATTRIBUTE. Pomijana dla VARIABLE.",
-          "index": "Wymagany dla METHOD, ATTRIBUTE i VARIABLE. Pomijany dla SCRIPT.",
-          "arguments": "Dla SCRIPT i METHOD. Każdy argument ma typ i wartość. Usuń wszystkie argumenty, aby wywołać bez argumentów. Importowane wyrażenia Lua zachowują oryginalną składnię.",
-          "value": "Tylko dla ATTRIBUTE i VARIABLE. Wpisz treść tekstu bez otaczających cudzysłowów."
+          "action": "Wywołanie sceny"
         }
       }
     },
@@ -110,7 +99,7 @@
       "entity_not_configurable": "Ta encja nie może być skonfigurowana."
     },
     "error": {
-      "invalid_configuration": "Wybierz poprawne opcje, podaj wymagany cel/indeks i poprawne wartości argumentów."
+      "invalid_configuration": "Wybierz typ wywołania i CLU, uzupełnij pola celu i podaj poprawne wartości argumentów."
     }
   },
 
@@ -366,10 +355,53 @@
         "lua": "Wyrażenie Lua"
       }
     },
-    "scene_arguments": {
+    "scene_editor": {
       "fields": {
+        "call_type": {
+          "name": "Typ wywołania"
+        },
+        "clu_id": {
+          "name": "CLU"
+        },
+        "script_name": {
+          "name": "Nazwa skryptu"
+        },
+        "object_name": {
+          "name": "Nazwa obiektu"
+        },
+        "method_index": {
+          "name": "Indeks metody"
+        },
+        "attribute_index": {
+          "name": "Indeks atrybutu"
+        },
+        "variable_name": {
+          "name": "Nazwa zmiennej"
+        },
         "argument": {
-          "name": "Typ i wartość argumentu"
+          "name": "Argument {number}"
+        },
+        "argument_type": {
+          "name": "Typ"
+        },
+        "argument_value": {
+          "name": "Wartość"
+        },
+        "add_argument": {
+          "name": "Dodaj argument"
+        },
+        "remove": {
+          "name": "Usuń"
+        },
+        "move_up": {
+          "name": "Przenieś w górę"
+        },
+        "move_down": {
+          "name": "Przenieś w dół"
+        },
+        "arguments": {
+          "name": "Argumenty",
+          "description": "Pomiń końcowe argumenty, aby użyć wartości domyślnych skryptu lub metody."
         }
       }
     }
