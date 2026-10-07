@@ -1,6 +1,5 @@
 {
   "title": "Grenton Home Assistant",
-
   "config": {
     "step": {
       "user": {
@@ -33,7 +32,6 @@
       "wrong_interface": "Pobrany interfejs należy do innej instalacji niż ta, która jest rekonfigurowana."
     }
   },
-
   "options": {
     "step": {
       "entity_list": {
@@ -84,15 +82,47 @@
         "data": {
           "device_class": "Klasa urządzenia"
         }
+      },
+      "configure_scene_action": {
+        "title": "Konfiguruj {entity_name} - Akcja sceny",
+        "description": "Wybierz typ wywołania, a następnie skonfiguruj jego cel i argumenty.",
+        "data": {
+          "action": "Wywołanie sceny"
+        }
+      },
+      "configure_on_off_state": {
+        "title": "Konfiguracja {entity_name} - Stan (1/3)",
+        "description": "Wybierz przełącznik lub światło i skonfiguruj cechę lub zmienną, która udostępnia aktualny stan. Zmiana typu encji zmienia jej identyfikator; po zapisaniu zaktualizuj odwołania w panelach i automatyzacjach.",
+        "data": {
+          "entity_type": "Typ encji",
+          "state": "Źródło stanu"
+        }
+      },
+      "configure_on_off_on_action": {
+        "title": "Konfiguracja {entity_name} - Włączanie (2/3)",
+        "description": "Wybierz typ wywołania i skonfiguruj obiekt, wartość lub argumenty akcji włączania.",
+        "data": {
+          "action_on": "Akcja włączania"
+        }
+      },
+      "configure_on_off_off_action": {
+        "title": "Konfiguracja {entity_name} - Wyłączanie (3/3)",
+        "description": "Wybierz typ wywołania i skonfiguruj obiekt, wartość lub argumenty akcji wyłączania. Zapisanie przeładowuje integrację i stosuje ustawienia ze wszystkich trzech formularzy.",
+        "data": {
+          "action_off": "Akcja wyłączania"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
-      "entity_not_configurable": "Ta encja nie może być skonfigurowana."
+      "entity_not_configurable": "Ta encja nie może być skonfigurowana.",
+      "device_not_found": "Nie znaleziono wybranego widgetu Grenton."
+    },
+    "error": {
+      "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości."
     }
   },
-
   "services": {
     "run_scene": {
       "name": "Uruchom scenę",
@@ -100,12 +130,25 @@
       "fields": {
         "parameter": {
           "name": "Parametr",
-          "description": "Opcjonalna wartość przekazywana dosłownie do wywołania skryptu (składnia Lua: \"abc\" dla stringa, 42 dla liczby). Pozostaw puste, aby użyć domyślnej wartości z widgetu."
+          "description": "Opcjonalna wartość przekazywana dosłownie do wywołania skryptu (składnia Lua: \"abc\" dla tekstu, 42 dla liczby). Pomiń to pole, aby użyć zapisanych argumentów/wartości sceny. Pusty tekst wywołuje skrypt bez argumentów."
+        }
+      }
+    },
+    "run_script": {
+      "name": "Uruchom skrypt",
+      "description": "Uruchom skrypt Grenton bezpośrednio na wykrytym CLU.",
+      "fields": {
+        "script": {
+          "name": "Skrypt",
+          "description": "Nazwa skryptu na wybranym CLU, bez nawiasów i argumentów."
+        },
+        "arguments": {
+          "name": "Argumenty z typami",
+          "description": "Argumenty pozycyjne. Dodawaj, edytuj, usuwaj lub zmieniaj kolejność. Pomiń końcowe argumenty, aby użyć wartości domyślnych skryptu; pomiń to pole lub użyj pustej listy, aby wywołać bez argumentów."
         }
       }
     }
   },
-
   "device": {
     "scene": {
       "name": "Scena"
@@ -150,7 +193,6 @@
       "name": "Kamera"
     }
   },
-  
   "entity": {
     "sensor": {
       "roller_shutter_state": {
@@ -161,10 +203,12 @@
           "locked": "zablokowane",
           "unknown": "nieznany"
         }
+      },
+      "clu_controller": {
+        "name": "Sterownik"
       }
     }
   },
-
   "selector": {
     "slider_modes": {
       "options": {
@@ -322,6 +366,114 @@
         "weight": "Waga",
         "wind_direction": "Kierunek wiatru",
         "wind_speed": "Prędkość wiatru"
+      }
+    },
+    "scene_call_types": {
+      "options": {
+        "SCRIPT": "Skrypt",
+        "METHOD": "Metoda",
+        "ATTRIBUTE": "Atrybut",
+        "VARIABLE": "Zmienna"
+      }
+    },
+    "scene_argument_types": {
+      "choices": {
+        "string": "Tekst",
+        "number": "Liczba",
+        "float": "Liczba zmiennoprzecinkowa",
+        "boolean": "Wartość logiczna",
+        "nil": "Nil",
+        "lua": "Wyrażenie Lua"
+      }
+    },
+    "scene_editor": {
+      "fields": {
+        "call_type": {
+          "name": "Typ wywołania"
+        },
+        "clu_id": {
+          "name": "CLU"
+        },
+        "script_name": {
+          "name": "Nazwa skryptu"
+        },
+        "object_name": {
+          "name": "Nazwa obiektu"
+        },
+        "method_index": {
+          "name": "Indeks metody"
+        },
+        "attribute_index": {
+          "name": "Indeks atrybutu"
+        },
+        "variable_name": {
+          "name": "Nazwa zmiennej"
+        },
+        "argument": {
+          "name": "Argument"
+        },
+        "argument_type": {
+          "name": "Typ"
+        },
+        "argument_value": {
+          "name": "Wartość"
+        },
+        "add_argument": {
+          "name": "Dodaj argument"
+        },
+        "remove": {
+          "name": "Usuń"
+        },
+        "move_up": {
+          "name": "Przenieś w górę"
+        },
+        "move_down": {
+          "name": "Przenieś w dół"
+        },
+        "arguments": {
+          "name": "Argumenty",
+          "description": "Pomiń końcowe argumenty, aby użyć wartości domyślnych skryptu lub metody."
+        },
+        "state_call_type": {
+          "name": "Typ źródła stanu"
+        },
+        "set_value": {
+          "name": "Ustawiana wartość"
+        }
+      }
+    },
+    "on_off_entity_types": {
+      "options": {
+        "switch": "Przełącznik",
+        "light": "Światło"
+      }
+    },
+    "device_configuration": {
+      "fields": {
+        "title": {
+          "name": "Konfiguruj encje widgetu"
+        },
+        "read_only": {
+          "name": "Tylko do odczytu"
+        },
+        "saved": {
+          "name": "Konfiguracja zapisana"
+        },
+        "no_configuration": {
+          "name": "Te encje nie mają dodatkowych ustawień."
+        },
+        "loading": {
+          "name": "Ładowanie…"
+        },
+        "close": {
+          "name": "Zamknij"
+        },
+        "next": {
+          "name": "Dalej"
+        },
+        "save": {
+          "name": "Zapisz"
+        }
       }
     }
   }

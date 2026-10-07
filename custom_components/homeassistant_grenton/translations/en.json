@@ -1,6 +1,5 @@
 {
   "title": "Grenton Home Assistant",
-
   "config": {
     "step": {
       "user": {
@@ -33,7 +32,6 @@
       "wrong_interface": "The fetched interface belongs to a different installation than the one being reconfigured."
     }
   },
-
   "options": {
     "step": {
       "entity_list": {
@@ -84,15 +82,47 @@
         "data": {
           "device_class": "Device Class"
         }
+      },
+      "configure_scene_action": {
+        "title": "Configure {entity_name} - Scene Action",
+        "description": "Choose the call type, then configure its target and arguments.",
+        "data": {
+          "action": "Scene action"
+        }
+      },
+      "configure_on_off_state": {
+        "title": "Configure {entity_name} - State (1/3)",
+        "description": "Choose Switch or Light and configure the attribute or variable that provides the current state. Changing the entity type changes its entity ID; update dashboard and automation references after saving.",
+        "data": {
+          "entity_type": "Entity type",
+          "state": "State source"
+        }
+      },
+      "configure_on_off_on_action": {
+        "title": "Configure {entity_name} - Turn on (2/3)",
+        "description": "Choose the call type and configure the turn-on target, value or arguments.",
+        "data": {
+          "action_on": "Turn on action"
+        }
+      },
+      "configure_on_off_off_action": {
+        "title": "Configure {entity_name} - Turn off (3/3)",
+        "description": "Choose the call type and configure the turn-off target, value or arguments. Saving reloads the integration and applies all three forms.",
+        "data": {
+          "action_off": "Turn off action"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
-      "entity_not_configurable": "This entity cannot be configured."
+      "entity_not_configurable": "This entity cannot be configured.",
+      "device_not_found": "Selected Grenton widget was not found."
+    },
+    "error": {
+      "invalid_configuration": "Select valid options and enter valid values."
     }
   },
-
   "services": {
     "run_scene": {
       "name": "Run scene",
@@ -100,12 +130,25 @@
       "fields": {
         "parameter": {
           "name": "Parameter",
-          "description": "Optional value passed verbatim into the script call (Lua syntax: \"abc\" for string, 42 for number). Leave empty to use the widget's default value."
+          "description": "Optional value passed verbatim into the script call (Lua syntax: \"abc\" for a string, 42 for a number). Omit this field to use the scene's saved arguments/value. An empty string calls without arguments."
+        }
+      }
+    },
+    "run_script": {
+      "name": "Run script",
+      "description": "Run a named Grenton script directly on a discovered CLU.",
+      "fields": {
+        "script": {
+          "name": "Script",
+          "description": "Name of the script on the selected CLU, without parentheses or arguments."
+        },
+        "arguments": {
+          "name": "Typed arguments",
+          "description": "Positional arguments. Add, edit, remove, or reorder rows. Omit trailing arguments to use the script's defaults; omit this field or use an empty list to call without arguments."
         }
       }
     }
   },
-
   "device": {
     "scene": {
       "name": "Scene"
@@ -150,7 +193,6 @@
       "name": "Camera"
     }
   },
-
   "entity": {
     "sensor": {
       "roller_shutter_state": {
@@ -161,10 +203,12 @@
           "locked": "locked",
           "unknown": "unknown"
         }
+      },
+      "clu_controller": {
+        "name": "Controller"
       }
     }
   },
-
   "selector": {
     "slider_modes": {
       "options": {
@@ -322,6 +366,114 @@
         "weight": "Weight",
         "wind_direction": "Wind direction",
         "wind_speed": "Wind speed"
+      }
+    },
+    "scene_call_types": {
+      "options": {
+        "SCRIPT": "Script",
+        "METHOD": "Method",
+        "ATTRIBUTE": "Attribute",
+        "VARIABLE": "Variable"
+      }
+    },
+    "scene_argument_types": {
+      "choices": {
+        "string": "String",
+        "number": "Number",
+        "float": "Float",
+        "boolean": "Boolean",
+        "nil": "Nil",
+        "lua": "Lua expression"
+      }
+    },
+    "scene_editor": {
+      "fields": {
+        "call_type": {
+          "name": "Action call type"
+        },
+        "clu_id": {
+          "name": "CLU"
+        },
+        "script_name": {
+          "name": "Script name"
+        },
+        "object_name": {
+          "name": "Object name"
+        },
+        "method_index": {
+          "name": "Method index"
+        },
+        "attribute_index": {
+          "name": "Attribute index"
+        },
+        "variable_name": {
+          "name": "Variable name"
+        },
+        "argument": {
+          "name": "Argument"
+        },
+        "argument_type": {
+          "name": "Type"
+        },
+        "argument_value": {
+          "name": "Value"
+        },
+        "add_argument": {
+          "name": "Add argument"
+        },
+        "remove": {
+          "name": "Remove"
+        },
+        "move_up": {
+          "name": "Move up"
+        },
+        "move_down": {
+          "name": "Move down"
+        },
+        "arguments": {
+          "name": "Arguments",
+          "description": "Omit trailing arguments to use the script or method defaults."
+        },
+        "state_call_type": {
+          "name": "State source type"
+        },
+        "set_value": {
+          "name": "Value to set"
+        }
+      }
+    },
+    "on_off_entity_types": {
+      "options": {
+        "switch": "Switch",
+        "light": "Light"
+      }
+    },
+    "device_configuration": {
+      "fields": {
+        "title": {
+          "name": "Configure widget entities"
+        },
+        "read_only": {
+          "name": "Read only"
+        },
+        "saved": {
+          "name": "Configuration saved"
+        },
+        "no_configuration": {
+          "name": "These entities have no additional configuration."
+        },
+        "loading": {
+          "name": "Loading…"
+        },
+        "close": {
+          "name": "Close"
+        },
+        "next": {
+          "name": "Next"
+        },
+        "save": {
+          "name": "Save"
+        }
       }
     }
   }

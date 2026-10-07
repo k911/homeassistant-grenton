@@ -17,6 +17,9 @@ class StepResult:
     step_id: Optional[str] = None
     # When true, the flow should immediately complete without showing a form
     complete: bool = False
+    # Optional validation after selector validation, without adding validators
+    # that Home Assistant cannot serialize into the form's UI schema.
+    validator: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
 @dataclass

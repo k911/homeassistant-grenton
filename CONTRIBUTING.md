@@ -53,15 +53,15 @@ Keep each change focused and tested. Update docs and translations when behavior 
 ### 4. Development Setup
 
 Recommended environment:
-- Python 3.12+
-- Home Assistant 2025.12.4+
+- Python 3.14.2+
+- Home Assistant 2026.9.4 (pinned in `tests/requirements.txt`)
 
 Create a virtual environment and install dependencies:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r tests/requirements.txt
 ```
 
 ### 5. Testing & Quality
@@ -70,7 +70,10 @@ Run tests and checks before opening a PR:
 
 ```bash
 # Unit tests
-pytest
+python -m pytest tests
+
+# Frontend regression tests (Node.js; no additional packages)
+node --test tests/*.test.mjs
 
 # Static type checking
 mypy custom_components/homeassistant_grenton

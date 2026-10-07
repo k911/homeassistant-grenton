@@ -1,22 +1,28 @@
 from __future__ import annotations
+
+import asyncio
+import logging
 from typing import Any
 
-import logging
-import asyncio
-
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .const import DOMAIN
+from .domain.action import GrentonAction
+from .domain.api.clu import GrentonCluApi
+from .domain.api.clu_messages import GrentonCluApiActionRequest
 from .domain.clu import GrentonClu
 from .domain.encryption import GrentonEncryption
 from .domain.state_object import GrentonStateObject
-from .domain.action import GrentonAction
-from .domain.api.clu import GrentonCluApi
-from .state import GrentonState, GrentonCluState, GrentonCluStateVariableKey, GrentonCluStateAttributeKey, GrentonValue
-from .domain.api.clu_messages import GrentonCluApiActionRequest
-
-from .const import DOMAIN
+from .state import (
+    GrentonCluState,
+    GrentonCluStateAttributeKey,
+    GrentonCluStateVariableKey,
+    GrentonState,
+    GrentonValue,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,17 +127,27 @@ class GrentonCoordinator(DataUpdateCoordinator):
             except Exception as e:
                 _LOGGER.error("Unexpected error in register loop: %s", e)
     
-    async def execute_action(self, action: GrentonAction) -> None:
+    async def execute_action(
+        self, action: GrentonAction, *, raise_on_error: bool = False
+    ) -> None:
         api = self._apis.get(action.clu_id)
         if not api:
+            if raise_on_error:
+                raise HomeAssistantError(f"CLU {action.clu_id} is not loaded")
             _LOGGER.warning("[%s] No API found for CLU during action execution", action.clu_id)
             return
         
         try:
             success = await api.execute_action(action)
             if not success:
+                if raise_on_error:
+                    raise HomeAssistantError(f"CLU {action.clu_id} rejected the action")
                 _LOGGER.warning("[%s] Action execution failed for payload: %s", action.clu_id, GrentonCluApiActionRequest.from_action(action).payload)
         except Exception as e:
+            if raise_on_error:
+                raise HomeAssistantError(
+                    f"Could not execute action on CLU {action.clu_id}: {e}"
+                ) from e
             _LOGGER.error("[%s] Error executing action: %s", action.clu_id, e)
     
     async def _process_report(

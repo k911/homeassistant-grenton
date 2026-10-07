@@ -18,6 +18,7 @@ Your support helps maintain features, fix bugs, and improve documentation.
 ## ✨ Features
 
 - **🔌 Automatic Device Discovery** - Connects to Grenton Object Manager and automatically discovers all configured devices
+- **CLU Controllers and Scripts** - Discovers every CLU from the imported interface and runs its scripts with dynamic typed arguments
 - **🏠 Multiple Widget Types** - Support for lights, switches, dimmers, sensors, covers, and more
 - **⚙️ Per-Entity Configuration** - Customize device class and unit of measurement for each supported entity through the UI
 - **🔄 Real-time Updates** - Automatic state synchronization with Grenton system
@@ -30,8 +31,8 @@ Your support helps maintain features, fix bugs, and improve documentation.
 |-----------------------|-------------|
 | **VALUE_V2** | Single numeric value exposed as `sensor` with configurable device class/unit. |
 | **VALUE_DOUBLE** | Dual numeric values exposed as two `sensor` entities (A/B). |
-| **ON_OFF** | Single relay exposed as `switch`. |
-| **ON_OFF_DOUBLE** | Dual relays exposed as two `switch` entities. |
+| **ON_OFF** | Single relay exposed as a configurable `switch` or on/off `light` (default: switch). |
+| **ON_OFF_DOUBLE** | Dual relays with each channel configurable as `switch` or on/off `light`. |
 | **DIMMER_V2** | Dimmable light exposed as `light` with brightness (0-100%). |
 | **LED** | LED or RGB/RGBW light exposed as `light` with brightness and color where available. |
 | **CONTACT_SENSOR** | Contact/door/window sensor exposed as `binary_sensor`. |
@@ -41,6 +42,7 @@ Your support helps maintain features, fix bugs, and improve documentation.
 | **ROLLER_SHUTTER** | Legacy roller shutter exposed as `sensor` (state enum) plus a `button` action entity. |
 | **ROLLER_SHUTTER_V3** | Roller shutter V3 exposed as a single `cover` entity (position; lamel/tilt when available). |
 | **CAMERA** | Camera stream exposed as `camera`. |
+| **SCENE** | Scene buttons with configurable script, method, attribute, or variable actions and arguments. |
 
 ## 🚀 Installation
 
@@ -85,8 +87,151 @@ After initial setup, you can customize individual entities:
    - **Sensors**: Choose device class and unit of measurement
    - **Sliders (Numbers)**: Set display mode, device class, and unit
    - **Binary Sensors**: Select appropriate device class
+   - **On/Off controls**: Choose whether the entity is a switch or a light
+   - **Scenes**: Review or change the action call type, CLU, script/object name, index, and arguments/value
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
+
+You can also open a Grenton device under **Settings → Devices & Services → Devices**
+and click **Visit device**. This opens a configuration popup listing the entities
+in that widget/device, with entity selection limited to that device. Select an
+editable entity to review and change its settings through the same forms above.
+Entities without additional settings, including CLU controller sensors, are
+listed as read only. Closing the popup before saving leaves the settings unchanged.
+
+### On/Off Controls as Lights
+
+Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
+forms, prefilled with the current imported or saved settings:
+
+1. **State**: choose Switch or Light and configure the state source (CLU and
+   object/attribute index, or CLU and variable name).
+2. **Turn on**: configure the action's call type, CLU and target.
+3. **Turn off**: configure its action independently and save all settings.
+
+Both actions support Method, Script, Attribute and Variable. Method/script calls
+have typed argument rows that can be added, removed or reordered; omit trailing
+arguments to use defaults. Attribute/variable actions have an editable value to
+set. State sources support Attribute and Variable. The entity's attributes expose
+the effective state source and both actions, including arguments and call payloads.
+
+Existing controls default to Switch. ON_OFF_DOUBLE channels can
+be configured independently.
+
+Saving reloads the integration and creates the selected entity type, preserving
+the Grenton state subscription, ON/OFF actions, and device. Light mode provides
+on/off control without brightness or color controls. The choice persists across
+restarts and interface reconfiguration.
+
+Changing the type changes the entity domain (`switch.…` ↔ `light.…`) and removes
+the previous entity registration. Update dashboards and automations to reference
+the new entity ID. You can change the choice again through the same dialog.
+
+### CLU Controllers and Scripts
+
+Each CLU in the imported configuration is automatically added as a Home
+Assistant device, including CLUs without widgets. Its **Controller**
+sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
+`port`. Each CLU has its own entity, so installations with multiple CLUs can
+select the controller on which to run a script. Refresh the interface through
+**Reconfigure** when CLUs are added or removed.
+
+Use **Developer Tools → Actions → Grenton: Run script** (`grenton.run_script`)
+to select a CLU controller entity or device, enter its script name, and add
+optional typed argument rows. This calls the script directly on the CLU;
+no scene widget or saved button is required. Enter the script name as defined
+on that CLU.
+
+For example, replace the entity ID below with your CLU's Controller sensor:
+
+```yaml
+action: grenton.run_script
+target:
+  entity_id: sensor.main_clu_controller
+data:
+  script: Evening
+  arguments:
+    - type: string
+      value: "living_room"
+    - type: float
+      value: 0.75
+    - type: boolean
+      value: true
+```
+
+This sends `Evening("living_room", 0.75, true)` to the selected CLU. Arguments
+are positional and support `string`, `number`, `float`, `boolean`, `nil`, and
+`lua`. Strings are quoted and escaped automatically. Omit trailing arguments
+to use defaults implemented by the Grenton script. Omit `arguments`, or pass
+`arguments: []`, to call with no arguments.
+
+Automation and Home Assistant script templates can supply both the script name
+and argument values at run time:
+
+```yaml
+action: grenton.run_script
+target:
+  entity_id: sensor.main_clu_controller
+data:
+  script: SetOutput
+  arguments:
+    - type: number
+      value: "{{ states('input_number.output_value') | int }}"
+```
+
+Scene buttons run their saved action when pressed.
+
+The upstream **Grenton: Run scene** action (`grenton.run_scene`) remains available
+for existing automations targeting a SCENE button. Its optional `parameter` is
+raw Lua passed into the script call for that invocation only:
+
+```yaml
+action: grenton.run_scene
+target:
+  entity_id: button.evening
+data:
+  parameter: '"lightOffice", -1'
+```
+
+Omit `parameter` to use the scene's saved arguments/value. Set `parameter: ""`
+to call the script without arguments. Runtime overrides do not change the scene
+configuration. Use `grenton.run_script` to call a named script directly on a CLU
+with typed arguments.
+
+### Scene Actions and Arguments
+
+Select a scene button in **Grenton → Configure** to view its current settings.
+Changing the call type updates the fields immediately in the same popup:
+
+- **Script**: CLU, script name, and optional arguments.
+- **Method**: CLU, object name, method index, and optional arguments.
+- **Attribute**: CLU, object name, and attribute index.
+- **Variable**: CLU and variable name (text).
+
+Saving applies changes immediately and preserves them across reloads and
+interface refreshes. These settings override the scene in Home Assistant only.
+
+For script and method calls, use **Add argument** to add individual input rows.
+Each row has a type picker: **String**, **Number**, **Float**, **Boolean**, **Nil**, or
+**Lua expression**. String arguments are quoted and escaped automatically;
+numbers and booleans keep their types. Edit a row directly, remove it, or use
+the up/down controls to change the order. Omit trailing arguments to let the
+script/method use its defaults; remove every row to call without arguments.
+Imported script and method arguments appear as separate rows when they can be
+safely split, with types inferred from Lua literals. For example, `800,0` becomes
+two Number arguments, while `"800,0"` remains one String argument. Complex Lua
+is preserved as an expression. Attribute/variable calls retain their existing
+value while their target is configured.
+
+Open the scene button's entity details and expand **Attributes** to see
+`call_type`, `clu_id`, `object_name`, `event`, `index` (for methods/attributes),
+`variable_name` (for variables), `value`,
+`arguments` (including each argument's type and value for scripts/methods),
+and `call`, the exact configured call payload. These are also available in
+**Developer Tools → States**.
+
+After updating the integration, restart Home Assistant and refresh the browser
+to load the scene editor.
 
 ## 🎨 Device Classes & Units
 

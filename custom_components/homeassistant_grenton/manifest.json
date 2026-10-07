@@ -9,5 +9,6 @@
   "issue_tracker": "https://github.com/sszczep/homeassistant-grenton/issues",
   "requirements": ["pydantic>=2.12.2"],
   "dependencies": [],
+  "after_dependencies": ["frontend"],
   "config_flow": true
 }
