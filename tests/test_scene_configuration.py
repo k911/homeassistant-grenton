@@ -424,11 +424,10 @@ def test_button_press_uses_saved_arguments_without_changing_configuration(
     asyncio.run(entity.async_press())
     assert GrentonCluApiActionRequest.from_action(
         coordinator.execute_action.await_args.args[0]
-    ).payload == (
-        "Evening(80)" if call_type == "SCRIPT" else "Evening:execute(7, 80)"
-    )
+    ).payload == ("Evening(80)" if call_type == "SCRIPT" else "Evening:execute(7, 80)")
     assert entity.extra_state_attributes == initial
     assert coordinator.config_entry.options == result["data"]
+
 
 @pytest.mark.parametrize("action_cls", [GrentonActionAttribute, GrentonActionVariable])
 def test_set_value_calls_use_value_and_ignore_stale_argument_rows(
@@ -668,4 +667,44 @@ def test_mapper_keeps_existing_script_preference(coordinator):
         .entities[0]
         .extra_state_attributes["call"]
         == "Scene(1)"
+    )
+
+
+@pytest.mark.parametrize(
+    "parameter, payload",
+    [
+        (None, "Evening:execute(7, 1)"),
+        ("0", "Evening:execute(7, 0)"),
+        ("", "Evening:execute(7)"),
+    ],
+)
+def test_scene_runtime_parameter_overrides_typed_method_arguments_only_for_one_call(
+    coordinator, parameter, payload
+):
+    entity = make_scene(coordinator, GrentonActionMethod)
+    asyncio.run(
+        entity.apply_configuration(
+            {
+                "call_type": "METHOD",
+                "clu_id": "clu1",
+                "object_name": "Evening",
+                "index": "7",
+                "arguments": [{"type": "number", "value": 1}],
+            }
+        )
+    )
+    asyncio.run(entity.run_with_parameter(parameter))
+    assert (
+        GrentonCluApiActionRequest.from_action(
+            coordinator.execute_action.await_args.args[0]
+        ).payload
+        == payload
+    )
+    assert entity._config["arguments"] == [{"type": "number", "value": 1}]
+    asyncio.run(entity.async_press())
+    assert (
+        GrentonCluApiActionRequest.from_action(
+            coordinator.execute_action.await_args.args[0]
+        ).payload
+        == "Evening:execute(7, 1)"
     )

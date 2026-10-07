@@ -1,4 +1,4 @@
-"""Integration actions targeting discovered CLU controllers."""
+"""Integration actions targeting CLU controllers and scene buttons."""
 
 import asyncio
 
@@ -6,14 +6,20 @@ import voluptuous as vol
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import service
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
 from .domain.entities.clu import GrentonCluEntity
+from .domain.entities.scene_button import GrentonEntitySceneButton
 from .domain.entities.scene_configuration import scene_arguments_selector
 
 SERVICE_RUN_SCRIPT = "run_script"
+SERVICE_RUN_SCENE = "run_scene"
+SERVICE_RUN_SCENE_SCHEMA = {
+    vol.Optional("parameter"): cv.string,
+}
 SERVICE_RUN_SCRIPT_SCHEMA = {
     vol.Required("script"): vol.All(str, str.strip, vol.Length(min=1)),
     vol.Optional("arguments", default=list): scene_arguments_selector(),
@@ -31,13 +37,34 @@ def async_setup_services(hass: HomeAssistant) -> None:
         schema=SERVICE_RUN_SCRIPT_SCHEMA,
         func=_async_run_script,
     )
+    service.async_register_batched_platform_entity_service(
+        hass,
+        DOMAIN,
+        SERVICE_RUN_SCENE,
+        entity_domain=Platform.BUTTON,
+        schema=SERVICE_RUN_SCENE_SCHEMA,
+        func=_async_run_scene,
+    )
+
+
+async def _async_run_scene(entities: list[Entity], call: ServiceCall) -> None:
+    """Run selected SCENE buttons with the upstream runtime parameter."""
+    await asyncio.gather(
+        *(
+            entity.run_with_parameter(call.data.get("parameter"))
+            for entity in entities
+            if isinstance(entity, GrentonEntitySceneButton)
+        )
+    )
 
 
 async def _async_run_script(entities: list[Entity], call: ServiceCall) -> None:
     """Select controllers, preserving HA target resolution and permissions."""
     # Device/area targets can include other Grenton sensors. Only controllers
     # can execute scripts; selecting an ordinary sensor alone is an error.
-    controllers = [entity for entity in entities if isinstance(entity, GrentonCluEntity)]
+    controllers = [
+        entity for entity in entities if isinstance(entity, GrentonCluEntity)
+    ]
     if not controllers:
         raise ServiceValidationError("Select a Grenton CLU controller entity or device")
     await asyncio.gather(
