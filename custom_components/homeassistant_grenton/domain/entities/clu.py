@@ -14,6 +14,17 @@ from ..enums import GrentonActionEventType
 from ..scene_arguments import argument_expressions
 
 
+def clu_device_info(clu: GrentonClu) -> DeviceInfo:
+    """Share the controller's device identity with its built-in entities."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"clu_{clu.id}")},
+        manufacturer="Grenton",
+        model="CLU",
+        name=clu.name,
+        serial_number=clu.serial_number,
+    )
+
+
 class GrentonCluEntity(CoordinatorEntity[GrentonCoordinator], SensorEntity):
     """Identify the CLU independently of any mobile-interface widgets."""
 
@@ -26,13 +37,7 @@ class GrentonCluEntity(CoordinatorEntity[GrentonCoordinator], SensorEntity):
         self.clu = clu
         self._attr_unique_id = f"clu_{clu.id}"
         self._attr_native_value = clu.serial_number
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._attr_unique_id)},
-            manufacturer="Grenton",
-            model="CLU",
-            name=clu.name,
-            serial_number=clu.serial_number,
-        )
+        self._attr_device_info = clu_device_info(clu)
         self._attr_extra_state_attributes = {
             "clu_id": clu.id,
             "ip": clu.ip,

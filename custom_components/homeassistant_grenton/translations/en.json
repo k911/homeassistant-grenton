@@ -206,6 +206,22 @@
       },
       "clu_controller": {
         "name": "Controller"
+      },
+      "clu_uptime": {
+        "name": "Uptime"
+      },
+      "clu_firmware_version": {
+        "name": "Firmware version"
+      }
+    },
+    "binary_sensor": {
+      "clu_cloud_connection": {
+        "name": "Cloud connection"
+      }
+    },
+    "switch": {
+      "clu_use_cloud": {
+        "name": "Use cloud"
       }
     }
   },
@@ -473,6 +489,9 @@
         },
         "save": {
           "name": "Save"
+        },
+        "configuration_control": {
+          "name": "Configuration control"
         }
       }
     }

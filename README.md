@@ -136,6 +136,21 @@ sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
 select the controller on which to run a script. Refresh the interface through
 **Reconfigure** when CLUs are added or removed.
 
+Each CLU also exposes these built-in variables automatically:
+
+| Entity | Domain | Purpose |
+| --- | --- | --- |
+| Uptime | `sensor` | Read-only running time in seconds (`duration`). |
+| Cloud connection | `binary_sensor` | Read-only Connected / Disconnected status (`connectivity`). |
+| Use cloud | `switch` | Enable or disable the CLU cloud connector. |
+| Firmware version | `sensor` | Read-only software version, also shown in the device's firmware metadata. |
+
+Uptime, cloud connection, and firmware version appear under **Diagnostic**;
+Use cloud appears under **Configuration**. They share the existing CLU device
+and receive values through its normal variable subscriptions. Use cloud sends
+a boolean setting and reads the CLU state back. Values not yet reported remain
+unknown. Bus voltage is not exposed, because it is not available on every CLU type.
+
 Use **Developer Tools → Actions → Grenton: Run script** (`grenton.run_script`)
 to select a CLU controller entity or device, enter its script name, and add
 optional typed argument rows. This calls the script directly on the CLU;

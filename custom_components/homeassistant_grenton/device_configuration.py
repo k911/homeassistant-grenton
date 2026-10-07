@@ -5,6 +5,7 @@ from urllib.parse import quote
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -85,8 +86,17 @@ async def async_open_device_configuration(
             "entity_id": entity.entity_id,
             "name": entity.name,
             "configurable": isinstance(entity, ConfigurableEntity),
+            "configuration_control": entity.entity_category == EntityCategory.CONFIG,
         }
-        for entity in (widget.entities if widget else [controller])
+        for entity in (
+            widget.entities
+            if widget
+            else [
+                entity
+                for entity in runtime.clu_entities
+                if entity.clu.id == controller.clu.id
+            ]
+        )
         if entity.entity_id
     ]
     result: dict[str, Any] = {
