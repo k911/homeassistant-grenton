@@ -203,7 +203,7 @@ class GrentonCluApi:
         if wire is None:
             return [None] * len(endpoint.keys)
         try:
-            return GrentonCluApiClientRegisterResponse(wire, endpoint.keys).values
+            return GrentonCluApiClientRegisterResponse(wire, endpoint.keys, self.clu).values
         except ValueError as e:
             _LOGGER.error("[%s] Failed to parse register response: %s", self.clu.id, e)
             return [None] * len(endpoint.keys)
@@ -291,7 +291,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
                     if self.subscription_callback:
                         try:
                             notification = GrentonCluApiClientReportNotification(
-                                wire_message, self.subscription_keys
+                                wire_message, self.subscription_keys, self.api.clu
                             )
                         except ValueError as e:
                             _LOGGER.error("[%s] Failed to parse client report: %s",

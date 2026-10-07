@@ -19,8 +19,8 @@ class GrentonClu:
 
     @property
     def object_name(self) -> str:
-        """The Lua object for the CLU itself, e.g. CLU521000922."""
-        return f"CLU{self.serial_number}"
+        """The imported Lua object ID, which can differ from CLU + serial."""
+        return self.id
 
     @staticmethod
     def from_dto(dto: GrentonCluDto) -> "GrentonClu":
