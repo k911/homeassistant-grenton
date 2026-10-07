@@ -102,9 +102,7 @@ async def add_controllers(hass, entry, clus):
     platform.config_entry = entry
     # Use the integration's actual English names without loading unrelated HA
     # components. Entity/device registration and service routing remain real.
-    translations = {
-        "component.grenton.entity.sensor.clu_controller.name": "Controller"
-    }
+    translations = {"component.grenton.entity.sensor.clu_controller.name": "Controller"}
     platform.platform_data.platform_translations = translations
     platform.platform_data.object_id_platform_translations = translations
     platform.platform_data.default_language_platform_translations = translations
@@ -121,7 +119,7 @@ def test_discovered_clu_devices_and_real_entity_device_target_routing(tmp_path):
         hass = await make_hass(tmp_path, [entry1, entry2])
         assert await async_setup(hass, {})
         assert hass.services.has_service("grenton", "run_script")
-        assert not hass.services.has_service("grenton", "run_scene")
+        assert hass.services.has_service("grenton", "run_scene")
         coordinator1, controllers1, platform1 = await add_controllers(
             hass, entry1, [make_clu("clu1"), make_clu("clu2", "Upstairs CLU")]
         )
@@ -348,7 +346,7 @@ def test_invalid_script_calls_are_rejected(data):
 def test_script_action_editor_and_translations(language):
     component = Path(__file__).parents[1] / "custom_components/homeassistant_grenton"
     services = yaml.safe_load((component / "services.yaml").read_text())
-    assert set(services) == {"run_script"}
+    assert set(services) == {"run_script", "run_scene"}
     metadata = services["run_script"]
     selector.TargetSelector(metadata["target"])
     arguments_selector = selector.selector(metadata["fields"]["arguments"]["selector"])
@@ -362,6 +360,200 @@ def test_script_action_editor_and_translations(language):
         {"type": "float", "value": 0.75}
     ]
     translations = json.loads((component / f"translations/{language}.json").read_text())
-    assert set(translations["services"]) == {"run_script"}
-    assert set(translations["services"]["run_script"]["fields"]) == {"script", "arguments"}
+    assert set(translations["services"]) == {"run_script", "run_scene"}
+    assert set(translations["services"]["run_script"]["fields"]) == {
+        "script",
+        "arguments",
+    }
     assert translations["entity"]["sensor"]["clu_controller"]["name"]
+
+
+def test_upstream_run_scene_routes_real_ha_targets_without_changing_defaults(tmp_path):
+    from copy import deepcopy
+
+    from homeassistant.components.button import ButtonEntity
+
+    from custom_components.homeassistant_grenton.domain.action import (
+        GrentonActionScript,
+    )
+    from custom_components.homeassistant_grenton.domain.entities.scene_button import (
+        GrentonEntitySceneButton,
+    )
+    from custom_components.homeassistant_grenton.domain.enums import (
+        GrentonActionEventType,
+    )
+
+    async def run():
+        entry1, entry2 = make_entry(), make_entry("interface2")
+        hass = await make_hass(tmp_path, [entry1, entry2])
+        await async_setup(hass, {})
+
+        async def add_scene(entry, clu_id):
+            coordinator = make_coordinator(entry, [make_clu(clu_id)])
+            entity = GrentonEntitySceneButton(
+                coordinator,
+                f"scene_{clu_id}",
+                f"Evening {clu_id}",
+                GrentonActionScript(
+                    clu_id=clu_id,
+                    object_name="Evening",
+                    event=GrentonActionEventType.CLICK,
+                    value='42, "default"',
+                ),
+                device_info={"identifiers": {("grenton", f"scene_{clu_id}")}},
+            )
+            platform = EntityPlatform(
+                hass=hass,
+                logger=logging.getLogger(__name__),
+                domain="button",
+                platform_name="grenton",
+                platform=None,
+                scan_interval=timedelta(seconds=30),
+                entity_namespace=None,
+            )
+            platform.config_entry = entry
+            await platform.async_add_entities([entity])
+            return coordinator, entity, platform
+
+        coordinator1, scene1, platform1 = await add_scene(entry1, "clu1")
+        coordinator2, scene2, platform2 = await add_scene(entry2, "clu2")
+        saved = deepcopy(scene1._config)
+        for data, expected in (
+            ({}, 'Evening(42, "default")'),
+            ({"parameter": '"abc"'}, 'Evening("abc")'),
+            ({"parameter": "42"}, "Evening(42)"),
+            (
+                {"parameter": '"a,b", -1, OTHER:get(0)'},
+                'Evening("a,b", -1, OTHER:get(0))',
+            ),
+            ({"parameter": ""}, "Evening()"),
+        ):
+            coordinator1.execute_action.reset_mock()
+            await hass.services.async_call(
+                "grenton",
+                "run_scene",
+                data,
+                target={"entity_id": scene1.entity_id},
+                blocking=True,
+            )
+            coordinator1.execute_action.assert_awaited_once()
+            action = coordinator1.execute_action.await_args.args[0]
+            assert GrentonCluApiActionRequest.from_action(action).payload == expected
+            assert action.clu_id == "clu1"
+            assert scene1._config == saved
+            assert entry1.options == {}
+            coordinator2.execute_action.assert_not_awaited()
+        # A later button press still uses the saved scene arguments.
+        await scene1.async_press()
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                coordinator1.execute_action.await_args.args[0]
+            ).payload
+            == 'Evening(42, "default")'
+        )
+        # Configured script targets and typed arguments also remain the default.
+        await scene1.apply_configuration(
+            {
+                "call_type": "SCRIPT",
+                "clu_id": "clu1",
+                "object_name": "Configured",
+                "arguments": [
+                    {"type": "number", "value": -1},
+                    {"type": "string", "value": "office"},
+                ],
+            }
+        )
+        saved = deepcopy(scene1._config)
+        await hass.services.async_call(
+            "grenton",
+            "run_scene",
+            {},
+            target={"entity_id": scene1.entity_id},
+            blocking=True,
+        )
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                coordinator1.execute_action.await_args.args[0]
+            ).payload
+            == 'Configured(-1, "office")'
+        )
+        await hass.services.async_call(
+            "grenton",
+            "run_scene",
+            {"parameter": ""},
+            target={"device_id": scene1.registry_entry.device_id},
+            blocking=True,
+        )
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                coordinator1.execute_action.await_args.args[0]
+            ).payload
+            == "Configured()"
+        )
+        assert scene1._config == saved
+        await hass.services.async_call(
+            "grenton",
+            "run_scene",
+            {"parameter": "7"},
+            target={"entity_id": [scene1.entity_id, scene2.entity_id]},
+            blocking=True,
+        )
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                coordinator1.execute_action.await_args.args[0]
+            ).payload
+            == "Configured(7)"
+        )
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                coordinator2.execute_action.await_args.args[0]
+            ).payload
+            == "Evening(7)"
+        )
+        # Ordinary Grenton buttons are unaffected by run_scene.
+        ordinary = ButtonEntity()
+        ordinary.entity_id = "button.ordinary"
+        ordinary.async_press = AsyncMock()
+        await platform1.async_add_entities([ordinary])
+        coordinator1.execute_action.reset_mock()
+        await hass.services.async_call(
+            "grenton",
+            "run_scene",
+            {"parameter": "7"},
+            target={"entity_id": [scene1.entity_id, ordinary.entity_id]},
+            blocking=True,
+        )
+        ordinary.async_press.assert_not_awaited()
+        coordinator1.execute_action.assert_awaited_once()
+        await platform2.async_reset()
+        coordinator2.execute_action.reset_mock()
+        await hass.services.async_call(
+            "grenton",
+            "run_scene",
+            {},
+            target={"entity_id": scene2.entity_id},
+            blocking=True,
+        )
+        coordinator2.execute_action.assert_not_awaited()
+        await platform1.async_reset()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("language", ["en", "pl"])
+def test_upstream_scene_action_metadata_and_translations(language):
+    component = Path(__file__).parents[1] / "custom_components/homeassistant_grenton"
+    metadata = yaml.safe_load((component / "services.yaml").read_text())["run_scene"]
+    selector.TargetSelector(metadata["target"])
+    assert metadata["target"]["entity"]["domain"] == "button"
+    assert set(metadata["fields"]) == {"parameter"}
+    assert metadata["fields"]["parameter"]["required"] is False
+    assert (
+        selector.selector(metadata["fields"]["parameter"]["selector"])(
+            metadata["fields"]["parameter"]["example"]
+        )
+        == '"123"'
+    )
+    translations = json.loads((component / f"translations/{language}.json").read_text())
+    assert translations["services"]["run_scene"]["name"]
+    assert set(translations["services"]["run_scene"]["fields"]) == {"parameter"}

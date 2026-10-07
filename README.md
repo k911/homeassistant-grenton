@@ -174,6 +174,23 @@ data:
 
 Scene buttons run their saved action when pressed.
 
+The upstream **Grenton: Run scene** action (`grenton.run_scene`) remains available
+for existing automations targeting a SCENE button. Its optional `parameter` is
+raw Lua passed into the script call for that invocation only:
+
+```yaml
+action: grenton.run_scene
+target:
+  entity_id: button.evening
+data:
+  parameter: '"lightOffice", -1'
+```
+
+Omit `parameter` to use the scene's saved arguments/value. Set `parameter: ""`
+to call the script without arguments. Runtime overrides do not change the scene
+configuration. Use `grenton.run_script` to call a named script directly on a CLU
+with typed arguments.
+
 ### Scene Actions and Arguments
 
 Select a scene button in **Grenton → Configure** to view its current settings.

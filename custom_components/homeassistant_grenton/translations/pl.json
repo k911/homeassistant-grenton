@@ -123,6 +123,16 @@
     }
   },
   "services": {
+    "run_scene": {
+      "name": "Uruchom scenę",
+      "description": "Uruchamia skrypt sceny Grenton, opcjonalnie przekazując parametr.",
+      "fields": {
+        "parameter": {
+          "name": "Parametr",
+          "description": "Opcjonalna wartość przekazywana dosłownie do wywołania skryptu (składnia Lua: \"abc\" dla tekstu, 42 dla liczby). Pomiń to pole, aby użyć zapisanych argumentów/wartości sceny. Pusty tekst wywołuje skrypt bez argumentów."
+        }
+      }
+    },
     "run_script": {
       "name": "Uruchom skrypt",
       "description": "Uruchom skrypt Grenton bezpośrednio na wykrytym CLU.",

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -95,3 +96,13 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
     async def async_press(self, **kwargs: Any) -> None:
         """Run the scene with its configured arguments/value."""
         await self.coordinator.execute_action(self.script_action)
+
+    async def run_with_parameter(self, parameter: str | None = None) -> None:
+        """Apply an upstream-compatible, per-call raw Lua parameter override."""
+        action = self.script_action
+        if parameter is not None:
+            action = replace(action, value=parameter)
+            if isinstance(action, GrentonActionMethod):
+                # Typed method arguments otherwise take precedence over value.
+                action = replace(action, arguments=(parameter,) if parameter else ())
+        await self.coordinator.execute_action(action)

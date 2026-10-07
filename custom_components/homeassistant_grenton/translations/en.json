@@ -123,6 +123,16 @@
     }
   },
   "services": {
+    "run_scene": {
+      "name": "Run scene",
+      "description": "Run a Grenton SCENE script, optionally passing a parameter.",
+      "fields": {
+        "parameter": {
+          "name": "Parameter",
+          "description": "Optional value passed verbatim into the script call (Lua syntax: \"abc\" for a string, 42 for a number). Omit this field to use the scene's saved arguments/value. An empty string calls without arguments."
+        }
+      }
+    },
     "run_script": {
       "name": "Run script",
       "description": "Run a named Grenton script directly on a discovered CLU.",
