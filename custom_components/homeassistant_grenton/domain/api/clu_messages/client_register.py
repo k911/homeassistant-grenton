@@ -6,7 +6,8 @@ from ....state import (
     GrentonValue,
     cast_string_to_grenton_value,
 )
-from ...device_types import attribute_index, clu_device_type
+from ...clu import GrentonClu
+from ...device_types import attribute_index
 from ...scene_arguments import quote_lua_string
 from .base import GrentonCluApiNotification, GrentonCluApiRequest, GrentonCluApiResponse
 
@@ -14,6 +15,7 @@ from .base import GrentonCluApiNotification, GrentonCluApiRequest, GrentonCluApi
 def _parse_client_report(
     payload: str,
     keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey] | None = None,
+    clu: GrentonClu | None = None,
 ) -> tuple[int | None, list[GrentonValue]]:
     """Parse a clientReport payload into (session_id, values).
 
@@ -47,9 +49,9 @@ def _parse_client_report(
         key = keys[position] if keys is not None and position < len(keys) else None
         if (
             isinstance(key, GrentonCluStateAttributeKey)
-            and key.object_name.startswith("CLU")
-            and key.name
-            == attribute_index(clu_device_type(key.object_name[3:]), "FirmwareVersion")
+            and clu is not None
+            and key.object_name == clu.object_name
+            and key.name == attribute_index(clu.device_type, "FirmwareVersion")
         ):
             # Versions are identifiers, even when they look like numbers (1.20).
             values.append(None if value == "nil" else value)
@@ -98,10 +100,11 @@ class GrentonCluApiClientRegisterResponse(GrentonCluApiResponse):
     def __init__(
         self, wire_message: str,
         keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey] | None = None,
+        clu: GrentonClu | None = None,
     ):
         """Initialize from wire format message and parse values."""
         super().__init__(wire_message)
-        self.session_id, self.values = _parse_client_report(self.payload, keys)
+        self.session_id, self.values = _parse_client_report(self.payload, keys, clu)
 
 
 class GrentonCluApiClientReportNotification(GrentonCluApiNotification):
@@ -113,7 +116,8 @@ class GrentonCluApiClientReportNotification(GrentonCluApiNotification):
     def __init__(
         self, wire_message: str,
         keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey] | None = None,
+        clu: GrentonClu | None = None,
     ):
         """Initialize from wire format message and parse values."""
         super().__init__(wire_message)
-        self.session_id, self.values = _parse_client_report(self.payload, keys)
+        self.session_id, self.values = _parse_client_report(self.payload, keys, clu)

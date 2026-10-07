@@ -39,6 +39,7 @@ from custom_components.homeassistant_grenton.domain.api.clu_messages.client_regi
     GrentonCluApiClientRegisterRequest,
     GrentonCluApiClientRegisterResponse,
 )
+from custom_components.homeassistant_grenton.domain.clu import GrentonClu
 from custom_components.homeassistant_grenton.domain.device_types import (
     CLU_GATE_HTTP,
     CLU_SERIAL_PREFIXES,
@@ -54,6 +55,7 @@ from custom_components.homeassistant_grenton.domain.entities.clu_state import (
     GrentonCluUseCloud,
     clu_entities,
 )
+from custom_components.homeassistant_grenton.dto.clu import GrentonCluDto
 from custom_components.homeassistant_grenton.integration_config import RuntimeData
 from custom_components.homeassistant_grenton.sensor import (
     async_setup_entry as setup_sensors,
@@ -141,10 +143,8 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
                 values.append(24.5)
             assert [key.name for key in keys] == indexes
             assert all(isinstance(key, GrentonCluStateAttributeKey) for key in keys)
-            assert all(key.object_name == f"CLU{clu.serial_number}" for key in keys)
-            expected = ",".join(
-                f"{{CLU{clu.serial_number},{index}}}" for index in indexes
-            )
+            assert all(key.object_name == clu.id for key in keys)
+            expected = ",".join(f"{{{clu.id},{index}}}" for index in indexes)
             assert GrentonCluApiClientRegisterRequest(keys, 0).payload == (
                 f"SYSTEM:clientRegister(0,0,1,{{{expected}}})"
             )
@@ -336,7 +336,7 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
         assert action.clu_id == "clu2"
         assert (
             GrentonCluApiActionRequest.from_action(action).payload
-            == f"CLU{clu.serial_number}:set(18,true)"
+            == f"{clu.id}:set(18,true)"
         )
         api.register_component_states.assert_awaited_once_with(keys)
         assert entity.is_on is False, (
@@ -351,7 +351,7 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
             GrentonCluApiActionRequest.from_action(
                 api.execute_action.await_args.args[0]
             ).payload
-            == f"CLU{clu.serial_number}:set(18,false)"
+            == f"{clu.id}:set(18,false)"
         )
         assert entity.is_on is False
         api.execute_action.return_value = False
@@ -421,7 +421,7 @@ def test_serial_detection_and_unknown_type_preserves_controller(
         coord = coordinator(hass, entry, [clu])
         entities = clu_entities(coord, clu)
         assert clu.device_type == expected
-        assert clu.object_name == f"CLU{serial}"
+        assert clu.object_name == clu.id
         assert entities[0].unique_id == "clu_clu1"
         assert entities[0].device_info["model"] == (expected or "CLU")
         if expected is None:
@@ -466,13 +466,14 @@ def test_bus_voltage_is_a_finite_measurement(tmp_path, value, expected):
 
 
 def test_firmware_decoding_does_not_change_other_objects_or_variables():
+    clu = make_clu("clu1")
     keys = [
         GrentonCluStateAttributeKey("DOUT1", "17"),
         GrentonCluStateVariableKey("FirmwareVersion"),
-        GrentonCluStateAttributeKey("CLU999123", "17"),
+        GrentonCluStateAttributeKey("CLU221003443", "17"),
     ]
     assert GrentonCluApiClientRegisterResponse(
-        'resp:192.0.2.1:abcd:clientReport:0:{"1.20","00123","1.20"}', keys
+        'resp:192.0.2.1:abcd:clientReport:0:{"1.20","00123","1.20"}', keys, clu
     ).values == [1.2, 123, 1.2]
 
 
@@ -496,10 +497,75 @@ def test_new_type_uses_its_own_indexes_and_skips_unsupported_entities(
         keys = coord.state.clus[clu.id].get_subscription_order()
         assert [key.name for key in keys] == ["42", "31"]
         values = GrentonCluApiClientRegisterResponse(
-            'resp:192.0.2.1:abcd:clientReport:0:{"1.20",24.5}', keys
+            'resp:192.0.2.1:abcd:clientReport:0:{"1.20",24.5}', keys, clu
         ).values
         await coord._process_report(clu.id, keys, values)
         assert entities[1].native_value == "1.20"
         assert entities[2].native_value == 24.5
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "object_id,serial,device_type,indexes",
+    [
+        ("CLU828599", "221003443", CLU_Z_WAVE, ["0", "19", "18", "17", "27"]),
+        ("CLU521000922", "521000922", CLU_GATE_HTTP, ["0", "19", "18", "17"]),
+    ],
+)
+def test_imported_clu_id_addresses_attributes_independently_of_serial(
+    tmp_path, object_id, serial, device_type, indexes
+):
+    async def run():
+        entry = make_entry()
+        hass = await make_hass(tmp_path, [entry])
+        clu = GrentonClu.from_dto(
+            GrentonCluDto(
+                id=object_id,
+                serialNumber=serial,
+                name="Renamed CLU",
+                ip="192.0.2.1",
+                port=1234,
+                connectionType="LOCAL_ONLY",
+            )
+        )
+        coord = coordinator(hass, entry, [clu])
+        entities = clu_entities(coord, clu)
+        assert clu.device_type == device_type
+        assert clu.object_name == object_id
+        keys = coord.state.clus[clu.id].get_subscription_order()
+        assert keys == [
+            GrentonCluStateAttributeKey(object_id, index) for index in indexes
+        ]
+        expected = ",".join(f"{{{object_id},{index}}}" for index in indexes)
+        assert GrentonCluApiClientRegisterRequest(keys, 0).payload == (
+            f"SYSTEM:clientRegister(0,0,1,{{{expected}}})"
+        )
+        report = '123,true,false,"1.20"'
+        if device_type == CLU_Z_WAVE:
+            report += ",24.5"
+        values = GrentonCluApiClientRegisterResponse(
+            f"resp:192.0.2.1:abcd:clientReport:0:{{{report}}}", keys, clu
+        ).values
+        await coord._process_report(clu.id, keys, values)
+        firmware = next(
+            entity
+            for entity in entities
+            if isinstance(entity, GrentonCluFirmwareVersion)
+        )
+        assert firmware.native_value == "1.20"
+        coord.execute_action = AsyncMock()
+        coord.async_refresh_clu_state = AsyncMock()
+        use_cloud = next(
+            entity for entity in entities if isinstance(entity, GrentonCluUseCloud)
+        )
+        await use_cloud.async_turn_on()
+        action = coord.execute_action.await_args.args[0]
+        assert action.clu_id == object_id
+        assert (
+            GrentonCluApiActionRequest.from_action(action).payload
+            == f"{object_id}:set(18,true)"
+        )
+        coord.async_refresh_clu_state.assert_awaited_once_with(object_id)
 
     asyncio.run(run())

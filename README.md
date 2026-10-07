@@ -138,8 +138,10 @@ select the controller on which to run a script. Refresh the interface through
 
 The CLU type is detected from its serial number: `221…` is `CLU_Z_WAVE`,
 and `521…` is `CLU_GATE_HTTP`. The detected type is shown as the device model.
-Built-in values use indexed attributes on the CLU object (`CLU` followed by
-its serial number, for example `CLU521000922.0` for Uptime).
+Built-in values use indexed attributes on the CLU object ID imported from the
+interface, for example `CLU828599.0` for Uptime. The object ID can differ from
+`CLU` followed by the serial number; serial numbers are used only to detect
+the device type.
 
 | Entity | Index | Domain | Availability / purpose |
 | --- | --- | --- | --- |
