@@ -210,6 +210,9 @@
       "clu_uptime": {
         "name": "Uptime"
       },
+      "clu_bus_voltage": {
+        "name": "Bus voltage"
+      },
       "clu_firmware_version": {
         "name": "Firmware version"
       }

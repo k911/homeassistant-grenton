@@ -6,6 +6,7 @@ from ....state import (
     GrentonValue,
     cast_string_to_grenton_value,
 )
+from ...device_types import attribute_index, clu_device_type
 from ...scene_arguments import quote_lua_string
 from .base import GrentonCluApiNotification, GrentonCluApiRequest, GrentonCluApiResponse
 
@@ -44,7 +45,12 @@ def _parse_client_report(
     for position, raw_value in enumerate(raw_values):
         value = raw_value.strip().strip('"')
         key = keys[position] if keys is not None and position < len(keys) else None
-        if isinstance(key, GrentonCluStateVariableKey) and key.name == "FirmwareVersion":
+        if (
+            isinstance(key, GrentonCluStateAttributeKey)
+            and key.object_name.startswith("CLU")
+            and key.name
+            == attribute_index(clu_device_type(key.object_name[3:]), "FirmwareVersion")
+        ):
             # Versions are identifiers, even when they look like numbers (1.20).
             values.append(None if value == "nil" else value)
         else:

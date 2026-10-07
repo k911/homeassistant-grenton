@@ -210,6 +210,9 @@
       "clu_uptime": {
         "name": "Czas pracy"
       },
+      "clu_bus_voltage": {
+        "name": "Napięcie magistrali"
+      },
       "clu_firmware_version": {
         "name": "Wersja oprogramowania"
       }

@@ -136,20 +136,30 @@ sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
 select the controller on which to run a script. Refresh the interface through
 **Reconfigure** when CLUs are added or removed.
 
-Each CLU also exposes these built-in variables automatically:
+The CLU type is detected from its serial number: `221…` is `CLU_Z_WAVE`,
+and `521…` is `CLU_GATE_HTTP`. The detected type is shown as the device model.
+Built-in values use indexed attributes on the CLU object (`CLU` followed by
+its serial number, for example `CLU521000922.0` for Uptime).
 
-| Entity | Domain | Purpose |
-| --- | --- | --- |
-| Uptime | `sensor` | Read-only running time in seconds (`duration`). |
-| Cloud connection | `binary_sensor` | Read-only Connected / Disconnected status (`connectivity`). |
-| Use cloud | `switch` | Enable or disable the CLU cloud connector. |
-| Firmware version | `sensor` | Read-only software version, also shown in the device's firmware metadata. |
+| Entity | Index | Domain | Availability / purpose |
+| --- | --- | --- | --- |
+| Uptime | 0 | `sensor` | Both types; read-only running time in seconds (`duration`). |
+| Cloud connection | 19 | `binary_sensor` | Both types; read-only Connected / Disconnected status (`connectivity`). |
+| Use cloud | 18 | `switch` | Both types; enable or disable the CLU cloud connector. |
+| Firmware version | 17 | `sensor` | Both types; read-only software version, also shown in the device's firmware metadata. |
+| Bus voltage | 27 | `sensor` | CLU_Z_WAVE only; read-only voltage in V, with measurement statistics. |
 
-Uptime, cloud connection, and firmware version appear under **Diagnostic**;
-Use cloud appears under **Configuration**. They share the existing CLU device
-and receive values through its normal variable subscriptions. Use cloud sends
-a boolean setting and reads the CLU state back. Values not yet reported remain
-unknown. Bus voltage is not exposed, because it is not available on every CLU type.
+Read-only values appear under **Diagnostic**; Use cloud appears under
+**Configuration**. They share the existing CLU device and receive values
+through attribute subscriptions. Use cloud writes a boolean to attribute 18
+and reads the CLU state back. Values not yet reported remain unknown.
+Unrecognized serial prefixes still get a Controller entity for script calls;
+only supported types get built-in attribute entities.
+
+The constants in `domain/device_types.py` define `index: attribute name` maps
+for each known device type and the CLU serial prefixes. Extend these maps when
+adding types; the entity bindings use the mapped indexes and skip unsupported
+attributes.
 
 Use **Developer Tools → Actions → Grenton: Run script** (`grenton.run_script`)
 to select a CLU controller entity or device, enter its script name, and add

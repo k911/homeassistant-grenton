@@ -19,7 +19,7 @@ def clu_device_info(clu: GrentonClu) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, f"clu_{clu.id}")},
         manufacturer="Grenton",
-        model="CLU",
+        model=clu.device_type or "CLU",
         name=clu.name,
         serial_number=clu.serial_number,
     )

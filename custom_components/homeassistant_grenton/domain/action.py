@@ -28,6 +28,8 @@ class GrentonAction(ABC):
 @dataclass
 class GrentonActionAttribute(GrentonAction):
     index: str
+    # Built-in settings such as UseCloud require a typed Lua boolean.
+    lua_value: str | None = field(default=None, kw_only=True)
 
     @staticmethod
     def create(dto: GrentonActionAttributeDto) -> "GrentonActionAttribute":
