@@ -148,3 +148,31 @@ test("late startup response is cancelled after leaving the panel and read-only d
   assert.match(readOnly.panel.text(), /switch.clu_use_cloud · Configuration control/);
   assert.deepEqual(descendants(readOnly.panel.shadowRoot).filter((node) => node.tag === "button").map((node) => node.textContent), ["Close"]);
 });
+
+test("CLU popup accepts variable name and optional label as text and saves the selected Grenton type", async () => {
+  const menu = { type: "form", flow_id: "flow1", step_id: "clu_variables", last_step: false,
+    data_schema: [{ name: "operation", required: true, selector: { select: { options: ["add"], translation_key: "clu_variable_operations" } } }] };
+  const definition = { type: "form", flow_id: "flow1", step_id: "configure_clu_variable", last_step: false,
+    data_schema: [
+      { name: "variable_name", required: true, default: "", selector: { text: {} } },
+      { name: "label", required: false, default: "", selector: { text: {} } },
+      { name: "grenton_type", required: true, default: "STRING", selector: { select: { options: ["BOOLEAN", "STRING", "INTEGER", "FLOAT"], translation_key: "grenton_variable_types" } } },
+    ] };
+  const { panel, calls } = popup({ ...inventory, widget_type: "CLU", flow: menu }, async (_method, _path, data) => {
+    return data.operation ? structuredClone(definition) : { type: "create_entry", title: "", data: {} };
+  });
+  await flush();
+  panel.field("operation").value = "add"; panel.field("operation").fire("change");
+  await panel._submit(); await flush();
+  assert.equal(panel.field("variable_name").tag, "input");
+  assert.equal(panel.field("variable_name").required, true);
+  assert.equal(panel.field("label").tag, "input");
+  assert.equal(panel.field("label").required, false);
+  await panel._submit();
+  assert.equal(calls.length, 2, "empty required variable name prevents saving");
+  panel.field("variable_name").value = "OfficeEnabled"; panel.field("variable_name").fire("input");
+  panel.field("grenton_type").value = "BOOLEAN"; panel.field("grenton_type").fire("change");
+  await panel._submit(); await flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[2][2])), { variable_name: "OfficeEnabled", label: "", grenton_type: "BOOLEAN" });
+  assert.match(panel.text(), /Configuration saved/);
+});

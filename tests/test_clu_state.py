@@ -198,6 +198,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
 
         # The device popup includes all six entities and identifies UseCloud
         # as a control, while the existing run_script device target runs once.
+        hass.config_entries.options = SimpleNamespace(async_init=AsyncMock(return_value={"type": "form", "step_id": "clu_variables"}))
         connection = SimpleNamespace(send_result=Mock(), send_error=Mock())
         await async_open_device_configuration.__wrapped__.__wrapped__(
             hass,
@@ -215,7 +216,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
             sum(entity["configuration_control"] for entity in inventory["entities"])
             == 1
         )
-        assert inventory["flow"] is None
+        assert inventory["flow"]["step_id"] == "clu_variables"
         await async_setup(hass, {})
         coord.execute_action = AsyncMock()
         await hass.services.async_call(

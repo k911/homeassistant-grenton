@@ -27,6 +27,7 @@ from ..device_types import attribute_index
 from ..enums import GrentonActionEventType
 from ..state_object import GrentonAttributeValueObject
 from .clu import GrentonCluEntity, clu_device_info
+from .clu_variables import GrentonCluCustomVariable, custom_variable_entities
 
 
 def _boolean(value: GrentonValue) -> bool | None:
@@ -200,10 +201,12 @@ class GrentonCluBusVoltage(GrentonCluStateEntity, SensorEntity):
 
 def clu_entities(
     coordinator: GrentonCoordinator, clu: GrentonClu
-) -> list[GrentonCluEntity | GrentonCluStateEntity]:
+) -> list[GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable]:
     """Discover built-in entities independently of mobile-interface widgets."""
     controller = GrentonCluEntity(coordinator, clu)
-    entities: list[GrentonCluEntity | GrentonCluStateEntity] = [controller]
+    entities: list[
+        GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable
+    ] = [controller]
     for attribute, entity_class in (
         ("Uptime", GrentonCluUptime),
         ("CloudConnection", GrentonCluCloudConnection),
@@ -213,4 +216,5 @@ def clu_entities(
     ):
         if attribute_index(clu.device_type, attribute) is not None:
             entities.append(entity_class(coordinator, clu))
+    entities.extend(custom_variable_entities(coordinator, clu))
     return entities
