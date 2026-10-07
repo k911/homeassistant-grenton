@@ -12,6 +12,7 @@ from .mappers.device_mapper import DeviceMapper
 from .dto.mobile_interface import GrentonMobileInterfaceDto
 from .domain.encryption import GrentonEncryption
 from .domain.clu import GrentonClu
+from .frontend import async_register_scene_editor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.LIGHT, P
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntry) -> bool:
     _LOGGER.debug("Initializing Home Assistant Grenton integration")
+    await async_register_scene_editor(hass)
     
     config_data: GrentonConfigEntryData = config_entry.data # type: ignore
 

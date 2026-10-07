@@ -25,32 +25,4 @@ run_scene:
         Use either parameter or arguments.
       required: false
       selector:
-        object:
-          multiple: true
-          translation_key: scene_arguments
-          fields:
-            argument:
-              required: true
-              selector:
-                choose:
-                  translation_key: scene_argument_types
-                  choices:
-                    string:
-                      selector:
-                        text: {}
-                    number:
-                      selector:
-                        number:
-                          mode: box
-                          step: any
-                    boolean:
-                      selector:
-                        boolean: {}
-                    nil:
-                      selector:
-                        constant:
-                          value: nil
-                    lua:
-                      selector:
-                        text:
-                          multiline: true
+        grenton_arguments: {}

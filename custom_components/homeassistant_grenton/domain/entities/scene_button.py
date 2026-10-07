@@ -55,7 +55,20 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
             for clu in coordinator.clus
         ]
         ConfigurableEntity.__init__(self, clu_options=clu_options)
-        self._config = {**self.default_config(), **self._config}
+        loaded = self._config
+        self._config = {**self.default_config(), **loaded}
+        if self._config["call_type"] == "VARIABLE":
+            # Migrate the old variable "index" to its actual string name.
+            self._config["variable_name"] = loaded.get(
+                "variable_name",
+                loaded.get("index", self._config.get("variable_name", "")),
+            )
+            self._config.pop("index", None)
+            self._config.pop("object_name", None)
+        else:
+            self._config.pop("variable_name", None)
+        if self._config["call_type"] == "SCRIPT":
+            self._config.pop("index", None)
         for clu_id in {script_action.clu_id, self._config["clu_id"]}:
             if clu_id not in {option["value"] for option in clu_options}:
                 clu_options.append({"value": clu_id, "label": clu_id})
@@ -71,9 +84,10 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
             "object_name": action.object_name,
             "value": action.value,
         }
-        if isinstance(
-            action, (GrentonActionAttribute, GrentonActionMethod, GrentonActionVariable)
-        ):
+        if isinstance(action, GrentonActionVariable):
+            config["variable_name"] = action.index
+            config.pop("object_name")
+        elif isinstance(action, (GrentonActionAttribute, GrentonActionMethod)):
             config["index"] = action.index
         return config
 
@@ -84,7 +98,7 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
         call_type = GrentonActionCallType(config["call_type"])
         fields = {
             "clu_id": config["clu_id"],
-            "object_name": config["object_name"],
+            "object_name": config.get("object_name", ""),
             "event": self._widget_action.event,
             "value": config["value"],
         }
@@ -96,7 +110,9 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
             fields["value"] = ", ".join(expressions)
             if call_type == GrentonActionCallType.METHOD:
                 fields["arguments"] = expressions
-        if call_type != GrentonActionCallType.SCRIPT:
+        if call_type == GrentonActionCallType.VARIABLE:
+            fields["index"] = config["variable_name"]
+        elif call_type != GrentonActionCallType.SCRIPT:
             fields["index"] = config["index"]
         return ACTION_CLASSES[call_type](**fields)
 
@@ -132,6 +148,14 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
             config.pop("arguments", None)
         if config["call_type"] == GrentonActionCallType.SCRIPT:
             config.pop("index", None)
+        if config["call_type"] == GrentonActionCallType.VARIABLE:
+            config["variable_name"] = config.get(
+                "variable_name", config.get("index", "")
+            )
+            config.pop("index", None)
+            config.pop("object_name", None)
+        else:
+            config.pop("variable_name", None)
         options = await super().apply_configuration(config)
         if self.hass is not None and self.entity_id is not None:
             self.async_write_ha_state()

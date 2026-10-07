@@ -3,6 +3,8 @@
 import math
 from typing import Any
 
+from .lua_arguments import imported_lua_argument, split_lua_arguments
+
 ARGUMENT_TYPES = ("string", "number", "boolean", "nil", "lua")
 
 
@@ -86,9 +88,9 @@ def argument_expressions(arguments: Any) -> tuple[str, ...]:
 
 
 def imported_arguments(call_type: str, value: str) -> list[dict[str, Any]]:
-    """Keep imported Lua expressions verbatim and method values as strings."""
+    """Expose each imported script argument and keep method values as strings."""
     if call_type == "SCRIPT":
-        return [{"type": "lua", "value": value}] if value else []
+        return [imported_lua_argument(part) for part in split_lua_arguments(value)]
     if call_type == "METHOD":
         return [{"type": "string", "value": value}]
     return []
