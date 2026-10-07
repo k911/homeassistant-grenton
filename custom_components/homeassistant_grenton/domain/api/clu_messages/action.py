@@ -33,12 +33,17 @@ class GrentonCluApiActionRequest(GrentonCluApiRequest):
         """
         if isinstance(action, GrentonActionVariable):
             value = (
-                action.lua_value if action.lua_value is not None
+                action.lua_value
+                if action.lua_value is not None
                 else quote_lua_string(action.value)
             )
             payload = f'setVar({quote_lua_string(action.index)},{value})'
         elif isinstance(action, GrentonActionAttribute):
-            payload = f'{action.object_name}:set({action.index},{quote_lua_string(action.value)})'
+            value = (
+                action.lua_value if action.lua_value is not None
+                else quote_lua_string(action.value)
+            )
+            payload = f'{action.object_name}:set({action.index},{value})'
         elif isinstance(action, GrentonActionMethod):
             if action.arguments is None:
                 payload = f'{action.object_name}:execute({action.index},{quote_lua_string(action.value)})'

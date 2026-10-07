@@ -1,14 +1,19 @@
 """Built-in CLU diagnostics and cloud configuration."""
 
+from math import isfinite
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfTime
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -16,10 +21,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ...coordinator import GrentonCoordinator
 from ...state import GrentonValue
-from ..action import GrentonActionVariable
+from ..action import GrentonActionAttribute
 from ..clu import GrentonClu
+from ..device_types import attribute_index
 from ..enums import GrentonActionEventType
-from ..state_object import GrentonVariableValueObject
+from ..state_object import GrentonAttributeValueObject
 from .clu import GrentonCluEntity, clu_device_info
 
 
@@ -39,17 +45,19 @@ def _boolean(value: GrentonValue) -> bool | None:
 
 
 class GrentonCluStateEntity(CoordinatorEntity[GrentonCoordinator]):
-    """A subscribed variable belonging to the existing CLU device."""
+    """A subscribed built-in attribute belonging to the existing CLU device."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
-        self, coordinator: GrentonCoordinator, clu: GrentonClu, variable: str, key: str
+        self, coordinator: GrentonCoordinator, clu: GrentonClu, attribute: str, key: str
     ) -> None:
         super().__init__(coordinator)
         self.clu = clu
-        self.state_object = GrentonVariableValueObject(clu.id, "", variable)
+        if (index := attribute_index(clu.device_type, attribute)) is None:
+            raise ValueError(f"CLU {clu.id} does not support {attribute}")
+        self.state_object = GrentonAttributeValueObject(clu.id, clu.object_name, index)
         self._attr_unique_id = f"clu_{clu.id}_{key.removeprefix('clu_')}"
         self._attr_translation_key = key
         self._attr_device_info = clu_device_info(clu)
@@ -136,7 +144,7 @@ class GrentonCluFirmwareVersion(GrentonCluStateEntity, SensorEntity):
 
 
 class GrentonCluUseCloud(GrentonCluStateEntity, SwitchEntity):
-    """Configure the CLU's cloud connector with a real boolean variable."""
+    """Configure the CLU's cloud connector through its boolean attribute."""
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:cloud-outline"
@@ -156,10 +164,10 @@ class GrentonCluUseCloud(GrentonCluStateEntity, SwitchEntity):
 
     async def _set_enabled(self, enabled: bool) -> None:
         literal = "true" if enabled else "false"
-        action = GrentonActionVariable(
+        action = GrentonActionAttribute(
             clu_id=self.clu.id,
-            object_name="",
-            index="UseCloud",
+            object_name=self.state_object.object_name,
+            index=self.state_object.index,
             event=GrentonActionEventType.ON if enabled else GrentonActionEventType.OFF,
             value=literal,
             lua_value=literal,
@@ -168,14 +176,41 @@ class GrentonCluUseCloud(GrentonCluStateEntity, SwitchEntity):
         await self.coordinator.async_refresh_clu_state(self.clu.id)
 
 
+class GrentonCluBusVoltage(GrentonCluStateEntity, SensorEntity):
+    """Monitor bus voltage on CLU types that provide this attribute."""
+
+    _attr_device_class = SensorDeviceClass.VOLTAGE
+    _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
+        super().__init__(coordinator, clu, "BusVoltage", "clu_bus_voltage")
+
+    @property
+    def native_value(self) -> float | None:
+        value = self._value
+        if value is None or isinstance(value, bool) or value == "":
+            return None
+        try:
+            voltage = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return voltage if isfinite(voltage) else None
+
+
 def clu_entities(
     coordinator: GrentonCoordinator, clu: GrentonClu
 ) -> list[GrentonCluEntity | GrentonCluStateEntity]:
     """Discover built-in entities independently of mobile-interface widgets."""
-    return [
-        GrentonCluEntity(coordinator, clu),
-        GrentonCluUptime(coordinator, clu),
-        GrentonCluCloudConnection(coordinator, clu),
-        GrentonCluUseCloud(coordinator, clu),
-        GrentonCluFirmwareVersion(coordinator, clu),
-    ]
+    controller = GrentonCluEntity(coordinator, clu)
+    entities: list[GrentonCluEntity | GrentonCluStateEntity] = [controller]
+    for attribute, entity_class in (
+        ("Uptime", GrentonCluUptime),
+        ("CloudConnection", GrentonCluCloudConnection),
+        ("UseCloud", GrentonCluUseCloud),
+        ("FirmwareVersion", GrentonCluFirmwareVersion),
+        ("BusVoltage", GrentonCluBusVoltage),
+    ):
+        if attribute_index(clu.device_type, attribute) is not None:
+            entities.append(entity_class(coordinator, clu))
+    return entities

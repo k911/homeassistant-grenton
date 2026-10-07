@@ -1,4 +1,4 @@
-"""CLU variable subscriptions, native HA entities and cloud control."""
+"""CLU attribute subscriptions, native HA entities and cloud control."""
 
 import asyncio
 import json
@@ -16,7 +16,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import EntityPlatform
-from test_clu_scripts import make_clu, make_entry, make_hass
+from test_clu_scripts import make_clu as make_controller_clu
+from test_clu_scripts import make_entry, make_hass
 
 from custom_components.homeassistant_grenton import _cleanup_orphans, async_setup
 from custom_components.homeassistant_grenton.binary_sensor import (
@@ -38,8 +39,15 @@ from custom_components.homeassistant_grenton.domain.api.clu_messages.client_regi
     GrentonCluApiClientRegisterRequest,
     GrentonCluApiClientRegisterResponse,
 )
+from custom_components.homeassistant_grenton.domain.device_types import (
+    CLU_GATE_HTTP,
+    CLU_SERIAL_PREFIXES,
+    CLU_Z_WAVE,
+    DEVICE_ATTRIBUTES,
+)
 from custom_components.homeassistant_grenton.domain.encryption import GrentonEncryption
 from custom_components.homeassistant_grenton.domain.entities.clu_state import (
+    GrentonCluBusVoltage,
     GrentonCluCloudConnection,
     GrentonCluFirmwareVersion,
     GrentonCluUptime,
@@ -50,9 +58,19 @@ from custom_components.homeassistant_grenton.integration_config import RuntimeDa
 from custom_components.homeassistant_grenton.sensor import (
     async_setup_entry as setup_sensors,
 )
+from custom_components.homeassistant_grenton.state import (
+    GrentonCluStateAttributeKey,
+    GrentonCluStateVariableKey,
+)
 from custom_components.homeassistant_grenton.switch import (
     async_setup_entry as setup_switches,
 )
+
+
+def make_clu(clu_id, name="Main CLU", prefix="221"):
+    clu = make_controller_clu(clu_id, name)
+    clu.serial_number = prefix + ("000921" if clu_id == "clu1" else "000922")
+    return clu
 
 
 def coordinator(hass, entry, clus):
@@ -102,11 +120,11 @@ async def register_platforms(hass, entry):
     return platforms
 
 
-def test_all_four_variables_register_on_every_clu_and_update_native_entities(tmp_path):
+def test_supported_attributes_register_on_each_clu_and_update_native_entities(tmp_path):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
-        clus = [make_clu("clu1"), make_clu("clu2", "Second CLU")]
+        clus = [make_clu("clu1"), make_clu("clu2", "Second CLU", "521")]
         coord = coordinator(hass, entry, clus)
         entities = [entity for clu in clus for entity in clu_entities(coord, clu)]
         entry.runtime_data = RuntimeData(coord, [], entities)
@@ -116,19 +134,23 @@ def test_all_four_variables_register_on_every_clu_and_update_native_entities(tmp
             )
         for clu in clus:
             keys = coord.state.clus[clu.id].get_subscription_order()
-            assert [key.name for key in keys] == [
-                "Uptime",
-                "CloudConnection",
-                "UseCloud",
-                "FirmwareVersion",
-            ]
-            assert (
-                GrentonCluApiClientRegisterRequest(keys, 0).payload
-                == 'SYSTEM:clientRegister(0,0,1,{"Uptime","CloudConnection","UseCloud","FirmwareVersion"})'
+            indexes = ["0", "19", "18", "17"]
+            values = [123, True, False, "3.1.0"]
+            if clu.device_type == CLU_Z_WAVE:
+                indexes.append("27")
+                values.append(24.5)
+            assert [key.name for key in keys] == indexes
+            assert all(isinstance(key, GrentonCluStateAttributeKey) for key in keys)
+            assert all(key.object_name == f"CLU{clu.serial_number}" for key in keys)
+            expected = ",".join(
+                f"{{CLU{clu.serial_number},{index}}}" for index in indexes
             )
-            await coord._process_report(clu.id, keys, [123, True, False, "3.1.0"])
+            assert GrentonCluApiClientRegisterRequest(keys, 0).payload == (
+                f"SYSTEM:clientRegister(0,0,1,{{{expected}}})"
+            )
+            await coord._process_report(clu.id, keys, values)
         platforms = await register_platforms(hass, entry)
-        assert [len(platform.entities) for platform in platforms] == [6, 2, 2]
+        assert [len(platform.entities) for platform in platforms] == [7, 2, 2]
         registry = er.async_get(hass)
         device_registry = dr.async_get(hass)
         assert len(device_registry.devices) == 2
@@ -138,9 +160,18 @@ def test_all_four_variables_register_on_every_clu_and_update_native_entities(tmp
                 registry.async_get(entity.entity_id).device_id for entity in group
             }
             assert len(device_ids) == 1
-            controller, uptime, cloud, use_cloud, firmware = group
+            controller, uptime, cloud, use_cloud, firmware = group[:5]
             device = device_registry.async_get(next(iter(device_ids)))
             assert device.sw_version == "3.1.0"
+            assert device.model == clu.device_type
+            if clu.device_type == CLU_Z_WAVE:
+                voltage = group[5]
+                assert hass.states.get(voltage.entity_id).state == "24.5"
+                assert voltage.device_class == SensorDeviceClass.VOLTAGE
+                assert voltage.native_unit_of_measurement == "V"
+                assert voltage.state_class.value == "measurement"
+            else:
+                assert len(group) == 5
             assert hass.states.get(controller.entity_id).state == clu.serial_number
             assert hass.states.get(uptime.entity_id).state == "123"
             assert uptime.device_class == SensorDeviceClass.DURATION
@@ -161,11 +192,11 @@ def test_all_four_variables_register_on_every_clu_and_update_native_entities(tmp
         assert entities[1].native_value == 0
         assert entities[2].is_on is False
         assert entities[3].is_on is True
-        assert entities[6].native_value == 123
+        assert entities[7].native_value == 123
         first_device_id = entities[0].registry_entry.device_id
         assert device_registry.async_get(first_device_id).sw_version == "3.2.0"
 
-        # The device popup includes all five entities and identifies UseCloud
+        # The device popup includes all six entities and identifies UseCloud
         # as a control, while the existing run_script device target runs once.
         connection = SimpleNamespace(send_result=Mock(), send_error=Mock())
         await async_open_device_configuration.__wrapped__.__wrapped__(
@@ -179,7 +210,7 @@ def test_all_four_variables_register_on_every_clu_and_update_native_entities(tmp
             },
         )
         inventory = connection.send_result.call_args.args[1]
-        assert len(inventory["entities"]) == 5
+        assert len(inventory["entities"]) == 6
         assert (
             sum(entity["configuration_control"] for entity in inventory["entities"])
             == 1
@@ -199,9 +230,9 @@ def test_all_four_variables_register_on_every_clu_and_update_native_entities(tmp
 
         # Reload/reconfigure preserves all surviving identities and removes
         # diagnostics and configuration entities belonging to a removed CLU.
-        kept = {entity.entity_id for entity in entities[:5]}
-        removed = {entity.entity_id for entity in entities[5:]}
-        removed_device_id = entities[5].registry_entry.device_id
+        kept = {entity.entity_id for entity in entities[:6]}
+        removed = {entity.entity_id for entity in entities[6:]}
+        removed_device_id = entities[6].registry_entry.device_id
         for platform in platforms:
             await platform.async_reset()
         replacement = clu_entities(coord, clus[0])
@@ -235,7 +266,9 @@ def test_all_four_variables_register_on_every_clu_and_update_native_entities(tmp
         ("invalid", None),
     ],
 )
-def test_boolean_variables_preserve_false_and_unknown_values(tmp_path, value, expected):
+def test_boolean_attributes_preserve_false_and_unknown_values(
+    tmp_path, value, expected
+):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
@@ -280,13 +313,15 @@ def test_uptime_is_a_nonnegative_integer_or_unknown(tmp_path, value, expected):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("prefix", ["221", "521"])
 def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming_success(
     tmp_path,
+    prefix,
 ):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
-        clu = make_clu("clu2")
+        clu = make_clu("clu2", prefix=prefix)
         coord = coordinator(hass, entry, [clu])
         entity = GrentonCluUseCloud(coord, clu)
         keys = coord.state.clus[clu.id].get_subscription_order()
@@ -301,7 +336,7 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
         assert action.clu_id == "clu2"
         assert (
             GrentonCluApiActionRequest.from_action(action).payload
-            == 'setVar("UseCloud",true)'
+            == f"CLU{clu.serial_number}:set(18,true)"
         )
         api.register_component_states.assert_awaited_once_with(keys)
         assert entity.is_on is False, (
@@ -316,7 +351,7 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
             GrentonCluApiActionRequest.from_action(
                 api.execute_action.await_args.args[0]
             ).payload
-            == 'setVar("UseCloud",false)'
+            == f"CLU{clu.serial_number}:set(18,false)"
         )
         assert entity.is_on is False
         api.execute_action.return_value = False
@@ -329,11 +364,14 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
     asyncio.run(run())
 
 
-def test_firmware_strings_survive_initial_response_and_pushed_notifications(tmp_path):
+@pytest.mark.parametrize("prefix", ["221", "521"])
+def test_firmware_strings_survive_initial_response_and_pushed_notifications(
+    tmp_path, prefix
+):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
-        clu = make_clu("clu1")
+        clu = make_clu("clu1", prefix=prefix)
         coord = coordinator(hass, entry, [clu])
         firmware = GrentonCluFirmwareVersion(coord, clu)
         keys = coord.state.clus[clu.id].get_subscription_order()
@@ -364,5 +402,104 @@ def test_firmware_strings_survive_initial_response_and_pushed_notifications(tmp_
         assert GrentonCluApiClientRegisterResponse(
             "resp:192.0.2.1:abcd:clientReport:0:{123,false}"
         ).values == [123, False]
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "serial,expected",
+    [("221000921", CLU_Z_WAVE), ("521000922", CLU_GATE_HTTP), ("999123", None)],
+)
+def test_serial_detection_and_unknown_type_preserves_controller(
+    tmp_path, serial, expected
+):
+    async def run():
+        entry = make_entry()
+        hass = await make_hass(tmp_path, [entry])
+        clu = make_controller_clu("clu1", "Renamed controller")
+        clu.serial_number = serial
+        coord = coordinator(hass, entry, [clu])
+        entities = clu_entities(coord, clu)
+        assert clu.device_type == expected
+        assert clu.object_name == f"CLU{serial}"
+        assert entities[0].unique_id == "clu_clu1"
+        assert entities[0].device_info["model"] == (expected or "CLU")
+        if expected is None:
+            assert len(entities) == 1
+            assert not coord.state.clus[clu.id].get_subscription_order()
+        else:
+            assert {int(entity.state_object.index) for entity in entities[1:]} == set(
+                DEVICE_ATTRIBUTES[expected]
+            )
+            assert entities[1].unique_id == "clu_clu1_uptime"
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (24, 24.0),
+        (24.75, 24.75),
+        ("23.5", 23.5),
+        (0, 0.0),
+        (None, None),
+        (True, None),
+        ("invalid", None),
+        (float("inf"), None),
+        (float("nan"), None),
+    ],
+)
+def test_bus_voltage_is_a_finite_measurement(tmp_path, value, expected):
+    async def run():
+        entry = make_entry()
+        hass = await make_hass(tmp_path, [entry])
+        clu = make_clu("clu1")
+        coord = coordinator(hass, entry, [clu])
+        voltage = GrentonCluBusVoltage(coord, clu)
+        keys = coord.state.clus[clu.id].get_subscription_order()
+        coord.state.clus[clu.id].update_keys(keys, [value])
+        assert voltage.native_value == expected
+        assert voltage.entity_category == EntityCategory.DIAGNOSTIC
+
+    asyncio.run(run())
+
+
+def test_firmware_decoding_does_not_change_other_objects_or_variables():
+    keys = [
+        GrentonCluStateAttributeKey("DOUT1", "17"),
+        GrentonCluStateVariableKey("FirmwareVersion"),
+        GrentonCluStateAttributeKey("CLU999123", "17"),
+    ]
+    assert GrentonCluApiClientRegisterResponse(
+        'resp:192.0.2.1:abcd:clientReport:0:{"1.20","00123","1.20"}', keys
+    ).values == [1.2, 123, 1.2]
+
+
+def test_new_type_uses_its_own_indexes_and_skips_unsupported_entities(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setitem(CLU_SERIAL_PREFIXES, "621", "FUTURE_CLU")
+    monkeypatch.setitem(
+        DEVICE_ATTRIBUTES, "FUTURE_CLU", {42: "FirmwareVersion", 31: "BusVoltage"}
+    )
+
+    async def run():
+        entry = make_entry()
+        hass = await make_hass(tmp_path, [entry])
+        clu = make_clu("clu1", prefix="621")
+        coord = coordinator(hass, entry, [clu])
+        entities = clu_entities(coord, clu)
+        assert len(entities) == 3
+        assert isinstance(entities[1], GrentonCluFirmwareVersion)
+        assert isinstance(entities[2], GrentonCluBusVoltage)
+        keys = coord.state.clus[clu.id].get_subscription_order()
+        assert [key.name for key in keys] == ["42", "31"]
+        values = GrentonCluApiClientRegisterResponse(
+            'resp:192.0.2.1:abcd:clientReport:0:{"1.20",24.5}', keys
+        ).values
+        await coord._process_report(clu.id, keys, values)
+        assert entities[1].native_value == "1.20"
+        assert entities[2].native_value == 24.5
 
     asyncio.run(run())
