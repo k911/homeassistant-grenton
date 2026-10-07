@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .domain.devices.base import BaseGrentonDevice
     from .domain.entities.clu import GrentonCluEntity
     from .domain.entities.clu_state import GrentonCluStateEntity
+    from .domain.entities.clu_variables import GrentonCluCustomVariable
 
 
 class GrentonConfigEntryData(TypedDict):
@@ -29,9 +30,9 @@ class RuntimeData:
 
     coordinator: GrentonCoordinator
     devices: list[BaseGrentonDevice]
-    clu_entities: list[GrentonCluEntity | GrentonCluStateEntity] = field(
-        default_factory=list
-    )
+    clu_entities: list[
+        GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable
+    ] = field(default_factory=list)
 
 
 type GrentonConfigEntry = ConfigEntry[RuntimeData]

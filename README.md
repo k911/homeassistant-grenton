@@ -163,6 +163,24 @@ for each known device type and the CLU serial prefixes. Extend these maps when
 adding types; the entity bindings use the mapped indexes and skip unsupported
 attributes.
 
+Open the CLU device's **Visit device** link to configure custom variables.
+Choose **Add variable**, enter its Grenton variable name and optional display
+name, and select its Grenton type:
+
+- **Boolean** creates a switch that writes `true` / `false` and reads the CLU
+  state back after a change.
+- **String**, **Integer**, and **Float** create sensors with the same device
+  class and unit settings as VALUE_V2. Select **None** for a plain value sensor.
+
+The same dialog lets you edit or remove a configured variable. These are
+existing Grenton variables selected for exposure in Home Assistant; adding or
+removing an entity does not create or delete a variable on the CLU. Their
+configuration is retained when the interface is refreshed. Renaming a variable
+keeps its Home Assistant identity; changing between Boolean and a sensor type
+changes its entity domain, so update references to its entity ID as needed.
+Custom variable entities also appear in the integration's **Configure entity**
+list. Configuration changes reload the integration.
+
 Use **Developer Tools → Actions → Grenton: Run script** (`grenton.run_script`)
 to select a CLU controller entity or device, enter its script name, and add
 optional typed argument rows. This calls the script directly on the CLU;

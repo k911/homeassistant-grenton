@@ -1,0 +1,517 @@
+"""Native options flows and entity lifecycle for user-selected CLU variables."""
+
+import asyncio
+from types import MappingProxyType, SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+from homeassistant.config_entries import OptionsFlowManager
+from homeassistant.data_entry_flow import InvalidData
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from test_clu_scripts import make_clu, make_entry, make_hass
+from test_clu_state import coordinator, register_platforms
+from test_device_configuration import fields
+
+from custom_components.homeassistant_grenton import _cleanup_orphans
+from custom_components.homeassistant_grenton.device_configuration import (
+    DEVICE_CONTEXT_KEY,
+    async_open_device_configuration,
+)
+from custom_components.homeassistant_grenton.domain.api.clu_messages.action import (
+    GrentonCluApiActionRequest,
+)
+from custom_components.homeassistant_grenton.domain.api.clu_messages.client_register import (
+    GrentonCluApiClientRegisterRequest,
+)
+from custom_components.homeassistant_grenton.domain.entities.clu_state import (
+    clu_entities,
+)
+from custom_components.homeassistant_grenton.domain.entities.clu_variables import (
+    GrentonCluVariableSensor,
+    GrentonCluVariableSwitch,
+)
+from custom_components.homeassistant_grenton.integration_config import RuntimeData
+from custom_components.homeassistant_grenton.options_flow import GrentonOptionsFlow
+
+
+def set_options(entry, options):
+    object.__setattr__(entry, "options", MappingProxyType(options))
+
+
+def configure_manager(hass, entry):
+    manager = OptionsFlowManager(hass)
+    manager.async_create_flow = AsyncMock(
+        side_effect=lambda *args, **kwargs: GrentonOptionsFlow()
+    )
+    hass.config_entries.options = manager
+    hass.config_entries.async_get_known_entry = lambda entry_id: entry
+
+    def update(current, *, options):
+        set_options(current, options)
+        return True
+
+    hass.config_entries.async_update_entry = Mock(side_effect=update)
+    hass.config_entries.async_schedule_reload = Mock()
+    return manager
+
+
+def test_native_clu_popup_add_edit_remove_and_cancel_preserve_other_options(tmp_path):
+    async def run():
+        entry = make_entry()
+        other = {
+            "variable_name": "Enabled",
+            "label": "Other",
+            "grenton_type": "BOOLEAN",
+        }
+        set_options(
+            entry,
+            {
+                "entities": {"widget_0": {"device_class": "temperature"}},
+                "clu_variables": {"clu2": {"other": other}},
+            },
+        )
+        hass = await make_hass(tmp_path, [entry])
+        clu = make_clu("clu1")
+        coord = coordinator(hass, entry, [clu])
+        controllers = clu_entities(coord, clu)
+        entry.runtime_data = RuntimeData(coord, [], controllers)
+        controllers[0].entity_id = "sensor.main_controller"
+        controllers[0]._attr_name = "Controller"
+        coord._apis[clu.id].execute_action = AsyncMock()
+        manager = configure_manager(hass, entry)
+        connection = SimpleNamespace(send_result=Mock(), send_error=Mock())
+        await async_open_device_configuration.__wrapped__.__wrapped__(
+            hass,
+            connection,
+            {
+                "id": 1,
+                "type": "grenton/device_configuration",
+                "entry_id": entry.entry_id,
+                "widget_id": controllers[0].unique_id,
+            },
+        )
+        initial = connection.send_result.call_args.args[1]["flow"]
+        assert initial["step_id"] == "clu_variables"
+        assert (
+            manager.async_get(initial["flow_id"])["context"][DEVICE_CONTEXT_KEY]
+            == "clu_clu1"
+        )
+        form = await manager.async_configure(initial["flow_id"], {"operation": "add"})
+        assert "text" in fields(form)["variable_name"]["selector"]
+        assert not fields(form)["label"]["required"]
+        result = await manager.async_configure(
+            form["flow_id"],
+            {
+                "variable_name": " Enabled ",
+                "label": "Office enabled",
+                "grenton_type": "BOOLEAN",
+            },
+        )
+        assert result["type"] == "create_entry"
+        variables = entry.options["clu_variables"]["clu1"]
+        variable_id = next(iter(variables))
+        assert variables[variable_id] == {
+            "variable_name": "Enabled",
+            "label": "Office enabled",
+            "grenton_type": "BOOLEAN",
+        }
+        assert entry.options["clu_variables"]["clu2"] == {"other": other}
+        assert entry.options["entities"] == {
+            "widget_0": {"device_class": "temperature"}
+        }
+        hass.config_entries.async_schedule_reload.assert_called_once_with(
+            entry.entry_id
+        )
+
+        # Cancelling a partially completed add changes no options or subscriptions.
+        snapshot = dict(entry.options)
+        flow = await manager.async_init(
+            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
+        )
+        flow = await manager.async_configure(flow["flow_id"], {"operation": "add"})
+        flow = await manager.async_configure(
+            flow["flow_id"],
+            {"variable_name": "OfficeTemperature", "grenton_type": "FLOAT"},
+        )
+        assert flow["step_id"] == "configure_sensor_class"
+        manager.async_abort(flow["flow_id"])
+        assert entry.options == snapshot
+        assert coord.state.clus[clu.id].get_subscription_order() == []
+
+        # Editing changes the type/name while retaining its persisted identity.
+        flow = await manager.async_init(
+            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
+        )
+        flow = await manager.async_configure(flow["flow_id"], {"operation": "edit"})
+        flow = await manager.async_configure(
+            flow["flow_id"], {"variable_id": variable_id}
+        )
+        assert fields(flow)["variable_name"]["default"] == "Enabled"
+        flow = await manager.async_configure(
+            flow["flow_id"],
+            {
+                "variable_name": "OfficeTemperature",
+                "label": "Office temperature",
+                "grenton_type": "FLOAT",
+            },
+        )
+        flow = await manager.async_configure(
+            flow["flow_id"], {"device_class": "temperature"}
+        )
+        assert flow["step_id"] == "configure_sensor_unit"
+        result = await manager.async_configure(
+            flow["flow_id"], {"unit_of_measurement": "°C"}
+        )
+        assert result["type"] == "create_entry"
+        assert set(entry.options["clu_variables"]["clu1"]) == {variable_id}
+        assert (
+            entry.options["clu_variables"]["clu1"][variable_id]["device_class"]
+            == "temperature"
+        )
+        assert (
+            entry.options["clu_variables"]["clu1"][variable_id]["unit_of_measurement"]
+            == "°C"
+        )
+
+        # No class/unit is required for string and plain numeric variables.
+        for variable_name, grenton_type in [
+            ("Status", "STRING"),
+            ("Counter", "INTEGER"),
+        ]:
+            flow = await manager.async_init(
+                entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
+            )
+            flow = await manager.async_configure(flow["flow_id"], {"operation": "add"})
+            flow = await manager.async_configure(
+                flow["flow_id"],
+                {"variable_name": variable_name, "grenton_type": grenton_type},
+            )
+            result = await manager.async_configure(
+                flow["flow_id"], {"device_class": "none"}
+            )
+            assert result["type"] == "create_entry"
+            assert not any(
+                "unit_of_measurement" in config
+                for config in entry.options["clu_variables"]["clu1"].values()
+                if config["variable_name"] == variable_name
+            )
+
+        flow = await manager.async_init(
+            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
+        )
+        flow = await manager.async_configure(flow["flow_id"], {"operation": "remove"})
+        assert flow["step_id"] == "clu_variable_remove"
+        result = await manager.async_configure(
+            flow["flow_id"], {"variable_id": variable_id}
+        )
+        assert result["type"] == "create_entry"
+        assert variable_id not in entry.options["clu_variables"]["clu1"]
+        assert entry.options["clu_variables"]["clu2"] == {"other": other}
+        coord._apis[clu.id].execute_action.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+def test_flow_validates_names_types_scope_and_unit_without_saving(tmp_path):
+    async def run():
+        entry = make_entry()
+        set_options(
+            entry,
+            {
+                "clu_variables": {
+                    "clu1": {
+                        "first": {
+                            "variable_name": "Existing",
+                            "label": "Existing",
+                            "grenton_type": "BOOLEAN",
+                        }
+                    }
+                }
+            },
+        )
+        hass = await make_hass(tmp_path, [entry])
+        clu = make_clu("clu1")
+        coord = coordinator(hass, entry, [clu])
+        entry.runtime_data = RuntimeData(coord, [], clu_entities(coord, clu))
+        manager = configure_manager(hass, entry)
+        assert (
+            await manager.async_init(
+                entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_missing"}
+            )
+        )["reason"] == "device_not_found"
+        flow = await manager.async_init(
+            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
+        )
+        flow = await manager.async_configure(flow["flow_id"], {"operation": "add"})
+        for name in (" ", "Existing"):
+            flow = await manager.async_configure(
+                flow["flow_id"], {"variable_name": name, "grenton_type": "BOOLEAN"}
+            )
+            assert flow["errors"] == {"variable_name": "invalid_configuration"}
+        with pytest.raises(InvalidData):
+            await manager.async_configure(
+                flow["flow_id"], {"variable_name": "New", "grenton_type": "METHOD"}
+            )
+        flow = await manager.async_configure(
+            flow["flow_id"], {"variable_name": "New", "grenton_type": "FLOAT"}
+        )
+        flow = await manager.async_configure(
+            flow["flow_id"], {"device_class": "temperature"}
+        )
+        with pytest.raises(InvalidData):
+            await manager.async_configure(flow["flow_id"], {"unit_of_measurement": "W"})
+        manager.async_abort(flow["flow_id"])
+        assert set(entry.options["clu_variables"]["clu1"]) == {"first"}
+        hass.config_entries.async_schedule_reload.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_native_entities_share_clu_device_and_switch_writes_only_own_variable(tmp_path):
+    async def run():
+        entry = make_entry()
+        configs = {
+            "enabled": {
+                "variable_name": "Enabled",
+                "label": "Enabled",
+                "grenton_type": "BOOLEAN",
+            },
+            "temperature": {
+                "variable_name": "Temperature",
+                "label": "Temperature",
+                "grenton_type": "FLOAT",
+                "device_class": "temperature",
+                "unit_of_measurement": "°C",
+            },
+            "count": {
+                "variable_name": "Count",
+                "label": "Count",
+                "grenton_type": "INTEGER",
+            },
+            "status": {
+                "variable_name": "Status",
+                "label": "Status",
+                "grenton_type": "STRING",
+            },
+        }
+        set_options(
+            entry,
+            {
+                "clu_variables": {
+                    "clu1": configs,
+                    "clu2": {"enabled": configs["enabled"]},
+                }
+            },
+        )
+        hass = await make_hass(tmp_path, [entry])
+        clus = [make_clu("clu1"), make_clu("clu2", "Second")]
+        coord = coordinator(hass, entry, clus)
+        entities = [entity for clu in clus for entity in clu_entities(coord, clu)]
+        entry.runtime_data = RuntimeData(coord, [], entities)
+        keys = coord.state.clus["clu1"].get_subscription_order()
+        assert (
+            GrentonCluApiClientRegisterRequest(keys, 0).payload
+            == 'SYSTEM:clientRegister(0,0,1,{"Enabled","Temperature","Count","Status"})'
+        )
+        platforms = await register_platforms(hass, entry)
+        for entity in entities:
+            if isinstance(entity, GrentonCluVariableSwitch) or (
+                isinstance(entity, GrentonCluVariableSensor)
+                and entity.value_type.value != "STRING"
+            ):
+                assert hass.states.get(entity.entity_id).state == "unknown"
+        await coord._process_report("clu1", keys, [False, 21.5, 42, "Working"])
+        await coord._process_report(
+            "clu2", coord.state.clus["clu2"].get_subscription_order(), [True]
+        )
+        assert [len(platform.entities) for platform in platforms] == [5, 0, 2]
+        switches = [
+            entity
+            for entity in entities
+            if isinstance(entity, GrentonCluVariableSwitch)
+        ]
+        sensors = [
+            entity
+            for entity in entities
+            if isinstance(entity, GrentonCluVariableSensor)
+        ]
+        assert hass.states.get(switches[0].entity_id).state == "off"
+        assert hass.states.get(switches[1].entity_id).state == "on"
+        assert [hass.states.get(entity.entity_id).state for entity in sensors] == [
+            "21.5",
+            "42",
+            "Working",
+        ]
+        assert sensors[0].device_class.value == "temperature"
+        assert sensors[0].native_unit_of_measurement == "°C"
+        assert sensors[0].state_class.value == "measurement"
+        assert sensors[2].state_class is None
+        await coord._process_report(
+            "clu1", keys, [False, "not a number", "invalid", "Working"]
+        )
+        assert hass.states.get(sensors[0].entity_id).state == "unknown"
+        assert hass.states.get(sensors[1].entity_id).state == "unknown"
+        await coord._process_report("clu1", keys, [False, 21.5, 42, "Working"])
+        assert (
+            hass.states.get(switches[0].entity_id).attributes["variable_name"]
+            == "Enabled"
+        )
+        for clu in clus:
+            group = [entity for entity in entities if entity.clu.id == clu.id]
+            assert len({entity.registry_entry.device_id for entity in group}) == 1
+        assert len(dr.async_get(hass).devices) == 2
+        api = SimpleNamespace(
+            execute_action=AsyncMock(return_value=True),
+            register_component_states=AsyncMock(
+                return_value=[False, 21.5, 42, "Working"]
+            ),
+        )
+        coord._apis["clu1"] = api
+        await switches[0].async_turn_on()
+        action = api.execute_action.await_args.args[0]
+        assert action.clu_id == "clu1"
+        assert (
+            GrentonCluApiActionRequest.from_action(action).payload
+            == 'setVar("Enabled",true)'
+        )
+        assert switches[0].is_on is False
+        api.register_component_states.return_value = [True, 21.5, 42, "Working"]
+        await switches[0].async_turn_on()
+        assert switches[0].is_on is True
+        await switches[0].async_turn_off()
+        assert (
+            GrentonCluApiActionRequest.from_action(
+                api.execute_action.await_args.args[0]
+            ).payload
+            == 'setVar("Enabled",false)'
+        )
+
+        api.execute_action.return_value = False
+        api.register_component_states.reset_mock()
+        with pytest.raises(HomeAssistantError, match="rejected"):
+            await switches[0].async_turn_off()
+        api.register_component_states.assert_not_awaited()
+
+        # Domain changes remove the old registry row; reload keeps sibling IDs.
+        old_switch_id = switches[0].entity_id
+        uid = switches[0].unique_id
+        sibling_ids = {sensor.entity_id for sensor in sensors}
+        old_device_id = switches[0].registry_entry.device_id
+        for platform in platforms:
+            await platform.async_reset()
+        updated = dict(configs)
+        updated["enabled"] = {**configs["enabled"], "grenton_type": "STRING"}
+        set_options(
+            entry,
+            {
+                "clu_variables": {
+                    "clu1": updated,
+                    "clu2": {"enabled": configs["enabled"]},
+                }
+            },
+        )
+        replacement = [entity for clu in clus for entity in clu_entities(coord, clu)]
+        _cleanup_orphans(hass, entry, [], replacement)
+        assert er.async_get(hass).async_get(old_switch_id) is None
+        entry.runtime_data.clu_entities = replacement
+        platforms = await register_platforms(hass, entry)
+        changed = next(entity for entity in replacement if entity.unique_id == uid)
+        assert changed.entity_id.startswith("sensor.")
+        assert changed.registry_entry.device_id == old_device_id
+        assert {
+            entity.entity_id
+            for entity in replacement
+            if entity.unique_id.endswith(("_temperature", "_count", "_status"))
+        } == sibling_ids
+        for platform in platforms:
+            await platform.async_reset()
+        removed_id = changed.entity_id
+        updated.pop("enabled")
+        set_options(
+            entry,
+            {
+                "clu_variables": {
+                    "clu1": updated,
+                    "clu2": {"enabled": configs["enabled"]},
+                }
+            },
+        )
+        refreshed = coordinator(hass, entry, clus)
+        kept = [entity for clu in clus for entity in clu_entities(refreshed, clu)]
+        assert [
+            key.name for key in refreshed.state.clus["clu1"].get_subscription_order()
+        ] == ["Temperature", "Count", "Status"]
+        _cleanup_orphans(hass, entry, [], kept)
+        assert er.async_get(hass).async_get(removed_id) is None
+        assert all(er.async_get(hass).async_get(entity_id) for entity_id in sibling_ids)
+        assert len(dr.async_get(hass).devices) == 2
+
+    asyncio.run(run())
+
+
+def test_integration_entity_editor_uses_same_variable_schema_and_persistence(tmp_path):
+    async def run():
+        entry = make_entry()
+        config = {
+            "variable_name": "Counter",
+            "label": "Counter",
+            "grenton_type": "INTEGER",
+            "device_class": "duration",
+            "unit_of_measurement": "s",
+        }
+        set_options(
+            entry,
+            {
+                "entities": {"widget_0": {"keep": True}},
+                "clu_variables": {"clu1": {"counter": config}},
+            },
+        )
+        hass = await make_hass(tmp_path, [entry])
+        clu = make_clu("clu1")
+        coord = coordinator(hass, entry, [clu])
+        entities = clu_entities(coord, clu)
+        entry.runtime_data = RuntimeData(coord, [], entities)
+        platforms = await register_platforms(hass, entry)
+        manager = configure_manager(hass, entry)
+        controller, counter = entities
+        form = await manager.async_init(entry.entry_id)
+        choices = fields(form)["entity"]["selector"]["entity"]["include_entities"]
+        assert set(choices) == {controller.entity_id, counter.entity_id}
+        form = await manager.async_configure(
+            form["flow_id"], {"entity": counter.entity_id}
+        )
+        assert form["step_id"] == "configure_clu_variable"
+        assert fields(form)["grenton_type"]["default"] == "INTEGER"
+        result = await manager.async_configure(
+            form["flow_id"],
+            {"variable_name": "Enabled", "label": "Enabled", "grenton_type": "BOOLEAN"},
+        )
+        assert result["type"] == "create_entry"
+        assert entry.options["clu_variables"]["clu1"]["counter"] == {
+            "variable_name": "Enabled",
+            "label": "Enabled",
+            "grenton_type": "BOOLEAN",
+        }
+        assert entry.options["entities"] == {"widget_0": {"keep": True}}
+        hass.config_entries.async_schedule_reload.assert_called_once_with(
+            entry.entry_id
+        )
+        refreshed = coordinator(hass, entry, [clu])
+        replacement = clu_entities(refreshed, clu)
+        assert replacement[1].unique_id == counter.unique_id
+        assert isinstance(replacement[1], GrentonCluVariableSwitch)
+        assert [
+            key.name for key in refreshed.state.clus[clu.id].get_subscription_order()
+        ] == ["Enabled"]
+        form = await manager.async_init(entry.entry_id)
+        form = await manager.async_configure(
+            form["flow_id"], {"entity": controller.entity_id}
+        )
+        assert form["step_id"] == "clu_variables"
+        manager.async_abort(form["flow_id"])
+        for platform in platforms:
+            await platform.async_reset()
+
+    asyncio.run(run())

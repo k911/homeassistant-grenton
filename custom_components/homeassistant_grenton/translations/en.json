@@ -111,13 +111,43 @@
         "data": {
           "action_off": "Turn off action"
         }
+      },
+      "clu_variables": {
+        "title": "Configure {clu_name} variables",
+        "description": "Add, edit, or remove custom CLU variables exposed in Home Assistant.",
+        "data": {
+          "operation": "Operation"
+        }
+      },
+      "clu_variable_select": {
+        "title": "Edit a CLU variable",
+        "description": "Select the variable to configure.",
+        "data": {
+          "variable_id": "Variable"
+        }
+      },
+      "clu_variable_remove": {
+        "title": "Remove a CLU variable entity",
+        "description": "Remove the selected variable from Home Assistant. Its value on the CLU is kept.",
+        "data": {
+          "variable_id": "Variable"
+        }
+      },
+      "configure_clu_variable": {
+        "title": "Configure a CLU variable",
+        "description": "Enter the variable name exactly as defined in Grenton and select its value type. Boolean variables become switches; other types become sensors.",
+        "data": {
+          "variable_name": "Variable name",
+          "label": "Display name",
+          "grenton_type": "Grenton type"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
       "entity_not_configurable": "This entity cannot be configured.",
-      "device_not_found": "Selected Grenton widget was not found."
+      "device_not_found": "Selected Grenton device was not found."
     },
     "error": {
       "invalid_configuration": "Select valid options and enter valid values."
@@ -384,7 +414,8 @@
         "water": "Water",
         "weight": "Weight",
         "wind_direction": "Wind direction",
-        "wind_speed": "Wind speed"
+        "wind_speed": "Wind speed",
+        "none": "None"
       }
     },
     "scene_call_types": {
@@ -496,6 +527,21 @@
         "configuration_control": {
           "name": "Configuration control"
         }
+      }
+    },
+    "clu_variable_operations": {
+      "options": {
+        "add": "Add variable",
+        "edit": "Edit variable",
+        "remove": "Remove variable"
+      }
+    },
+    "grenton_variable_types": {
+      "options": {
+        "BOOLEAN": "Boolean",
+        "STRING": "String",
+        "INTEGER": "Integer",
+        "FLOAT": "Float"
       }
     }
   }

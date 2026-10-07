@@ -539,6 +539,10 @@ class GrentonDeviceConfiguration extends GrentonEditor {
           control.addEventListener("value-changed", (event) => {
             event.stopPropagation(); this._data[field.name] = event.detail.value;
           });
+        } else if (selector.text) {
+          control = this._input(field.name, this._data[field.name],
+            (value) => { this._data[field.name] = value; }, "text", field.required);
+          control.disabled = this._busy;
         } else {
           const choices = selector.entity
             ? selector.entity.include_entities.map((value) => ({ value,

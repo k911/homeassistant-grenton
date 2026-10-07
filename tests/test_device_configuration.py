@@ -179,12 +179,14 @@ def test_websocket_starts_scoped_native_options_flow_and_lists_all_widget_entiti
         controller.entity_id = "sensor.main_controller"
         controller._attr_name = "Controller"
         entry.runtime_data.clu_entities = [controller]
-        await async_open_device_configuration.__wrapped__.__wrapped__(
-            hass, connection, {**command, "widget_id": controller.unique_id}
-        )
+        with patch.object(manager, "async_create_flow", AsyncMock(side_effect=lambda *args, **kwargs: GrentonOptionsFlow())):
+            await async_open_device_configuration.__wrapped__.__wrapped__(
+                hass, connection, {**command, "widget_id": controller.unique_id}
+            )
         controller_result = connection.send_result.call_args.args[1]
         assert controller_result["widget_type"] == "CLU"
-        assert controller_result["flow"] is None
+        assert controller_result["flow"]["step_id"] == "clu_variables"
+        manager.async_abort(controller_result["flow"]["flow_id"])
         assert controller_result["entities"][0]["entity_id"] == "sensor.main_controller"
         entry.runtime_data = None
         await async_open_device_configuration.__wrapped__.__wrapped__(

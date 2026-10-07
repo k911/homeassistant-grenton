@@ -14,6 +14,11 @@ from .domain.encryption import GrentonEncryption
 from .domain.entities.clu import GrentonCluEntity
 from .domain.entities.clu_state import GrentonCluStateEntity
 from .domain.entities.clu_state import clu_entities as create_clu_entities
+from .domain.entities.clu_variables import (
+    GrentonCluCustomVariable,
+    GrentonCluVariableSensor,
+    GrentonCluVariableSwitch,
+)
 from .domain.entities.on_off import GrentonEntityOnOff, configured_on_off_type
 from .dto.mobile_interface import GrentonMobileInterfaceDto
 from .frontend import async_register_scene_editor
@@ -93,7 +98,7 @@ def _cleanup_orphans(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     devices: list,
-    clu_entities: list[GrentonCluEntity | GrentonCluStateEntity],
+    clu_entities: list[GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable],
 ) -> None:
     """Remove entity/device registry entries that no longer back a widget or CLU.
 
@@ -116,18 +121,28 @@ def _cleanup_orphans(
         if info := entity.device_info:
             valid_device_identifiers.update(info["identifiers"])
 
-    on_off_domains = {
+    configured_entity_domains = {
         entity.unique_id: configured_on_off_type(entity.coordinator, entity.unique_id)
         for device in devices
         for entity in device.entities
         if isinstance(entity, GrentonEntityOnOff)
     }
 
+    configured_entity_domains.update(
+        {
+            entity.unique_id: "switch"
+            if isinstance(entity, GrentonCluVariableSwitch)
+            else "sensor"
+            for entity in clu_entities
+            if isinstance(entity, (GrentonCluVariableSwitch, GrentonCluVariableSensor))
+        }
+    )
+
     entity_reg = er.async_get(hass)
     for entry in er.async_entries_for_config_entry(entity_reg, config_entry.entry_id):
         if entry.unique_id not in valid_entity_uids or (
-            entry.unique_id in on_off_domains
-            and entry.domain != on_off_domains[entry.unique_id]
+            entry.unique_id in configured_entity_domains
+            and entry.domain != configured_entity_domains[entry.unique_id]
         ):
             _LOGGER.debug("Removing orphaned entity %s (uid=%s)", entry.entity_id, entry.unique_id)
             entity_reg.async_remove(entry.entity_id)

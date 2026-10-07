@@ -108,9 +108,9 @@ async def async_open_device_configuration(
         "entities": entities,
         "flow": None,
     }
-    if any(entity["configurable"] for entity in entities):
+    if controller is not None or any(entity["configurable"] for entity in entities):
         flow = await hass.config_entries.options.async_init(
-            entry.entry_id, context={DEVICE_CONTEXT_KEY: widget.id}
+            entry.entry_id, context={DEVICE_CONTEXT_KEY: msg["widget_id"]}
         )
         result["flow"] = {
             **flow,

@@ -111,13 +111,43 @@
         "data": {
           "action_off": "Akcja wyłączania"
         }
+      },
+      "clu_variables": {
+        "title": "Konfiguracja zmiennych {clu_name}",
+        "description": "Dodaj, edytuj lub usuń własne zmienne CLU udostępnione w Home Assistant.",
+        "data": {
+          "operation": "Operacja"
+        }
+      },
+      "clu_variable_select": {
+        "title": "Edycja zmiennej CLU",
+        "description": "Wybierz zmienną do konfiguracji.",
+        "data": {
+          "variable_id": "Zmienna"
+        }
+      },
+      "clu_variable_remove": {
+        "title": "Usunięcie encji zmiennej CLU",
+        "description": "Usuń wybraną zmienną z Home Assistant. Jej wartość na CLU zostanie zachowana.",
+        "data": {
+          "variable_id": "Zmienna"
+        }
+      },
+      "configure_clu_variable": {
+        "title": "Konfiguracja zmiennej CLU",
+        "description": "Podaj nazwę zmiennej dokładnie tak jak w Grenton i wybierz typ wartości. Zmienne logiczne są przełącznikami, a pozostałe typy czujnikami.",
+        "data": {
+          "variable_name": "Nazwa zmiennej",
+          "label": "Nazwa wyświetlana",
+          "grenton_type": "Typ Grenton"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
       "entity_not_configurable": "Ta encja nie może być skonfigurowana.",
-      "device_not_found": "Nie znaleziono wybranego widgetu Grenton."
+      "device_not_found": "Nie znaleziono wybranego urządzenia Grenton."
     },
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości."
@@ -384,7 +414,8 @@
         "water": "Woda",
         "weight": "Waga",
         "wind_direction": "Kierunek wiatru",
-        "wind_speed": "Prędkość wiatru"
+        "wind_speed": "Prędkość wiatru",
+        "none": "Brak"
       }
     },
     "scene_call_types": {
@@ -496,6 +527,21 @@
         "configuration_control": {
           "name": "Sterowanie konfiguracją"
         }
+      }
+    },
+    "clu_variable_operations": {
+      "options": {
+        "add": "Dodaj zmienną",
+        "edit": "Edytuj zmienną",
+        "remove": "Usuń zmienną"
+      }
+    },
+    "grenton_variable_types": {
+      "options": {
+        "BOOLEAN": "Wartość logiczna",
+        "STRING": "Tekst",
+        "INTEGER": "Liczba całkowita",
+        "FLOAT": "Liczba zmiennoprzecinkowa"
       }
     }
   }
