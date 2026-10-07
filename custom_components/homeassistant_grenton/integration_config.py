@@ -1,7 +1,8 @@
 """Configuration types for Grenton integration."""
 
 from __future__ import annotations
-from dataclasses import dataclass
+
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from homeassistant.config_entries import ConfigEntry
@@ -9,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 if TYPE_CHECKING:
     from .coordinator import GrentonCoordinator
     from .domain.devices.base import BaseGrentonDevice
+    from .domain.entities.clu import GrentonCluEntity
 
 
 class GrentonConfigEntryData(TypedDict):
@@ -24,6 +26,7 @@ class RuntimeData:
     """Runtime data stored in config entry."""
     coordinator: "GrentonCoordinator"
     devices: list["BaseGrentonDevice"]
+    clu_entities: list["GrentonCluEntity"] = field(default_factory=list)
 
 
 type GrentonConfigEntry = ConfigEntry[RuntimeData]

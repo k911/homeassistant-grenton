@@ -7,13 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 import pytest
-import yaml
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import selector
-from probatio import Schema, to_field_list
+from probatio import to_field_list
 
-from custom_components.homeassistant_grenton.button import SERVICE_RUN_SCENE_SCHEMA
 from custom_components.homeassistant_grenton.domain.action import (
     GrentonActionAttribute,
     GrentonActionMethod,
@@ -33,7 +29,6 @@ from custom_components.homeassistant_grenton.domain.enums import GrentonActionEv
 from custom_components.homeassistant_grenton.domain.scene_arguments import (
     ARGUMENT_TYPES,
     argument_expressions,
-    arguments_to_ui,
 )
 from custom_components.homeassistant_grenton.dto.widgets.scene import (
     GrentonWidgetSceneDto,
@@ -413,7 +408,7 @@ def test_rows_can_be_added_removed_and_reordered_on_reopen(coordinator):
 
 
 @pytest.mark.parametrize("call_type", ["SCRIPT", "METHOD"])
-def test_legacy_and_typed_runtime_overrides_do_not_change_saved_arguments(
+def test_button_press_uses_saved_arguments_without_changing_configuration(
     coordinator, call_type
 ):
     entity = make_scene(coordinator)
@@ -426,35 +421,14 @@ def test_legacy_and_typed_runtime_overrides_do_not_change_saved_arguments(
     )
     coordinator.config_entry.options = result["data"]
     initial = entity.extra_state_attributes
-
-    async def run():
-        await entity.run_with_parameter()
-        await entity.run_with_parameter("20")
-        await entity.run_with_parameter(arguments=[{"type": "boolean", "value": True}])
-        await entity.run_with_parameter(arguments=[])
-        await entity.run_with_parameter()
-
-    asyncio.run(run())
-    payloads = [
-        GrentonCluApiActionRequest.from_action(call.args[0]).payload
-        for call in coordinator.execute_action.await_args_list
-    ]
-    assert payloads == (
-        ["Evening(80)", "Evening(20)", "Evening(true)", "Evening()", "Evening(80)"]
-        if call_type == "SCRIPT"
-        else [
-            "Evening:execute(7, 80)",
-            'Evening:execute(7,"20")',
-            "Evening:execute(7, true)",
-            "Evening:execute(7)",
-            "Evening:execute(7, 80)",
-        ]
+    asyncio.run(entity.async_press())
+    assert GrentonCluApiActionRequest.from_action(
+        coordinator.execute_action.await_args.args[0]
+    ).payload == (
+        "Evening(80)" if call_type == "SCRIPT" else "Evening:execute(7, 80)"
     )
     assert entity.extra_state_attributes == initial
     assert coordinator.config_entry.options == result["data"]
-    with pytest.raises(HomeAssistantError):
-        asyncio.run(entity.run_with_parameter(parameter="1", arguments=[]))
-
 
 @pytest.mark.parametrize("action_cls", [GrentonActionAttribute, GrentonActionVariable])
 def test_set_value_calls_use_value_and_ignore_stale_argument_rows(
@@ -485,8 +459,6 @@ def test_set_value_calls_use_value_and_ignore_stale_argument_rows(
     assert entity.extra_state_attributes["call"] == (
         'setVar("7","10")' if call_type == "VARIABLE" else 'Evening:set(7,"10")'
     )
-    with pytest.raises(HomeAssistantError):
-        asyncio.run(entity.run_with_parameter(arguments=[]))
 
 
 def test_switching_to_script_removes_index(coordinator):
@@ -633,47 +605,8 @@ def test_existing_binary_sensor_configuration_still_completes(coordinator):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("call_type", ["SCRIPT", "METHOD"])
-def test_service_editor_matches_registered_selector_and_accepts_typed_rows(
-    coordinator, call_type
-):
-    component = Path(__file__).parents[1] / "custom_components/homeassistant_grenton"
-    metadata = yaml.safe_load((component / "services.yaml").read_text())
-    declared_selector = selector.selector(
-        metadata["run_scene"]["fields"]["arguments"]["selector"]
-    )
-    registered_selector = next(
-        field
-        for key, field in SERVICE_RUN_SCENE_SCHEMA.items()
-        if key.schema == "arguments"
-    )
-    assert declared_selector.serialize() == registered_selector.serialize()
-    arguments = [
-        {"type": "string", "value": "room"},
-        {"type": "number", "value": 12.5},
-        {"type": "boolean", "value": False},
-        {"type": "nil", "value": None},
-        {"type": "lua", "value": "other.value"},
-    ]
-    submitted = Schema(SERVICE_RUN_SCENE_SCHEMA)(
-        {"arguments": arguments_to_ui(arguments)}
-    )
-    entity = make_scene(
-        coordinator,
-        GrentonActionScript if call_type == "SCRIPT" else GrentonActionMethod,
-    )
-    asyncio.run(entity.run_with_parameter(**submitted))
-    assert GrentonCluApiActionRequest.from_action(
-        coordinator.execute_action.await_args.args[0]
-    ).payload == (
-        'Evening("room", 12.5, false, nil, other.value)'
-        if call_type == "SCRIPT"
-        else 'Evening:execute(7, "room", 12.5, false, nil, other.value)'
-    )
-
-
 @pytest.mark.parametrize("language", ["en", "pl"])
-def test_scene_editor_and_service_controls_have_translations(coordinator, language):
+def test_scene_editor_controls_have_translations(coordinator, language):
     component = Path(__file__).parents[1] / "custom_components/homeassistant_grenton"
     translations = json.loads((component / f"translations/{language}.json").read_text())
     entity = make_scene(coordinator)
@@ -703,9 +636,6 @@ def test_scene_editor_and_service_controls_have_translations(coordinator, langua
     assert translations["selector"]["scene_argument_types"]["choices"]["float"] == (
         "Float" if language == "en" else "Liczba zmiennoprzecinkowa"
     )
-    assert set(translations["services"]["run_scene"]["fields"]) == {
-        key.schema for key in SERVICE_RUN_SCENE_SCHEMA
-    }
 
 
 def test_typed_string_controls_are_escaped_and_integer_precision_is_preserved():

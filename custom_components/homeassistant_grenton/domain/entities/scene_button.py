@@ -1,8 +1,6 @@
-from dataclasses import replace
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ...coordinator import GrentonCoordinator
@@ -164,35 +162,3 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
     async def async_press(self, **kwargs: Any) -> None:
         """Run the scene with its configured arguments/value."""
         await self.coordinator.execute_action(self.script_action)
-
-    async def run_with_parameter(
-        self,
-        parameter: str | None = None,
-        arguments: list[dict[str, Any]] | None = None,
-    ) -> None:
-        """Override arguments/value for one call without changing saved options.
-
-        The legacy parameter keeps its existing semantics. Typed arguments
-        override the argument list for a script/method without changing options.
-        Omitted fields use the saved settings; arguments=[] calls without args.
-        """
-        action = self.script_action
-        if parameter is not None and arguments is not None:
-            raise HomeAssistantError("Use either parameter or arguments, not both")
-        if arguments is not None:
-            if not isinstance(action, (GrentonActionScript, GrentonActionMethod)):
-                raise HomeAssistantError(
-                    "Typed arguments require a script or method call"
-                )
-            try:
-                expressions = argument_expressions(arguments)
-            except (TypeError, ValueError) as err:
-                raise HomeAssistantError(str(err)) from err
-            action = replace(action, value=", ".join(expressions))
-            if isinstance(action, GrentonActionMethod):
-                action = replace(action, arguments=expressions)
-        if parameter is not None:
-            action = replace(action, value=parameter)
-            if isinstance(action, GrentonActionMethod):
-                action = replace(action, arguments=None)
-        await self.coordinator.execute_action(action)

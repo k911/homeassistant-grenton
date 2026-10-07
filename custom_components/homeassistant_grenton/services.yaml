@@ -1,28 +1,30 @@
-run_scene:
-  name: Run scene
-  description: Run a configured Grenton scene action, optionally overriding its arguments/value for one call.
+run_script:
+  name: Run script
+  description: Run a named Grenton script directly on a discovered CLU.
   target:
     entity:
       integration: grenton
-      domain: button
+      domain: sensor
+    device:
+      integration: grenton
+      manufacturer: Grenton
+      model: CLU
   fields:
-    parameter:
-      name: Parameter
-      description: >-
-        Omit to use the saved arguments/value. Scripts accept Lua arguments
-        (e.g. quoted "abc", 42, or 42, "abc"). Other call types accept a string
-        value without surrounding quotes. An explicitly empty string clears
-        the arguments/value for this call. Use either parameter or arguments.
-      example: '"123"'
-      required: false
+    script:
+      name: Script
+      description: Name of the script on the selected CLU, without parentheses or arguments.
+      example: Actions
+      required: true
       selector:
         text:
     arguments:
       name: Typed arguments
-      description: >-
-        Script/method arguments with types. Add, edit, delete, or reorder rows.
-        Omit to use saved arguments; an empty list calls without arguments.
-        Use either parameter or arguments.
+      description: Positional arguments. Add, edit, remove, or reorder rows. Omit trailing arguments to use the script's defaults; omit this field or use an empty list to call without arguments.
+      example:
+        - type: string
+          value: lightOffice
+        - type: number
+          value: -1
       required: false
       selector:
         grenton_arguments: {}
