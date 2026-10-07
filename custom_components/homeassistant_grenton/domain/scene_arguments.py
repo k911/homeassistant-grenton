@@ -96,11 +96,9 @@ def argument_expressions(arguments: Any) -> tuple[str, ...]:
 
 
 def imported_arguments(call_type: str, value: str) -> list[dict[str, Any]]:
-    """Expose each imported script argument and keep method values as strings."""
-    if call_type == "SCRIPT":
+    """Expose each imported script or method argument with its inferred type."""
+    if call_type in ("SCRIPT", "METHOD"):
         return [imported_lua_argument(part) for part in split_lua_arguments(value)]
-    if call_type == "METHOD":
-        return [{"type": "string", "value": value}]
     return []
 
 
