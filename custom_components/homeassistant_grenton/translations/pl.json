@@ -141,6 +141,13 @@
           "label": "Nazwa wyświetlana",
           "grenton_type": "Typ Grenton"
         }
+      },
+      "configure_value_v2_type": {
+        "title": "Konfiguracja {entity_name} - Typ encji",
+        "description": "Wybierz czujnik lub czujnik binarny. Czujniki binarne są wyłączone dla 0 i włączone dla wartości dodatnich.",
+        "data": {
+          "entity_type": "Typ encji"
+        }
       }
     },
     "abort": {
@@ -350,7 +357,8 @@
         "tamper": "Sabotaż",
         "update": "Aktualizacja",
         "vibration": "Wibracje",
-        "window": "Okno"
+        "window": "Okno",
+        "none": "Brak"
       }
     },
     "sensor_device_classes": {
@@ -542,6 +550,12 @@
         "STRING": "Tekst",
         "INTEGER": "Liczba całkowita",
         "FLOAT": "Liczba zmiennoprzecinkowa"
+      }
+    },
+    "value_v2_entity_types": {
+      "options": {
+        "sensor": "Czujnik",
+        "binary_sensor": "Czujnik binarny"
       }
     }
   }

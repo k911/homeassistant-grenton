@@ -29,8 +29,8 @@ Your support helps maintain features, fix bugs, and improve documentation.
 
 | Widget Type (Literal) | Description |
 |-----------------------|-------------|
-| **VALUE_V2** | Single numeric value exposed as `sensor` with configurable device class/unit. |
-| **VALUE_DOUBLE** | Dual numeric values exposed as two `sensor` entities (A/B). |
+| **VALUE_V2** | Single value exposed as a configurable `sensor` or `binary_sensor`. |
+| **VALUE_DOUBLE** | Two values (A/B), each independently configurable as `sensor` or `binary_sensor`. |
 | **ON_OFF** | Single relay exposed as a configurable `switch` or on/off `light` (default: switch). |
 | **ON_OFF_DOUBLE** | Dual relays with each channel configurable as `switch` or on/off `light`. |
 | **DIMMER_V2** | Dimmable light exposed as `light` with brightness (0-100%). |
@@ -98,6 +98,21 @@ in that widget/device, with entity selection limited to that device. Select an
 editable entity to review and change its settings through the same forms above.
 Entities without additional settings, including CLU controller sensors, are
 listed as read only. Closing the popup before saving leaves the settings unchanged.
+
+### VALUE_V2 and VALUE_DOUBLE as Binary Sensors
+
+Select the value entity in the configuration popup and choose **Binary sensor**,
+then select a device class such as **Door**, **Window**, or **Opening**. Zero and
+negative values become off; positive values become on. Numeric strings are also
+accepted, while missing or invalid values become unknown. Binary sensors have no
+measurement unit or state class.
+
+The default remains **Sensor**, with configurable device class and unit. Enum
+sensors have no measurement state class or unit. Changing between Sensor and
+Binary sensor reloads the integration and replaces the old entity registration
+on the same device. Update automations and dashboards to use the new entity ID.
+For VALUE_DOUBLE, configure each of the two entities independently; they can use
+different domains, device classes, and units while remaining on the same device.
 
 ### On/Off Controls as Lights
 

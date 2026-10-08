@@ -141,6 +141,13 @@
           "label": "Display name",
           "grenton_type": "Grenton type"
         }
+      },
+      "configure_value_v2_type": {
+        "title": "Configure {entity_name} - Entity Type",
+        "description": "Choose a sensor or binary sensor. Binary sensors are off at 0 and on for positive values.",
+        "data": {
+          "entity_type": "Entity type"
+        }
       }
     },
     "abort": {
@@ -350,7 +357,8 @@
         "tamper": "Tamper",
         "update": "Update",
         "vibration": "Vibration",
-        "window": "Window"
+        "window": "Window",
+        "none": "None"
       }
     },
     "sensor_device_classes": {
@@ -542,6 +550,12 @@
         "STRING": "String",
         "INTEGER": "Integer",
         "FLOAT": "Float"
+      }
+    },
+    "value_v2_entity_types": {
+      "options": {
+        "sensor": "Sensor",
+        "binary_sensor": "Binary sensor"
       }
     }
   }

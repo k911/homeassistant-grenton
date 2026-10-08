@@ -359,6 +359,9 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
             return await self.async_step_configure_clu_variable(user_input)
         return await self.async_step_configure_entity(user_input)
 
+    async def async_step_configure_value_v2_type(self, user_input=None):
+        return await self.async_step_configure_entity(user_input)
+
     async def async_step_configure_sensor_unit(self, user_input=None):
         if hasattr(self, "_variable_id"):
             return await self.async_step_configure_clu_variable(user_input)
