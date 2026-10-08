@@ -144,9 +144,17 @@
       },
       "configure_value_v2_type": {
         "title": "Configure {entity_name} - Entity Type",
-        "description": "Choose a sensor or binary sensor. Binary sensors are off at 0 and on for positive values.",
+        "description": "Choose a sensor or binary sensor. Binary sensors support configurable state inversion.",
         "data": {
           "entity_type": "Entity type"
+        }
+      },
+      "configure_value_v2_binary": {
+        "title": "Configure {entity_name} - Binary Sensor",
+        "description": "Choose the device class. Enable inversion if Grenton reports a positive value when the contact is closed: positive values become off (closed), and 0 becomes on (open). Leave inversion disabled when positive values mean on (open). Missing or invalid values remain unknown.",
+        "data": {
+          "device_class": "Device class",
+          "invert_state": "Invert state"
         }
       }
     },

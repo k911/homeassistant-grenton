@@ -539,6 +539,15 @@ class GrentonDeviceConfiguration extends GrentonEditor {
           control.addEventListener("value-changed", (event) => {
             event.stopPropagation(); this._data[field.name] = event.detail.value;
           });
+        } else if (selector.boolean) {
+          control = document.createElement("input");
+          control.type = "checkbox";
+          control.dataset.field = field.name;
+          control.checked = Boolean(this._data[field.name]);
+          control.disabled = this._busy;
+          control.addEventListener("change", () => {
+            this._data[field.name] = control.checked;
+          });
         } else if (selector.text) {
           control = this._input(field.name, this._data[field.name],
             (value) => { this._data[field.name] = value; }, "text", field.required);

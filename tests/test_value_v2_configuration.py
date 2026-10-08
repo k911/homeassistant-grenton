@@ -155,9 +155,11 @@ def fields(form):
 
 
 @pytest.mark.parametrize("widget_factory", [widget, double_widget])
+@pytest.mark.parametrize("invert_state", [False, True])
 def test_scoped_options_flow_switches_domains_and_clears_incompatible_settings(
     tmp_path,
     widget_factory,
+    invert_state,
 ):
     async def run():
         coord = coordinator(
@@ -209,18 +211,21 @@ def test_scoped_options_flow_switches_domains_and_clears_incompatible_settings(
             result = await flow.async_step_configure_value_v2_type(
                 {"entity_type": "binary_sensor"}
             )
-            assert result["step_id"] == "configure_binary_sensor_class"
+            assert result["step_id"] == "configure_value_v2_binary"
+            assert fields(result)["invert_state"]["default"] is False
+            assert "boolean" in fields(result)["invert_state"]["selector"]
             device_class = fields(result)["device_class"]
             assert device_class["default"] == "none"
             assert "door" in device_class["selector"]["select"]["options"]
             assert "enum" not in device_class["selector"]["select"]["options"]
-            result = await flow.async_step_configure_binary_sensor_class(
-                {"device_class": "door"}
+            result = await flow.async_step_configure_value_v2_binary(
+                {"device_class": "door", "invert_state": invert_state}
             )
             assert result["type"] == "create_entry"
             assert result["data"]["entities"][entity.unique_id] == {
                 "entity_type": "binary_sensor",
                 "device_class": "door",
+                "invert_state": invert_state,
             }
             assert result["data"]["other"] is True
             assert result["data"]["entities"]["front_door_1"] == {
@@ -244,9 +249,18 @@ def test_scoped_options_flow_switches_domains_and_clears_incompatible_settings(
             )
             assert fields(result)["entity_type"]["default"] == "binary_sensor"
             result = await flow.async_step_configure_value_v2_type(
+                {"entity_type": "binary_sensor"}
+            )
+            assert fields(result)["invert_state"]["default"] is invert_state
+            flow = GrentonOptionsFlow()
+            await flow.async_step_entity_list(
+                {"entity": restored.entities[0].entity_id}
+            )
+            result = await flow.async_step_configure_value_v2_type(
                 {"entity_type": "sensor"}
             )
             assert result["step_id"] == "configure_sensor_class"
+            assert "invert_state" not in fields(result)
             assert fields(result)["device_class"]["default"] == "none"
             result = await flow.async_step_configure_sensor_class(
                 {"device_class": "temperature"}
@@ -346,6 +360,7 @@ def test_value_v2_type_selection_translations(language):
         "binary_sensor",
     }
     assert data["selector"]["binary_sensor_device_classes"]["options"]["none"]
+    assert data["options"]["step"]["configure_value_v2_binary"]["data"]["invert_state"]
 
 
 @pytest.mark.parametrize("binary_index", [0, 1])
@@ -419,3 +434,63 @@ def test_double_domain_cleanup_keeps_the_other_channel_registration(tmp_path):
         assert registry.async_get(right.entity_id) is right
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (0, True),
+        (1, False),
+        (2.5, False),
+        ("0", True),
+        ("1", False),
+        (None, None),
+        ("", None),
+        ("bad", None),
+        ("nan", None),
+        (float("inf"), None),
+    ],
+)
+def test_inverted_contact_preserves_unknown_values(value, expected):
+    coord = coordinator(
+        {
+            "entities": {
+                "front_door_0": {
+                    "entity_type": "binary_sensor",
+                    "device_class": "door",
+                    "invert_state": True,
+                }
+            }
+        }
+    )
+    entity = DeviceMapper.to_domain(widget(), coord).entities[0]
+    coord.get_value_for_component.return_value = value
+    assert entity.is_on is expected
+
+
+def test_double_contacts_can_have_different_polarities():
+    coord = coordinator(
+        {
+            "entities": {
+                "front_door_0": {
+                    "entity_type": "binary_sensor",
+                    "device_class": "door",
+                    "invert_state": True,
+                },
+                "front_door_1": {
+                    "entity_type": "binary_sensor",
+                    "device_class": "door",
+                },
+            }
+        }
+    )
+    left, right = DeviceMapper.to_domain(double_widget(), coord).entities
+    coord.get_value_for_component.return_value = 1
+    assert left.is_on is False
+    assert right.is_on is True
+    coord.get_value_for_component.return_value = 0
+    assert left.is_on is True
+    assert right.is_on is False
+    coord.get_value_for_component.return_value = None
+    assert left.is_on is None
+    assert right.is_on is None

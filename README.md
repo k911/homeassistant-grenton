@@ -107,6 +107,13 @@ negative values become off; positive values become on. Numeric strings are also
 accepted, while missing or invalid values become unknown. Binary sensors have no
 measurement unit or state class.
 
+For contacts that report `1` when closed and `0` when open, select the **Door**,
+**Window**, or **Opening** class and enable **Invert state** in the binary sensor
+form. This makes positive values closed/off and zero open/on. Inversion is
+configured separately for each VALUE_DOUBLE channel; missing or invalid values
+remain unknown. It defaults to disabled. The setting describes the reported
+value directly, rather than assuming its meaning from NO/NC wiring.
+
 The default remains **Sensor**, with configurable device class and unit. Enum
 sensors have no measurement state class or unit. Changing between Sensor and
 Binary sensor reloads the integration and replaces the old entity registration
