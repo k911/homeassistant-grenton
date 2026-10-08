@@ -18,7 +18,11 @@ from ..state_object import GrentonVariableValueObject
 from .base import BaseGrentonEntity
 from .clu import clu_device_info
 from .configurable import ConfigurableEntity, StepDefinition, StepResult
-from .value import GrentonEntityValue, GrentonEntityValueConfigurationSchema
+from .value import (
+    TEMPORAL_DEVICE_CLASSES,
+    GrentonEntityValue,
+    GrentonEntityValueConfigurationSchema,
+)
 
 CLU_VARIABLES = "clu_variables"
 
@@ -55,6 +59,8 @@ def normalize_variable(config: dict[str, Any]) -> dict[str, Any]:
         result.pop("device_class", None)
         result.pop(CONF_UNIT_OF_MEASUREMENT, None)
     elif result.get(CONF_UNIT_OF_MEASUREMENT) == "none":
+        result.pop(CONF_UNIT_OF_MEASUREMENT, None)
+    if result.get("device_class") in TEMPORAL_DEVICE_CLASSES:
         result.pop(CONF_UNIT_OF_MEASUREMENT, None)
     return result
 
@@ -191,7 +197,10 @@ class GrentonCluVariableSensor(CluVariableConfiguration, GrentonEntityValue):
             value = super().native_value
         except (ValueError, TypeError, OverflowError):
             return None
-        if self.value_type == GrentonValueType.STRING:
+        if (
+            self.device_class in TEMPORAL_DEVICE_CLASSES
+            or self.value_type == GrentonValueType.STRING
+        ):
             return value
         if not isinstance(value, (int, float)) or not isfinite(value):
             return None

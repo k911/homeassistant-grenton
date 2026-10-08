@@ -423,6 +423,7 @@
         "temperature": "Temperature",
         "temperature_delta": "Temperature delta",
         "timestamp": "Timestamp",
+        "uptime": "Uptime",
         "volatile_organic_compounds": "Volatile organic compounds",
         "volatile_organic_compounds_parts": "Volatile organic compounds parts",
         "voltage": "Voltage",

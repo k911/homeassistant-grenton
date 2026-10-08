@@ -423,6 +423,7 @@
         "temperature": "Temperatura",
         "temperature_delta": "Delta temperatury",
         "timestamp": "Znacznik czasu",
+        "uptime": "Czas pracy",
         "volatile_organic_compounds": "Lotne związki organiczne",
         "volatile_organic_compounds_parts": "Lotne związki organiczne",
         "voltage": "Napięcie",
