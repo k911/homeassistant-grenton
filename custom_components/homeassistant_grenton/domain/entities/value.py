@@ -4,7 +4,7 @@ from typing import Any, Dict
 import voluptuous as vol
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.components.sensor.const import DEVICE_CLASS_UNITS
+from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES, DEVICE_CLASS_UNITS
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.const import CONF_UNIT_OF_MEASUREMENT
 from homeassistant.helpers import selector
@@ -139,6 +139,12 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def state_class(self) -> SensorStateClass | None:  # pyright: ignore[reportIncompatibleVariableOverride]
+        if (
+            self.device_class is not None
+            and SensorStateClass.MEASUREMENT
+            not in DEVICE_CLASS_STATE_CLASSES.get(self.device_class, set())
+        ):
+            return None
         if self.value_type in (GrentonValueType.FLOAT, GrentonValueType.INTEGER):
             return SensorStateClass.MEASUREMENT
         return None
@@ -155,4 +161,6 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def native_unit_of_measurement(self): # pyright: ignore[reportIncompatibleVariableOverride]
+        if self.device_class == SensorDeviceClass.ENUM:
+            return None
         return self._config.get(CONF_UNIT_OF_MEASUREMENT)
