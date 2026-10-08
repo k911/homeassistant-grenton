@@ -151,18 +151,20 @@
       },
       "configure_value_v2_binary": {
         "title": "Configure {entity_name} - Binary Sensor",
-        "description": "Choose the device class. Enable inversion if Grenton reports a positive value when the contact is closed: positive values become off (closed), and 0 becomes on (open). Leave inversion disabled when positive values mean on (open). Missing or invalid values remain unknown.",
+        "description": "Choose the device class. By default, positive values mean off (closed) and 0 or negative values mean on (open). Enable Invert state to reverse this mapping. Missing or invalid values remain unknown.",
         "data": {
           "device_class": "Device class",
           "invert_state": "Invert state"
+        },
+        "data_description": {
+          "invert_state": "Disabled: positive values are off, 0 is on. Enabled: positive values are on, 0 is off. For Door, Window and Opening, on means open and off means closed."
         }
       }
     },
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
-      "entity_not_configurable": "This entity cannot be configured.",
-      "device_not_found": "Selected Grenton device was not found."
+      "entity_not_configurable": "This entity cannot be configured."
     },
     "error": {
       "invalid_configuration": "Select valid options and enter valid values."
@@ -512,55 +514,6 @@
       "options": {
         "switch": "Switch",
         "light": "Light"
-      }
-    },
-    "device_configuration": {
-      "fields": {
-        "title": {
-          "name": "Configure widget entities"
-        },
-        "read_only": {
-          "name": "Read only"
-        },
-        "saved": {
-          "name": "Configuration saved"
-        },
-        "no_configuration": {
-          "name": "These entities have no additional configuration."
-        },
-        "loading": {
-          "name": "Loading…"
-        },
-        "close": {
-          "name": "Close"
-        },
-        "next": {
-          "name": "Next"
-        },
-        "save": {
-          "name": "Save"
-        },
-        "configuration_control": {
-          "name": "Configuration control"
-        },
-        "device_name": {
-          "name": "Device name"
-        },
-        "automatic_name": {
-          "name": "Leave empty to use the automatic name:"
-        },
-        "save_name": {
-          "name": "Save name"
-        },
-        "name_saved": {
-          "name": "Device name saved"
-        },
-        "device_class": {
-          "name": "Device class"
-        },
-        "invert_state": {
-          "name": "Invert state"
-        }
       }
     },
     "clu_variable_operations": {

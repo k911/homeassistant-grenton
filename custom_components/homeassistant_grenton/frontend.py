@@ -7,7 +7,6 @@ from pathlib import Path
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .device_configuration import DEVICE_CONFIGURATION_PANEL
 
 
 async def async_register_scene_editor(hass: HomeAssistant) -> None:
@@ -33,13 +32,4 @@ async def async_register_scene_editor(hass: HomeAssistant) -> None:
             ]
         )
         frontend.add_extra_js_url(hass, url)
-        from homeassistant.components.panel_custom import async_register_panel
-
-        await async_register_panel(
-            hass,
-            frontend_url_path=DEVICE_CONFIGURATION_PANEL,
-            webcomponent_name="grenton-device-configuration",
-            module_url=url,
-            require_admin=True,
-        )
         data["scene_editor_url"] = url

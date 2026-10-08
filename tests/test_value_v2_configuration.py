@@ -6,7 +6,7 @@ import logging
 from datetime import timedelta
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
-from unittest.mock import Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 import pytest
 from homeassistant.components.binary_sensor import (
@@ -20,14 +20,12 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import EntityPlatform
+from homeassistant.helpers.translation import async_get_translations
 from probatio import to_field_list
 from test_clu_scripts import make_entry
 from test_on_off_configuration import coordinator
 
 from custom_components.homeassistant_grenton import _cleanup_orphans
-from custom_components.homeassistant_grenton.device_configuration import (
-    DEVICE_CONTEXT_KEY,
-)
 from custom_components.homeassistant_grenton.dto.widgets.value_double import (
     GrentonWidgetValueDoubleDto,
 )
@@ -102,17 +100,17 @@ def test_numeric_state_class_obeys_ha_device_class(value_type, device_class, exp
 @pytest.mark.parametrize(
     "value, expected",
     [
-        (0, False),
-        ("0", False),
-        ("0.0", False),
-        (1, True),
-        (800, True),
-        ("2", True),
-        (0.25, True),
-        ("0.25", True),
-        (-1, False),
-        (False, False),
-        (True, True),
+        (0, True),
+        ("0", True),
+        ("0.0", True),
+        (1, False),
+        (800, False),
+        ("2", False),
+        (0.25, False),
+        ("0.25", False),
+        (-1, True),
+        (False, True),
+        (True, False),
         (None, None),
         ("", None),
         ("bad", None),
@@ -156,7 +154,7 @@ def fields(form):
 
 @pytest.mark.parametrize("widget_factory", [widget, double_widget])
 @pytest.mark.parametrize("invert_state", [False, True])
-def test_scoped_options_flow_switches_domains_and_clears_incompatible_settings(
+def test_integration_options_flow_switches_domains_and_clears_incompatible_settings(
     tmp_path,
     widget_factory,
     invert_state,
@@ -200,7 +198,6 @@ def test_scoped_options_flow_switches_domains_and_clears_incompatible_settings(
             flow = GrentonOptionsFlow()
             flow.hass = hass
             flow.handler = entry.entry_id
-            flow.context = {DEVICE_CONTEXT_KEY: device.id}
             result = await flow.async_step_entity_list({"entity": entity.entity_id})
             assert result["step_id"] == "configure_value_v2_type"
             assert fields(result)["entity_type"]["default"] == "sensor"
@@ -331,7 +328,7 @@ def test_native_ha_registration_round_trip_and_enum_has_no_measurement_warning(
             entity = device.entities[0]
             state = hass.states.get(entity.entity_id)
             assert state is not None
-            assert state.state == ("off" if domain == "binary_sensor" else "0")
+            assert state.state == ("on" if domain == "binary_sensor" else "0")
             assert "state_class" not in state.attributes
             assert "unit_of_measurement" not in state.attributes
             assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 1
@@ -389,7 +386,7 @@ def test_double_values_have_independent_domains_types_and_subscriptions(binary_i
     coord.get_value_for_component.side_effect = lambda state: (
         "0" if state.index == "3" else "2.5"
     )
-    assert binary.is_on is (binary_index == 1)
+    assert binary.is_on is (binary_index == 0)
     assert sensor.native_value == (0 if binary_index == 1 else 2.5)
     assert sensor.state_class == SensorStateClass.MEASUREMENT
     assert [
@@ -439,11 +436,11 @@ def test_double_domain_cleanup_keeps_the_other_channel_registration(tmp_path):
 @pytest.mark.parametrize(
     "value, expected",
     [
-        (0, True),
-        (1, False),
-        (2.5, False),
-        ("0", True),
-        ("1", False),
+        (0, False),
+        (1, True),
+        (2.5, True),
+        ("0", False),
+        ("1", True),
         (None, None),
         ("", None),
         ("bad", None),
@@ -486,11 +483,67 @@ def test_double_contacts_can_have_different_polarities():
     )
     left, right = DeviceMapper.to_domain(double_widget(), coord).entities
     coord.get_value_for_component.return_value = 1
-    assert left.is_on is False
-    assert right.is_on is True
-    coord.get_value_for_component.return_value = 0
     assert left.is_on is True
     assert right.is_on is False
+    coord.get_value_for_component.return_value = 0
+    assert left.is_on is False
+    assert right.is_on is True
     coord.get_value_for_component.return_value = None
     assert left.is_on is None
     assert right.is_on is None
+
+
+@pytest.mark.parametrize(
+    "language, expected_label",
+    [
+        ("en", "Invert state"),
+        ("pl", "Odwróć stan"),
+    ],
+)
+@pytest.mark.parametrize("widget_factory", [widget, double_widget])
+def test_native_binary_dialog_loads_localized_field_labels(
+    tmp_path, language, expected_label, widget_factory
+):
+    async def run():
+        coord = coordinator()
+        device = DeviceMapper.to_domain(widget_factory(), coord)
+        for entity in device.entities:
+            entity.entity_id = "sensor." + entity.unique_id
+        coord.config_entry.runtime_data = SimpleNamespace(devices=[device])
+        component = (
+            Path(__file__).parents[1] / "custom_components/homeassistant_grenton"
+        )
+        integration = SimpleNamespace(
+            file_path=component, has_translations=True, name="Grenton"
+        )
+        hass = HomeAssistant(str(tmp_path))
+        with patch.object(
+            GrentonOptionsFlow,
+            "config_entry",
+            new_callable=PropertyMock,
+            return_value=coord.config_entry,
+        ):
+            flow = GrentonOptionsFlow()
+            flow.hass = hass
+            await flow.async_step_init({"entity": device.entities[0].entity_id})
+            form = await flow.async_step_configure_value_v2_type(
+                {"entity_type": "binary_sensor"}
+            )
+        # Load the options category exactly as the native HA dialog does,
+        # then look up labels using the step ID emitted by the actual flow.
+        with patch(
+            "homeassistant.helpers.translation.async_get_integrations",
+            AsyncMock(return_value={"grenton": integration}),
+        ):
+            translations = await async_get_translations(
+                hass, language, "options", {"grenton"}
+            )
+        prefix = f"component.grenton.options.step.{form['step_id']}"
+        for field in fields(form):
+            assert translations[f"{prefix}.data.{field}"]
+        assert translations[f"{prefix}.data.invert_state"] == expected_label
+        assert translations[f"{prefix}.data_description.invert_state"]
+        assert fields(form)["invert_state"]["default"] is False
+        assert "boolean" in fields(form)["invert_state"]["selector"]
+
+    asyncio.run(run())

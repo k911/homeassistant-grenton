@@ -12,13 +12,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from test_clu_scripts import make_clu, make_entry, make_hass
 from test_clu_state import coordinator, register_platforms
-from test_device_configuration import fields
+from test_integration_configuration import fields
 
 from custom_components.homeassistant_grenton import _cleanup_orphans
-from custom_components.homeassistant_grenton.device_configuration import (
-    DEVICE_CONTEXT_KEY,
-    async_open_device_configuration,
-)
 from custom_components.homeassistant_grenton.domain.api.clu_messages.action import (
     GrentonCluApiActionRequest,
 )
@@ -57,7 +53,16 @@ def configure_manager(hass, entry):
     return manager
 
 
-def test_native_clu_popup_add_edit_remove_and_cancel_preserve_other_options(tmp_path):
+async def open_clu_variables(manager, entry):
+    """Select the controller through the integration's native entity picker."""
+    form = await manager.async_init(entry.entry_id)
+    assert form["step_id"] == "entity_list"
+    return await manager.async_configure(
+        form["flow_id"], {"entity": "sensor.main_controller"}
+    )
+
+
+def test_native_clu_add_edit_remove_and_cancel_preserve_other_options(tmp_path):
     async def run():
         entry = make_entry()
         other = {
@@ -81,23 +86,8 @@ def test_native_clu_popup_add_edit_remove_and_cancel_preserve_other_options(tmp_
         controllers[0]._attr_name = "Controller"
         coord._apis[clu.id].execute_action = AsyncMock()
         manager = configure_manager(hass, entry)
-        connection = SimpleNamespace(send_result=Mock(), send_error=Mock())
-        await async_open_device_configuration.__wrapped__.__wrapped__(
-            hass,
-            connection,
-            {
-                "id": 1,
-                "type": "grenton/device_configuration",
-                "entry_id": entry.entry_id,
-                "widget_id": controllers[0].unique_id,
-            },
-        )
-        initial = connection.send_result.call_args.args[1]["flow"]
+        initial = await open_clu_variables(manager, entry)
         assert initial["step_id"] == "clu_variables"
-        assert (
-            manager.async_get(initial["flow_id"])["context"][DEVICE_CONTEXT_KEY]
-            == "clu_clu1"
-        )
         form = await manager.async_configure(initial["flow_id"], {"operation": "add"})
         assert "text" in fields(form)["variable_name"]["selector"]
         assert not fields(form)["label"]["required"]
@@ -127,9 +117,7 @@ def test_native_clu_popup_add_edit_remove_and_cancel_preserve_other_options(tmp_
 
         # Cancelling a partially completed add changes no options or subscriptions.
         snapshot = dict(entry.options)
-        flow = await manager.async_init(
-            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
-        )
+        flow = await open_clu_variables(manager, entry)
         flow = await manager.async_configure(flow["flow_id"], {"operation": "add"})
         flow = await manager.async_configure(
             flow["flow_id"],
@@ -141,9 +129,7 @@ def test_native_clu_popup_add_edit_remove_and_cancel_preserve_other_options(tmp_
         assert coord.state.clus[clu.id].get_subscription_order() == []
 
         # Editing changes the type/name while retaining its persisted identity.
-        flow = await manager.async_init(
-            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
-        )
+        flow = await open_clu_variables(manager, entry)
         flow = await manager.async_configure(flow["flow_id"], {"operation": "edit"})
         flow = await manager.async_configure(
             flow["flow_id"], {"variable_id": variable_id}
@@ -180,9 +166,7 @@ def test_native_clu_popup_add_edit_remove_and_cancel_preserve_other_options(tmp_
             ("Status", "STRING"),
             ("Counter", "INTEGER"),
         ]:
-            flow = await manager.async_init(
-                entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
-            )
+            flow = await open_clu_variables(manager, entry)
             flow = await manager.async_configure(flow["flow_id"], {"operation": "add"})
             flow = await manager.async_configure(
                 flow["flow_id"],
@@ -198,9 +182,7 @@ def test_native_clu_popup_add_edit_remove_and_cancel_preserve_other_options(tmp_
                 if config["variable_name"] == variable_name
             )
 
-        flow = await manager.async_init(
-            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
-        )
+        flow = await open_clu_variables(manager, entry)
         flow = await manager.async_configure(flow["flow_id"], {"operation": "remove"})
         assert flow["step_id"] == "clu_variable_remove"
         result = await manager.async_configure(
@@ -236,14 +218,14 @@ def test_flow_validates_names_types_scope_and_unit_without_saving(tmp_path):
         coord = coordinator(hass, entry, [clu])
         entry.runtime_data = RuntimeData(coord, [], clu_entities(coord, clu))
         manager = configure_manager(hass, entry)
-        assert (
-            await manager.async_init(
-                entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_missing"}
+        entry.runtime_data.clu_entities[0].entity_id = "sensor.main_controller"
+        form = await manager.async_init(entry.entry_id)
+        with pytest.raises(InvalidData):
+            await manager.async_configure(
+                form["flow_id"], {"entity": "sensor.missing_controller"}
             )
-        )["reason"] == "device_not_found"
-        flow = await manager.async_init(
-            entry.entry_id, context={DEVICE_CONTEXT_KEY: "clu_clu1"}
-        )
+        manager.async_abort(form["flow_id"])
+        flow = await open_clu_variables(manager, entry)
         flow = await manager.async_configure(flow["flow_id"], {"operation": "add"})
         for name in (" ", "Existing"):
             flow = await manager.async_configure(

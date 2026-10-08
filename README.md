@@ -92,39 +92,28 @@ After initial setup, you can customize individual entities:
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
 
-You can also open a Grenton device under **Settings → Devices & Services → Devices**
-and click **Visit device**. This opens a configuration popup listing the entities
-in that widget/device, with entity selection limited to that device. Select an
-editable entity to review and change its settings through the same forms above.
-Entities without additional settings, including CLU controller sensors, are
-listed as read only. Closing the popup before saving leaves the settings unchanged.
-
 Widget devices are automatically named from their entity labels. Two distinct
 labels are joined with `·`; devices with more labels show the first two and
 `(+N)` for the remaining ones. The widget type remains in the Model field.
-The popup lists every entity and includes a **Device name** field with a separate
-**Save name** button. Leave it empty and save to restore the automatic name.
-Names use Home Assistant's native device rename setting, so a name set in either
-UI is respected across reloads and interface refreshes. Renaming preserves the
-device's room, entity IDs and entity labels, and does not reload the integration.
+You can rename a device using Home Assistant's native device settings.
+The name is respected across reloads and interface refreshes. Renaming preserves
+the device's room, entity IDs and entity labels, and does not reload the integration.
 For a widget with one entity, its default friendly name follows the device name
 without repeating the label. Widgets with multiple entities keep their individual
 entity labels, and existing custom entity names remain unchanged.
 
 ### VALUE_V2 and VALUE_DOUBLE as Binary Sensors
 
-Select the value entity in the configuration popup and choose **Binary sensor**,
-then select a device class such as **Door**, **Window**, or **Opening**. Zero and
-negative values become off; positive values become on. Numeric strings are also
-accepted, while missing or invalid values become unknown. Binary sensors have no
+Select the value entity under **Grenton → Configure** and choose **Binary sensor**,
+then select a device class such as **Door**, **Window**, or **Opening**. With
+**Invert state** disabled (the default), positive values mean off/closed and zero
+means on/open. Negative values are also treated as on. Numeric strings are
+accepted, while missing or invalid values remain unknown. Binary sensors have no
 measurement unit or state class.
 
-For contacts that report `1` when closed and `0` when open, select the **Door**,
-**Window**, or **Opening** class and enable **Invert state** in the binary sensor
-form. This makes positive values closed/off and zero open/on. Inversion is
-configured separately for each VALUE_DOUBLE channel; missing or invalid values
-remain unknown. It defaults to disabled. The setting describes the reported
-value directly, rather than assuming its meaning from NO/NC wiring.
+Enable **Invert state** to reverse this mapping: positive values mean on/open,
+and zero or negative values mean off/closed. This option is configured separately
+for each VALUE_DOUBLE channel; missing or invalid values remain unknown.
 
 The default remains **Sensor**, with configurable device class and unit. Enum
 sensors have no measurement state class or unit. Changing between Sensor and
@@ -197,9 +186,9 @@ for each known device type and the CLU serial prefixes. Extend these maps when
 adding types; the entity bindings use the mapped indexes and skip unsupported
 attributes.
 
-Open the CLU device's **Visit device** link to configure custom variables.
-Choose **Add variable**, enter its Grenton variable name and optional display
-name, and select its Grenton type:
+Open **Grenton → Configure** and select the CLU controller entity to configure
+custom variables. Choose **Add variable**, enter its Grenton variable name and
+optional display name, and select its Grenton type:
 
 - **Boolean** creates a switch that writes `true` / `false` and reads the CLU
   state back after a change.
@@ -280,7 +269,7 @@ with typed arguments.
 ### Scene Actions and Arguments
 
 Select a scene button in **Grenton → Configure** to view its current settings.
-Changing the call type updates the fields immediately in the same popup:
+Changing the call type updates the fields immediately in the same form:
 
 - **Script**: CLU, script name, and optional arguments.
 - **Method**: CLU, object name, method index, and optional arguments.

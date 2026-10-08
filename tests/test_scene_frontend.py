@@ -37,12 +37,7 @@ def test_scene_editor_assets_register_once_for_multiple_config_entries():
     assert static_path.cache_headers is True
     frontend.add_extra_js_url.assert_called_once_with(hass, static_path.url_path)
     assert hass.data["grenton"]["scene_editor_url"] == static_path.url_path
-    frontend.async_register_built_in_panel.assert_called_once()
-    kwargs = frontend.async_register_built_in_panel.call_args.kwargs
-    assert kwargs["frontend_url_path"] == "grenton-configure"
-    assert kwargs["require_admin"] is True
-    assert kwargs["sidebar_title"] is None
-    assert kwargs["config"]["_panel_custom"]["module_url"] == static_path.url_path
+    frontend.async_register_built_in_panel.assert_not_called()
 
 
 def test_headless_home_assistant_does_not_load_frontend_assets():

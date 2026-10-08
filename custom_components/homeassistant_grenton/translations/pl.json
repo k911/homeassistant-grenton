@@ -151,18 +151,20 @@
       },
       "configure_value_v2_binary": {
         "title": "Konfiguracja {entity_name} - Czujnik binarny",
-        "description": "Wybierz klasę urządzenia. Włącz odwrócenie stanu, jeśli Grenton zgłasza wartość dodatnią przy zamkniętym kontaktronie: wartości dodatnie oznaczają wyłączony (zamknięty), a 0 oznacza włączony (otwarty). Pozostaw odwrócenie wyłączone, jeśli wartości dodatnie oznaczają włączony (otwarty). Brakujące lub nieprawidłowe wartości pozostają nieznane.",
+        "description": "Wybierz klasę urządzenia. Domyślnie wartości dodatnie oznaczają wyłączony (zamknięty), a 0 lub wartości ujemne oznaczają włączony (otwarty). Włącz opcję Odwróć stan, aby odwrócić to przypisanie. Brakujące lub nieprawidłowe wartości pozostają nieznane.",
         "data": {
           "device_class": "Klasa urządzenia",
           "invert_state": "Odwróć stan"
+        },
+        "data_description": {
+          "invert_state": "Wyłączone: wartości dodatnie oznaczają wyłączony, a 0 oznacza włączony. Włączone: wartości dodatnie oznaczają włączony, a 0 oznacza wyłączony. Dla drzwi, okna i otwarcia stan włączony oznacza otwarty, a wyłączony oznacza zamknięty."
         }
       }
     },
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
-      "entity_not_configurable": "Ta encja nie może być skonfigurowana.",
-      "device_not_found": "Nie znaleziono wybranego urządzenia Grenton."
+      "entity_not_configurable": "Ta encja nie może być skonfigurowana."
     },
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości."
@@ -512,55 +514,6 @@
       "options": {
         "switch": "Przełącznik",
         "light": "Światło"
-      }
-    },
-    "device_configuration": {
-      "fields": {
-        "title": {
-          "name": "Konfiguruj encje widgetu"
-        },
-        "read_only": {
-          "name": "Tylko do odczytu"
-        },
-        "saved": {
-          "name": "Konfiguracja zapisana"
-        },
-        "no_configuration": {
-          "name": "Te encje nie mają dodatkowych ustawień."
-        },
-        "loading": {
-          "name": "Ładowanie…"
-        },
-        "close": {
-          "name": "Zamknij"
-        },
-        "next": {
-          "name": "Dalej"
-        },
-        "save": {
-          "name": "Zapisz"
-        },
-        "configuration_control": {
-          "name": "Sterowanie konfiguracją"
-        },
-        "device_name": {
-          "name": "Nazwa urządzenia"
-        },
-        "automatic_name": {
-          "name": "Pozostaw puste, aby użyć automatycznej nazwy:"
-        },
-        "save_name": {
-          "name": "Zapisz nazwę"
-        },
-        "name_saved": {
-          "name": "Nazwa urządzenia została zapisana"
-        },
-        "device_class": {
-          "name": "Klasa urządzenia"
-        },
-        "invert_state": {
-          "name": "Odwróć stan"
-        }
       }
     },
     "clu_variable_operations": {
