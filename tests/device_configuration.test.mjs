@@ -20,7 +20,7 @@ class Element {
     for (const child of this.children) for (const node of descendants(child)) node.isConnected = false;
     this.children = [];
   }
-  setAttribute() {}
+  setAttribute(name, value) { (this.attributes ??= {})[name] = value; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
   dispatchEvent(event) { this.listeners[event.type]?.(event); }
   fire(name, detail) { this.dispatchEvent({ type: name, detail, stopPropagation() {}, preventDefault() {} }); }
@@ -34,14 +34,14 @@ class Element {
 
 const selection = { type: "form", flow_id: "flow1", step_id: "entity_list", last_step: false,
   data_schema: [{ name: "entity", required: true, selector: { entity: { include_entities: ["switch.office_0", "switch.office_1"] } } }] };
-const inventory = { device_id: "office-device", name: "Office", widget_type: "ON_OFF_DOUBLE",
+const inventory = { device_id: "office-device", name: "Office", default_name: "Channel 1 · Channel 2", name_by_user: null, widget_type: "ON_OFF_DOUBLE",
   entities: [
     { entity_id: "switch.office_0", name: "Channel 1", configurable: true },
     { entity_id: "switch.office_1", name: "Channel 2", configurable: true },
     { entity_id: "sensor.office_status", name: "Status", configurable: false },
   ], flow: selection };
 
-function popup(metadata = inventory, callApi = async () => {}, preUpgrade = false) {
+function popup(metadata = inventory, callApi = async () => {}, preUpgrade = false, language) {
   const definitions = new Map();
   const listeners = new Map();
   const window = {
@@ -66,10 +66,25 @@ function popup(metadata = inventory, callApi = async () => {}, preUpgrade = fals
     customElements: { get: (tag) => definitions.get(tag), define: (tag, ctor) => definitions.set(tag, ctor) },
   });
   const calls = [];
+  const translations = language ? JSON.parse(readFileSync(new URL(
+    `../custom_components/homeassistant_grenton/translations/${language}.json`, import.meta.url), "utf8")) : undefined;
+  const loadedLocalize = (category) => (key, placeholders = {}) => {
+    const prefix = `component.grenton.${category}.`;
+    if (!key.startsWith(prefix)) return "";
+    const value = key.slice(prefix.length).split(".").reduce((current, part) => current?.[part], translations[category]);
+    return typeof value === "string" ? value.replace(/\{(\w+)\}/g,
+      (match, name) => placeholders[name] ?? match) : "";
+  };
   const hass = {
-    language: "en", states: { "switch.office_1": { attributes: { friendly_name: "Desk light" } } },
-    localize: () => "", loadBackendTranslation: async () => {},
-    callWS: async (command) => { calls.push(command); return typeof metadata === "function" ? metadata() : structuredClone(metadata); },
+    language: language ?? "en", states: { "switch.office_1": { attributes: { friendly_name: "Desk light" } } },
+    localize: () => "", loadBackendTranslation: async (category) => translations ? loadedLocalize(category) : undefined,
+    callWS: async (command) => {
+      calls.push(command);
+      if (command.type === "config/device_registry/update") {
+        return { id: command.device_id, name: metadata.default_name, name_by_user: command.name_by_user };
+      }
+      return typeof metadata === "function" ? metadata() : structuredClone(metadata);
+    },
     callApi: async (...args) => { calls.push(args); return callApi(...args); },
   };
   const panel = new (definitions.get("grenton-device-configuration"))();
@@ -146,7 +161,7 @@ test("late startup response is cancelled after leaving the panel and read-only d
   ] }); await flush();
   assert.match(readOnly.panel.text(), /These entities have no additional configuration/);
   assert.match(readOnly.panel.text(), /switch.clu_use_cloud · Configuration control/);
-  assert.deepEqual(descendants(readOnly.panel.shadowRoot).filter((node) => node.tag === "button").map((node) => node.textContent), ["Close"]);
+  assert.deepEqual(descendants(readOnly.panel.shadowRoot).filter((node) => node.tag === "button").map((node) => node.textContent), ["Save name", "Close"]);
 });
 
 test("CLU popup accepts variable name and optional label as text and saves the selected Grenton type", async () => {
@@ -190,6 +205,8 @@ test("value popup displays and saves inversion as a boolean, including unchecked
     const control = panel.field("invert_state");
     assert.equal(control.tag, "input");
     assert.equal(control.type, "checkbox");
+    assert.equal(control.className, "toggle-switch");
+    assert.equal(control.attributes.role, "switch");
     assert.equal(control.checked, initial);
     assert.equal(Boolean(control.required), false, "an unchecked checkbox is a valid boolean value");
     control.checked = !initial;
@@ -198,4 +215,102 @@ test("value popup displays and saves inversion as a boolean, including unchecked
     assert.deepEqual(JSON.parse(JSON.stringify(calls[1][2])), { device_class: "door", invert_state: !initial });
     assert.match(panel.text(), /Configuration saved/);
   }
+});
+
+for (const language of ["en", "pl"]) {
+  test(`${language}: REST boolean forms render a translated inversion switch using the loader's localizer`, async () => {
+    const strings = JSON.parse(readFileSync(new URL(
+      `../custom_components/homeassistant_grenton/translations/${language}.json`, import.meta.url), "utf8"));
+    for (const booleanField of [{ selector: { boolean: {} } }, { type: "boolean" }, { selector: { boolean: null } }]) {
+      const binary = { type: "form", flow_id: "flow1", step_id: "configure_value_v2_binary", last_step: true,
+        description_placeholders: { entity_name: "Front door" },
+        data_schema: [
+          { name: "device_class", required: true, default: "door", selector: { select: { options: ["door"], translation_key: "binary_sensor_device_classes" } } },
+          { name: "invert_state", required: true, default: false, ...booleanField },
+        ] };
+      const { panel, hass, calls } = popup(inventory, async (_method, _path, data) =>
+        data.entity ? structuredClone(binary) : { type: "create_entry", title: "", data: {} }, false, language);
+      await flush();
+      panel.field("entity").value = "switch.office_1"; panel.field("entity").fire("change");
+      await panel._submit();
+      assert.equal(hass.localize("component.grenton.options.step.configure_value_v2_binary.data.device_class"), "",
+        "the original hass object still has a stale localizer after translation loading");
+      const labels = strings.options.step.configure_value_v2_binary.data;
+      assert.ok(panel.text().includes(labels.device_class));
+      assert.ok(panel.text().includes(labels.invert_state));
+      assert.ok(panel.text().includes(strings.options.step.configure_value_v2_binary.title.replace("{entity_name}", "Front door")));
+      assert.equal(panel.field("device_class").children[0].textContent, strings.selector.binary_sensor_device_classes.options.door);
+      const toggle = panel.field("invert_state");
+      assert.equal(toggle.tag, "input");
+      assert.equal(toggle.attributes.role, "switch");
+      assert.equal(toggle.checked, false);
+      toggle.checked = true; toggle.fire("change");
+      await panel._submit();
+      assert.equal(calls[2][2].invert_state, true);
+    }
+  });
+  test(`${language}: inversion labels remain translated for older binary sensor form steps`, async () => {
+    const strings = JSON.parse(readFileSync(new URL(
+      `../custom_components/homeassistant_grenton/translations/${language}.json`, import.meta.url), "utf8"));
+    const binary = { type: "form", flow_id: "flow1", step_id: "configure_binary_sensor_class", last_step: true,
+      data_schema: [
+        { name: "device_class", required: true, default: "door", selector: { select: { options: ["door"] } } },
+        { name: "invert_state", required: true, default: false, type: "boolean" },
+      ] };
+    const { panel } = popup({ ...inventory, flow: binary }, async () => {}, false, language);
+    await flush();
+    assert.ok(panel.text().includes(strings.options.step.configure_binary_sensor_class.data.device_class));
+    assert.ok(panel.text().includes(strings.selector.device_configuration.fields.invert_state.name));
+    assert.equal(panel.field("invert_state").attributes.role, "switch");
+  });
+}
+
+test("device name saves independently in HA's registry and an empty name restores the default", async () => {
+  const { panel, calls } = popup({ ...inventory, name: "My office", name_by_user: "My office" });
+  await flush();
+  assert.equal(panel.field("device_name").value, "My office");
+  assert.equal(panel.field("device_name").placeholder, "Channel 1 · Channel 2");
+  panel.field("entity").value = "switch.office_1"; panel.field("entity").fire("change");
+  panel.field("device_name").value = " Desk lights "; panel.field("device_name").fire("input");
+  await panel._saveDeviceName();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[1])), { type: "config/device_registry/update", device_id: "office-device", name_by_user: "Desk lights" });
+  assert.match(panel.text(), /Desk lights · ON_OFF_DOUBLE/);
+  assert.match(panel.text(), /Device name saved/);
+  assert.equal(panel.field("entity").value, "switch.office_1", "entity form draft survives rename");
+  assert.equal(panel._flow.flow_id, "flow1");
+  panel.field("device_name").value = "  "; panel.field("device_name").fire("input");
+  await panel._saveDeviceName();
+  assert.equal(calls[2].name_by_user, null);
+  assert.equal(panel.field("device_name").value, "");
+  assert.match(panel.text(), /Channel 1 · Channel 2 · ON_OFF_DOUBLE/);
+  assert.equal(calls.filter((call) => call[0] === "POST").length, 0);
+});
+
+test("closing without saving a device name discards it, and rename failures keep the draft", async () => {
+  const { panel, hass, calls } = popup();
+  await flush();
+  panel.field("device_name").value = "New name"; panel.field("device_name").fire("input");
+  hass.callWS = async (command) => { calls.push(command); throw new Error("Rename failed"); };
+  await panel._saveDeviceName();
+  assert.match(panel.text(), /Rename failed/);
+  assert.equal(panel.field("device_name").value, "New name");
+  assert.equal(panel._metadata.name, "Office");
+  const count = calls.length;
+  await panel._close();
+  assert.equal(calls.length, count + 1, "closing only cancels the entity options flow");
+  assert.equal(calls.filter((call) => call.type === "config/device_registry/update").length, 1);
+});
+
+test("read-only device names can be saved and missing registry devices cannot be renamed", async () => {
+  const { panel, calls } = popup({ ...inventory, flow: null });
+  await flush();
+  panel.field("device_name").value = "Diagnostics"; panel.field("device_name").fire("input");
+  await panel._saveDeviceName();
+  assert.equal(calls[1].name_by_user, "Diagnostics");
+  assert.match(panel.text(), /Device name saved/);
+  const missing = popup({ ...inventory, device_id: null });
+  await flush();
+  assert.equal(missing.panel.field("device_name"), undefined);
+  await missing.panel._saveDeviceName();
+  assert.equal(missing.calls.length, 1);
 });

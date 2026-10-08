@@ -40,6 +40,18 @@ class DeviceMapper:
 
     @staticmethod
     def to_domain(dto: GrentonWidgetUnionDto, coordinator: GrentonCoordinator) -> BaseGrentonDevice:
+        """Map all entities before assigning their shared descriptive device name."""
+        device = DeviceMapper._map_device(dto, coordinator)
+        for entity in device.entities:
+            if info := entity.device_info:
+                info["name"] = device.name
+            # HA uses the device name for its sole/main entity without repeating
+            # the label. Multi-entity widgets retain individual entity labels.
+            entity._use_device_name = len(device.entities) == 1
+        return device
+
+    @staticmethod
+    def _map_device(dto: GrentonWidgetUnionDto, coordinator: GrentonCoordinator) -> BaseGrentonDevice:
         """Convert widget DTO to domain device using appropriate mapper."""
         if isinstance(dto, GrentonWidgetValueV2Dto):
             return DeviceValueV2Mapper.to_domain(dto, coordinator)

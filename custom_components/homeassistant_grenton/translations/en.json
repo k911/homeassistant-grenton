@@ -542,6 +542,24 @@
         },
         "configuration_control": {
           "name": "Configuration control"
+        },
+        "device_name": {
+          "name": "Device name"
+        },
+        "automatic_name": {
+          "name": "Leave empty to use the automatic name:"
+        },
+        "save_name": {
+          "name": "Save name"
+        },
+        "name_saved": {
+          "name": "Device name saved"
+        },
+        "device_class": {
+          "name": "Device class"
+        },
+        "invert_state": {
+          "name": "Invert state"
         }
       }
     },
