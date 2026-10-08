@@ -24,10 +24,6 @@ from custom_components.homeassistant_grenton.binary_sensor import (
     async_setup_entry as setup_binary_sensors,
 )
 from custom_components.homeassistant_grenton.coordinator import GrentonCoordinator
-from custom_components.homeassistant_grenton.device_configuration import (
-    async_open_device_configuration,
-    configuration_url,
-)
 from custom_components.homeassistant_grenton.domain.api.clu import (
     GrentonCluApiProtocol,
     _SubscriptionEndpoint,
@@ -130,10 +126,6 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
         coord = coordinator(hass, entry, clus)
         entities = [entity for clu in clus for entity in clu_entities(coord, clu)]
         entry.runtime_data = RuntimeData(coord, [], entities)
-        for entity in entities:
-            entity.device_info["configuration_url"] = configuration_url(
-                entry.entry_id, f"clu_{entity.clu.id}"
-            )
         for clu in clus:
             keys = coord.state.clus[clu.id].get_subscription_order()
             indexes = ["0", "19", "18", "17"]
@@ -196,27 +188,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
         first_device_id = entities[0].registry_entry.device_id
         assert device_registry.async_get(first_device_id).sw_version == "3.2.0"
 
-        # The device popup includes all six entities and identifies UseCloud
-        # as a control, while the existing run_script device target runs once.
-        hass.config_entries.options = SimpleNamespace(async_init=AsyncMock(return_value={"type": "form", "step_id": "clu_variables"}))
-        connection = SimpleNamespace(send_result=Mock(), send_error=Mock())
-        await async_open_device_configuration.__wrapped__.__wrapped__(
-            hass,
-            connection,
-            {
-                "id": 1,
-                "type": "grenton/device_configuration",
-                "entry_id": entry.entry_id,
-                "widget_id": "clu_clu1",
-            },
-        )
-        inventory = connection.send_result.call_args.args[1]
-        assert len(inventory["entities"]) == 6
-        assert (
-            sum(entity["configuration_control"] for entity in inventory["entities"])
-            == 1
-        )
-        assert inventory["flow"]["step_id"] == "clu_variables"
+        # The run_script device target still runs once for its own CLU.
         await async_setup(hass, {})
         coord.execute_action = AsyncMock()
         await hass.services.async_call(

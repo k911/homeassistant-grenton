@@ -1,10 +1,8 @@
 """Descriptive device names and native registry rename behavior."""
 
 import asyncio
-import json
 import logging
 from datetime import timedelta
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -225,17 +223,3 @@ def test_single_value_entity_uses_device_name_without_repeating_label(tmp_path):
         await platform.async_reset()
 
     asyncio.run(run())
-
-
-@pytest.mark.parametrize("language", ["en", "pl"])
-def test_device_name_popup_translations(language):
-    path = (
-        Path(__file__).parents[1]
-        / "custom_components/homeassistant_grenton/translations"
-        / f"{language}.json"
-    )
-    fields = json.loads(path.read_text())["selector"]["device_configuration"]["fields"]
-    assert all(
-        fields[key]["name"]
-        for key in ("device_name", "automatic_name", "save_name", "name_saved")
-    )

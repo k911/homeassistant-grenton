@@ -110,7 +110,7 @@ class GrentonValueV2Sensor(ValueV2Configuration, GrentonEntityValue):
 
 
 class GrentonValueV2BinarySensor(ValueV2Configuration, GrentonEntityBinarySensor):
-    """Convert finite numeric values to a binary state with optional inversion."""
+    """Treat positive contact values as closed, with optional state inversion."""
 
     @property
     def is_on(self) -> bool | None:
@@ -121,7 +121,7 @@ class GrentonValueV2BinarySensor(ValueV2Configuration, GrentonEntityBinarySensor
             return None
         if not isfinite(numeric):
             return None
-        is_on = numeric > 0
+        is_on = numeric <= 0
         return not is_on if self._config.get("invert_state", False) else is_on
 
 

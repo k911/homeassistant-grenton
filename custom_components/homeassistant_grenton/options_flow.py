@@ -7,7 +7,6 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.helpers import selector
 
-from .device_configuration import DEVICE_CONTEXT_KEY
 from .domain.entities.clu import GrentonCluEntity
 from .domain.entities.clu_variables import (
     CluVariableConfigurationSchema,
@@ -45,15 +44,6 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options - show list of entities to configure."""
-        widget_id = self.context.get(DEVICE_CONTEXT_KEY)
-        controller = self._controller(widget_id)
-        if controller is not None:
-            self._clu = controller.clu
-            return await self.async_step_clu_variables(user_input)
-        if widget_id is not None and not any(
-            device.id == widget_id for device in self.config_entry.runtime_data.devices
-        ):
-            return self.async_abort(reason="device_not_found")
         return await self.async_step_entity_list(user_input)
 
     async def async_step_entity_list(
@@ -203,33 +193,15 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         runtime_data = config_entry.runtime_data
 
         entities: list[Any] = []
-        widget_id = self.context.get(DEVICE_CONTEXT_KEY)
         for device in runtime_data.devices:
-            if widget_id is not None and device.id != widget_id:
-                continue
             for entity in device.entities:
                 if isinstance(entity, ConfigurableEntity):
                     entities.append(entity)
 
         for entity in getattr(runtime_data, "clu_entities", []):
-            if widget_id is not None and widget_id != f"clu_{entity.clu.id}":
-                continue
             if isinstance(entity, (ConfigurableEntity, GrentonCluEntity)):
                 entities.append(entity)
         return entities
-
-    def _controller(self, unique_id):
-        return next(
-            (
-                entity
-                for entity in getattr(
-                    self.config_entry.runtime_data, "clu_entities", []
-                )
-                if isinstance(entity, GrentonCluEntity)
-                and entity.unique_id == unique_id
-            ),
-            None,
-        )
 
     async def async_step_clu_variables(self, user_input=None):
         """Manage custom variables on the selected CLU."""
