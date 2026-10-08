@@ -148,6 +148,8 @@ def test_websocket_starts_scoped_native_options_flow_and_lists_all_widget_entiti
         result = connection.send_result.call_args.args[1]
         assert result["device_id"] == registered.id
         assert result["name"] == "Office"
+        assert result["default_name"] == "Office"
+        assert result["name_by_user"] is None
         assert result["widget_type"] == "ON_OFF_DOUBLE"
         assert [entity["configurable"] for entity in result["entities"]] == [
             True,
@@ -161,6 +163,14 @@ def test_websocket_starts_scoped_native_options_flow_and_lists_all_widget_entiti
         assert flow["context"][DEVICE_CONTEXT_KEY] == device.id
         manager.async_abort(flow["flow_id"])
         assert entry.options == {}
+        dr.async_get(hass).async_update_device(registered.id, name_by_user="My office")
+        with patch.object(manager, "async_create_flow", AsyncMock(side_effect=lambda *args, **kwargs: GrentonOptionsFlow())):
+            await async_open_device_configuration.__wrapped__.__wrapped__(hass, connection, command)
+        renamed = connection.send_result.call_args.args[1]
+        assert renamed["name"] == "My office"
+        assert renamed["name_by_user"] == "My office"
+        assert renamed["default_name"] == "Office"
+        manager.async_abort(renamed["flow"]["flow_id"])
         await async_open_device_configuration.__wrapped__.__wrapped__(
             hass, connection, {**command, "widget_id": "missing"}
         )

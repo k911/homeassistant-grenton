@@ -542,6 +542,24 @@
         },
         "configuration_control": {
           "name": "Sterowanie konfiguracją"
+        },
+        "device_name": {
+          "name": "Nazwa urządzenia"
+        },
+        "automatic_name": {
+          "name": "Pozostaw puste, aby użyć automatycznej nazwy:"
+        },
+        "save_name": {
+          "name": "Zapisz nazwę"
+        },
+        "name_saved": {
+          "name": "Nazwa urządzenia została zapisana"
+        },
+        "device_class": {
+          "name": "Klasa urządzenia"
+        },
+        "invert_state": {
+          "name": "Odwróć stan"
         }
       }
     },

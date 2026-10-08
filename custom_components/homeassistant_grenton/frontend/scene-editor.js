@@ -382,10 +382,16 @@ class GrentonDeviceConfiguration extends GrentonEditor {
   }
 
   _label(name, fallback) {
-    return this._hass?.localize(`component.grenton.selector.device_configuration.fields.${name}.name`) || fallback;
+    return this._selectorText(`device_configuration.fields.${name}.name`, fallback);
+  }
+  _selectorText(key, fallback = "") {
+    const path = `component.grenton.selector.${key}`;
+    return this._selectorLocalize?.(path) || this._hass?.localize(path) || fallback;
   }
   _flowText(key, fallback = "") {
-    return this._hass?.localize(`component.grenton.options.${key}`, this._flow?.description_placeholders) || fallback;
+    const path = `component.grenton.options.${key}`;
+    return this._optionsLocalize?.(path, this._flow?.description_placeholders)
+      || this._hass?.localize(path, this._flow?.description_placeholders) || fallback;
   }
   async _start() {
     if (!this.isConnected || !this._hass || !this._route) return;
@@ -403,6 +409,8 @@ class GrentonDeviceConfiguration extends GrentonEditor {
     this._startedKey = key;
     this._cancelFlow();
     this._metadata = undefined;
+    this._nameDraft = "";
+    this._nameSaved = false;
     this._error = undefined;
     this._render();
     try {
@@ -415,12 +423,15 @@ class GrentonDeviceConfiguration extends GrentonEditor {
         return;
       }
       this._metadata = result;
+      this._nameDraft = result.name_by_user ?? "";
       this._flow = result.flow;
-      await Promise.all([
+      const [optionsLocalize, selectorLocalize] = await Promise.all([
         this.hass.loadBackendTranslation("options", "grenton"),
         this.hass.loadBackendTranslation("selector", "grenton"),
       ]);
       if (this._startedKey !== key || !this.isConnected) return;
+      this._optionsLocalize = typeof optionsLocalize === "function" ? optionsLocalize : undefined;
+      this._selectorLocalize = typeof selectorLocalize === "function" ? selectorLocalize : undefined;
       this._setFlow(result.flow);
     } catch (error) {
       if (this._startedKey !== key || !this.isConnected) return;
@@ -473,6 +484,31 @@ class GrentonDeviceConfiguration extends GrentonEditor {
       if (this.isConnected) this._render();
     }
   }
+  async _saveDeviceName() {
+    if (this._busy || !this._metadata?.device_id) return;
+    const key = this._startedKey;
+    const deviceId = this._metadata.device_id;
+    const name = this._nameDraft.trim() || null;
+    this._busy = true;
+    this._nameSaved = false;
+    this._error = undefined;
+    this._render();
+    try {
+      const result = await this.hass.callWS({
+        type: "config/device_registry/update", device_id: deviceId, name_by_user: name,
+      });
+      if (this._startedKey !== key || !this.isConnected || !this._active) return;
+      this._metadata.name_by_user = result.name_by_user;
+      this._metadata.name = result.name_by_user || result.name || this._metadata.default_name;
+      this._nameDraft = result.name_by_user ?? "";
+      this._nameSaved = true;
+    } catch (error) {
+      if (this._startedKey === key && this.isConnected) this._error = error.message || String(error);
+    } finally {
+      this._busy = false;
+      if (this._startedKey === key && this.isConnected) this._render();
+    }
+  }
   _render() {
     if (!this._active) {
       this.shadowRoot.replaceChildren();
@@ -491,6 +527,15 @@ class GrentonDeviceConfiguration extends GrentonEditor {
       .entities small { display: block; overflow-wrap: anywhere; color: var(--secondary-text-color); }
       .footer { display: flex; justify-content: flex-end; gap: 12px; }
       .error { color: var(--error-color, #db4437); }
+      input.toggle-switch { appearance: none; cursor: pointer; width: 48px;
+        height: 28px; min-height: 28px; padding: 0; margin: 0; border: 0;
+        border-radius: 16px; background: var(--switch-unchecked-track-color, #888); }
+      input.toggle-switch::before { content: ""; display: block; width: 20px;
+        height: 20px; margin: 4px; border-radius: 50%; background: white;
+        transition: transform 120ms ease; }
+      input.toggle-switch:checked { background: var(--primary-color, #03a9f4); }
+      input.toggle-switch:checked::before { transform: translateX(20px); }
+      input.toggle-switch:disabled { opacity: .5; cursor: default; }
     `;
     root.append(style);
     const dialog = document.createElement("dialog");
@@ -503,6 +548,23 @@ class GrentonDeviceConfiguration extends GrentonEditor {
       : this._label("title", "Configure widget entities");
     content.append(heading);
     if (this._metadata) {
+      if (this._metadata.device_id) {
+        const name = this._input("device_name", this._nameDraft, (value) => {
+          this._nameDraft = value; this._nameSaved = false;
+        }, "text", false);
+        name.placeholder = this._metadata.default_name || this._metadata.name;
+        name.disabled = this._busy;
+        content.append(this._field(this._label("device_name", "Device name"), name));
+        const hint = document.createElement("p");
+        hint.textContent = `${this._label("automatic_name", "Leave empty to use the automatic name:")} ${this._metadata.default_name || this._metadata.name}`;
+        content.append(hint, this._button(this._label("save_name", "Save name"),
+          () => this._saveDeviceName(), this._busy));
+        if (this._nameSaved) {
+          const saved = document.createElement("p");
+          saved.textContent = this._label("name_saved", "Device name saved");
+          content.append(saved);
+        }
+      }
       const list = document.createElement("ul");
       list.className = "entities";
       for (const entity of this._metadata.entities) {
@@ -534,14 +596,16 @@ class GrentonDeviceConfiguration extends GrentonEditor {
           control.hass = this.hass;
           control.selector = selector;
           control.value = this._data[field.name];
-          control.localizeValue = (key) => this.hass.localize(`component.grenton.selector.${key}`);
+          control.localizeValue = (key) => this._selectorText(key);
           control.disabled = this._busy;
           control.addEventListener("value-changed", (event) => {
             event.stopPropagation(); this._data[field.name] = event.detail.value;
           });
-        } else if (selector.boolean) {
+        } else if (Object.hasOwn(selector, "boolean") || field.type === "boolean") {
           control = document.createElement("input");
           control.type = "checkbox";
+          control.className = "toggle-switch";
+          control.setAttribute("role", "switch");
           control.dataset.field = field.name;
           control.checked = Boolean(this._data[field.name]);
           control.disabled = this._busy;
@@ -557,14 +621,16 @@ class GrentonDeviceConfiguration extends GrentonEditor {
             ? selector.entity.include_entities.map((value) => ({ value,
               label: this.hass.states[value]?.attributes.friendly_name || value }))
             : (selector.select?.options ?? []).map((option) => typeof option === "string"
-              ? { value: option, label: this.hass.localize(`component.grenton.selector.${selector.select.translation_key}.options.${option}`) || option }
+              ? { value: option, label: this._selectorText(`${selector.select.translation_key}.options.${option}`, option) }
               : option);
           control = this._select(field.name, choices, this._data[field.name],
             (value) => { this._data[field.name] = value; });
           control.disabled = this._busy;
         }
         this._controls.push(control);
-        content.append(this._field(this._flowText(`step.${this._flow.step_id}.data.${field.name}`, field.name), control));
+        const label = this._flowText(`step.${this._flow.step_id}.data.${field.name}`)
+          || this._selectorText(`device_configuration.fields.${field.name}.name`, field.name);
+        content.append(this._field(label, control));
       }
       for (const error of new Set(Object.values(this._flow.errors ?? {}))) {
         const message = document.createElement("p"); message.className = "error";

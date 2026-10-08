@@ -99,6 +99,18 @@ editable entity to review and change its settings through the same forms above.
 Entities without additional settings, including CLU controller sensors, are
 listed as read only. Closing the popup before saving leaves the settings unchanged.
 
+Widget devices are automatically named from their entity labels. Two distinct
+labels are joined with `·`; devices with more labels show the first two and
+`(+N)` for the remaining ones. The widget type remains in the Model field.
+The popup lists every entity and includes a **Device name** field with a separate
+**Save name** button. Leave it empty and save to restore the automatic name.
+Names use Home Assistant's native device rename setting, so a name set in either
+UI is respected across reloads and interface refreshes. Renaming preserves the
+device's room, entity IDs and entity labels, and does not reload the integration.
+For a widget with one entity, its default friendly name follows the device name
+without repeating the label. Widgets with multiple entities keep their individual
+entity labels, and existing custom entity names remain unchanged.
+
 ### VALUE_V2 and VALUE_DOUBLE as Binary Sensors
 
 Select the value entity in the configuration popup and choose **Binary sensor**,

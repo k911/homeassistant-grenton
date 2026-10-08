@@ -84,7 +84,7 @@ async def async_open_device_configuration(
     entities = [
         {
             "entity_id": entity.entity_id,
-            "name": entity.name,
+            "name": entity.name or getattr(entity, "label", None),
             "configurable": isinstance(entity, ConfigurableEntity),
             "configuration_control": entity.entity_category == EntityCategory.CONFIG,
         }
@@ -103,7 +103,11 @@ async def async_open_device_configuration(
         "device_id": device.id if device else None,
         "name": (device.name_by_user or device.name)
         if device
-        else (widget.type if widget else controller.clu.name),
+        else (widget.name if widget else controller.clu.name),
+        "default_name": device.name
+        if device
+        else (widget.name if widget else controller.clu.name),
+        "name_by_user": device.name_by_user if device else None,
         "widget_type": widget.type if widget else "CLU",
         "entities": entities,
         "flow": None,
