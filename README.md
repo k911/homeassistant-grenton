@@ -195,6 +195,12 @@ optional display name, and select its Grenton type:
 - **String**, **Integer**, and **Float** create sensors with the same device
   class and unit settings as VALUE_V2. Select **None** for a plain value sensor.
 
+For a variable containing Unix seconds, choose **Timestamp** to display the date
+and time, or **Date** to display its calendar date in Home Assistant's configured
+time zone. These classes have no measurement state class or unit. **Uptime**
+(**Czas pracy** in Polish) expects Unix seconds for the last boot time; the
+built-in CLU Uptime entity still reports elapsed seconds as a duration.
+
 The same dialog lets you edit or remove a configured variable. These are
 existing Grenton variables selected for exposure in Home Assistant; adding or
 removing an entity does not create or delete a variable on the CLU. Their
