@@ -122,6 +122,12 @@ on the same device. Update automations and dashboards to use the new entity ID.
 For VALUE_DOUBLE, configure each of the two entities independently; they can use
 different domains, device classes, and units while remaining on the same device.
 
+Open a value entity from its device page to inspect its read-only `state_source`
+attributes: call type and CLU ID, plus object name and attribute index for an
+Attribute source, or variable name for a Variable source. This is available for
+sensor and binary sensor presentations, independently for each VALUE_DOUBLE
+channel, and for custom CLU variable sensors.
+
 ### On/Off Controls as Lights
 
 Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
