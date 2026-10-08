@@ -55,25 +55,24 @@ class ValueV2ConfigurationSchema(GrentonEntityValueConfigurationSchema):
         default = current.get("device_class", "none")
         if default not in options:
             default = "none"
+        schema = {
+            vol.Required("device_class", default=default): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    translation_key="binary_sensor_device_classes"
+                    if binary
+                    else "sensor_device_classes",
+                    sort=True,
+                )
+            )
+        }
+        if binary:
+            schema[
+                vol.Required("invert_state", default=current.get("invert_state", False))
+            ] = selector.BooleanSelector()
         return StepResult(
-            step_id="configure_binary_sensor_class"
-            if binary
-            else "configure_sensor_class",
-            schema=vol.Schema(
-                {
-                    vol.Required(
-                        "device_class", default=default
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=options,
-                            translation_key="binary_sensor_device_classes"
-                            if binary
-                            else "sensor_device_classes",
-                            sort=True,
-                        )
-                    )
-                }
-            ),
+            step_id="configure_value_v2_binary" if binary else "configure_sensor_class",
+            schema=vol.Schema(schema),
         )
 
     def _build_step_unit_schema(self, current, accumulated):
@@ -92,6 +91,8 @@ class ValueV2Configuration:
 
     async def apply_configuration(self, user_input):
         config = dict(user_input)
+        if config.get("entity_type") != "binary_sensor":
+            config.pop("invert_state", None)
         if config.get("device_class") in (None, "none"):
             config.pop("device_class", None)
             config.pop(CONF_UNIT_OF_MEASUREMENT, None)
@@ -109,7 +110,7 @@ class GrentonValueV2Sensor(ValueV2Configuration, GrentonEntityValue):
 
 
 class GrentonValueV2BinarySensor(ValueV2Configuration, GrentonEntityBinarySensor):
-    """Convert finite numeric values to a binary state: positive means on."""
+    """Convert finite numeric values to a binary state with optional inversion."""
 
     @property
     def is_on(self) -> bool | None:
@@ -120,7 +121,8 @@ class GrentonValueV2BinarySensor(ValueV2Configuration, GrentonEntityBinarySensor
             return None
         if not isfinite(numeric):
             return None
-        return numeric > 0
+        is_on = numeric > 0
+        return not is_on if self._config.get("invert_state", False) else is_on
 
 
 def value_v2_entity(*, coordinator, id, label, state_object, value_type, device_info):

@@ -144,9 +144,17 @@
       },
       "configure_value_v2_type": {
         "title": "Konfiguracja {entity_name} - Typ encji",
-        "description": "Wybierz czujnik lub czujnik binarny. Czujniki binarne są wyłączone dla 0 i włączone dla wartości dodatnich.",
+        "description": "Wybierz czujnik lub czujnik binarny. Czujniki binarne umożliwiają odwrócenie stanu.",
         "data": {
           "entity_type": "Typ encji"
+        }
+      },
+      "configure_value_v2_binary": {
+        "title": "Konfiguracja {entity_name} - Czujnik binarny",
+        "description": "Wybierz klasę urządzenia. Włącz odwrócenie stanu, jeśli Grenton zgłasza wartość dodatnią przy zamkniętym kontaktronie: wartości dodatnie oznaczają wyłączony (zamknięty), a 0 oznacza włączony (otwarty). Pozostaw odwrócenie wyłączone, jeśli wartości dodatnie oznaczają włączony (otwarty). Brakujące lub nieprawidłowe wartości pozostają nieznane.",
+        "data": {
+          "device_class": "Klasa urządzenia",
+          "invert_state": "Odwróć stan"
         }
       }
     },

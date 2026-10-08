@@ -176,3 +176,26 @@ test("CLU popup accepts variable name and optional label as text and saves the s
   assert.deepEqual(JSON.parse(JSON.stringify(calls[2][2])), { variable_name: "OfficeEnabled", label: "", grenton_type: "BOOLEAN" });
   assert.match(panel.text(), /Configuration saved/);
 });
+
+test("value popup displays and saves inversion as a boolean, including unchecked false", async () => {
+  for (const initial of [false, true]) {
+    const binary = { type: "form", flow_id: "flow1", step_id: "configure_value_v2_binary", last_step: true,
+      data_schema: [
+        { name: "device_class", required: true, default: "door", selector: { select: { options: ["door"] } } },
+        { name: "invert_state", required: true, default: initial, selector: { boolean: {} } },
+      ] };
+    const { panel, calls } = popup({ ...inventory, widget_type: "VALUE_DOUBLE", flow: binary },
+      async () => ({ type: "create_entry", title: "", data: {} }));
+    await flush();
+    const control = panel.field("invert_state");
+    assert.equal(control.tag, "input");
+    assert.equal(control.type, "checkbox");
+    assert.equal(control.checked, initial);
+    assert.equal(Boolean(control.required), false, "an unchecked checkbox is a valid boolean value");
+    control.checked = !initial;
+    control.fire("change");
+    await panel._submit();
+    assert.deepEqual(JSON.parse(JSON.stringify(calls[1][2])), { device_class: "door", invert_state: !initial });
+    assert.match(panel.text(), /Configuration saved/);
+  }
+});
