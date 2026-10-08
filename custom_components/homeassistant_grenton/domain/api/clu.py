@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, Dict, Callable, Awaitable
 import logging
 import asyncio
@@ -40,6 +40,8 @@ class _SubscriptionEndpoint:
     protocol: Optional["GrentonCluApiProtocol"]
     keys: list[StateKey]
     session_id: int
+    keep_alive_id: str = field(default_factory=lambda: secrets.token_hex(4))
+    registration_id: str = field(default_factory=lambda: secrets.token_hex(4))
 
 
 class GrentonCluApi:
@@ -53,6 +55,9 @@ class GrentonCluApi:
         # Serialize outgoing actions per-CLU so grouped commands don't burst
         # the shared UDP socket (CLU drops datagrams under a burst).
         self._action_lock = asyncio.Lock()
+        # Readbacks can overlap the periodic refresh. Stable registration IDs
+        # require one in-flight registration per subscription socket.
+        self._registration_lock = asyncio.Lock()
 
         # Main socket — used for pings and actions only.
         self.transport: Optional[asyncio.DatagramTransport] = None
@@ -113,14 +118,22 @@ class GrentonCluApi:
         self._subscription_endpoints = []
 
     async def ping(self) -> bool:
-        """Send a keep-alive ping on the main socket."""
+        """Keep the action and every subscription UDP endpoint alive."""
         if not self.protocol:
             _LOGGER.warning("[%s] No protocol available for ping", self.clu.id)
             return False
 
-        request = GrentonCluApiPingRequest(self.keep_alive_id)
-        wire_message = await self.protocol.send_request(request)
-        return wire_message is not None
+        # A CLU tracks client liveness by source UDP endpoint. Pinging only the
+        # main/action socket does not keep the separate subscriptions alive.
+        endpoints = [(self.protocol, self.keep_alive_id), *[
+            (endpoint.protocol, endpoint.keep_alive_id)
+            for endpoint in self._subscription_endpoints
+        ]]
+        responses = await asyncio.gather(*(
+            protocol.send_request(GrentonCluApiPingRequest(message_id))
+            for protocol, message_id in endpoints if protocol is not None
+        ))
+        return len(responses) == len(endpoints) and all(response is not None for response in responses)
 
     async def register_component_states(self, keys: list[StateKey]) -> list[GrentonValue] | None:
         """Subscribe to state keys, chunked to stay under the CLU's UDP buffer.
@@ -131,33 +144,34 @@ class GrentonCluApi:
         updates; the socket also identifies which chunk a report belongs to.
 
         Sockets are opened once and reused. The periodic re-register only
-        refreshes the subscription (keepalive) on the existing sockets instead of
+        refreshes registration on the existing sockets instead of
         tearing them down — recreating them drops the CLU's push channel and
         collapses updates to the re-register interval.
 
         Returns initial values in the same order as the input ``keys``; positions
         for chunks that failed are filled with None.
         """
-        if not keys:
-            _LOGGER.debug("[%s] No state keys to register", self.clu.id)
-            return None
+        async with self._registration_lock:
+            if not keys:
+                _LOGGER.debug("[%s] No state keys to register", self.clu.id)
+                return None
 
-        chunks = [
-            keys[i : i + MAX_KEYS_PER_REGISTER]
-            for i in range(0, len(keys), MAX_KEYS_PER_REGISTER)
-        ]
+            chunks = [
+                keys[i : i + MAX_KEYS_PER_REGISTER]
+                for i in range(0, len(keys), MAX_KEYS_PER_REGISTER)
+            ]
 
-        # Rebuild sockets only when the subscribed key set actually changes
-        # (e.g. after a reconfigure); otherwise keep them open so push survives.
-        if [endpoint.keys for endpoint in self._subscription_endpoints] != chunks:
-            await self._close_subscription_endpoints()
-            for chunk in chunks:
-                await self._open_chunk_socket(chunk)
+            # Rebuild sockets only when the subscribed key set actually changes
+            # (e.g. after a reconfigure); otherwise keep them open so push survives.
+            if [endpoint.keys for endpoint in self._subscription_endpoints] != chunks:
+                await self._close_subscription_endpoints()
+                for chunk in chunks:
+                    await self._open_chunk_socket(chunk)
 
-        results = await asyncio.gather(
-            *(self._register_chunk(endpoint) for endpoint in self._subscription_endpoints)
-        )
-        return [value for chunk_values in results for value in chunk_values]
+            results = await asyncio.gather(
+                *(self._register_chunk(endpoint) for endpoint in self._subscription_endpoints)
+            )
+            return [value for chunk_values in results for value in chunk_values]
 
     async def _open_chunk_socket(self, chunk: list[StateKey]) -> None:
         """Open one persistent UDP socket dedicated to a chunk of keys.
@@ -185,9 +199,14 @@ class GrentonCluApi:
             self._subscription_endpoints.append(_SubscriptionEndpoint(None, None, chunk, 0))
             return
 
-        self._subscription_endpoints.append(_SubscriptionEndpoint(transport, protocol, chunk, 0))
-        _LOGGER.debug("[%s] Opened persistent subscription socket for %d key(s)",
-                      self.clu.id, len(chunk))
+        endpoint = _SubscriptionEndpoint(transport, protocol, chunk, 0)
+        # Establish this endpoint's client session before registering its keys.
+        # Add it to the ping loop only after this initial request has finished.
+        if await protocol.send_request(GrentonCluApiPingRequest(endpoint.keep_alive_id)) is None:
+            _LOGGER.warning("[%s] Initial subscription keepalive failed", self.clu.id)
+        self._subscription_endpoints.append(endpoint)
+        _LOGGER.debug("[%s] Opened persistent subscription socket %s to %s:%d for %d key(s)",
+                      self.clu.id, transport.get_extra_info("sockname"), self.clu.ip, self.clu.port, len(chunk))
 
     async def _register_chunk(self, endpoint: "_SubscriptionEndpoint") -> list[GrentonValue]:
         """(Re)register a chunk on its persistent socket; return current values.
@@ -198,7 +217,9 @@ class GrentonCluApi:
         if endpoint.protocol is None:
             return [None] * len(endpoint.keys)
 
-        request = GrentonCluApiClientRegisterRequest(endpoint.keys, 0, secrets.token_hex(4))
+        # Some CLU firmware needs the same registration ID on every refresh,
+        # as used by the single-socket CLI, to retain unsolicited reports.
+        request = GrentonCluApiClientRegisterRequest(endpoint.keys, endpoint.session_id, endpoint.registration_id)
         wire = await endpoint.protocol.send_request(request)
         if wire is None:
             return [None] * len(endpoint.keys)
