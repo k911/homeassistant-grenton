@@ -330,6 +330,14 @@ def test_native_entities_share_clu_device_and_switch_writes_only_own_variable(tm
         assert sensors[0].native_unit_of_measurement == "°C"
         assert sensors[0].state_class.value == "measurement"
         assert sensors[2].state_class is None
+        for sensor in sensors:
+            attributes = hass.states.get(sensor.entity_id).attributes
+            assert attributes["state_source"] == {
+                "call_type": "VARIABLE",
+                "clu_id": "clu1",
+                "variable_name": attributes["variable_name"],
+            }
+            assert attributes["grenton_type"] == sensor.value_type.value
         await coord._process_report(
             "clu1", keys, [False, "not a number", "invalid", "Working"]
         )

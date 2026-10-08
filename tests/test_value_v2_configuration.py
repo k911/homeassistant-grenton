@@ -26,6 +26,7 @@ from test_clu_scripts import make_entry
 from test_on_off_configuration import coordinator
 
 from custom_components.homeassistant_grenton import _cleanup_orphans
+from custom_components.homeassistant_grenton.dto.value import GrentonValueVariableDto
 from custom_components.homeassistant_grenton.dto.widgets.value_double import (
     GrentonWidgetValueDoubleDto,
 )
@@ -331,6 +332,12 @@ def test_native_ha_registration_round_trip_and_enum_has_no_measurement_warning(
             assert state.state == ("on" if domain == "binary_sensor" else "0")
             assert "state_class" not in state.attributes
             assert "unit_of_measurement" not in state.attributes
+            assert state.attributes["state_source"] == {
+                "call_type": "ATTRIBUTE",
+                "clu_id": "clu2",
+                "object_name": "DIN_1",
+                "index": "3",
+            }
             assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 1
             if device_id:
                 assert entity.registry_entry.device_id == device_id
@@ -392,6 +399,45 @@ def test_double_values_have_independent_domains_types_and_subscriptions(binary_i
     assert [
         call.args[0].index for call in coord.register_component_state.call_args_list
     ] == ["3", "4"]
+
+
+@pytest.mark.parametrize("entity_type", ["sensor", "binary_sensor"])
+def test_double_source_attributes_follow_each_channel_and_preserve_sources(entity_type):
+    coord = coordinator(
+        {
+            "entities": {
+                f"front_door_{index}": {
+                    "entity_type": entity_type,
+                    "invert_state": True,
+                }
+                for index in (0, 1)
+            }
+        }
+    )
+    dto = double_widget()
+    dto.componentRight.object.value = GrentonValueVariableDto(
+        cluId="clu1", objectName="", index="DoorClosed"
+    )
+    left, right = DeviceMapper.to_domain(dto, coord).entities
+    assert left.extra_state_attributes["state_source"] == {
+        "call_type": "ATTRIBUTE",
+        "clu_id": "clu2",
+        "object_name": "DIN_1",
+        "index": "3",
+    }
+    assert right.extra_state_attributes["state_source"] == {
+        "call_type": "VARIABLE",
+        "clu_id": "clu1",
+        "variable_name": "DoorClosed",
+    }
+    # Inspecting or altering a returned snapshot cannot change the subscribed source.
+    right.extra_state_attributes["state_source"]["variable_name"] = "Other"
+    assert right.state_object.index == "DoorClosed"
+    assert right.extra_state_attributes["state_source"]["variable_name"] == "DoorClosed"
+    assert [call.args[0] for call in coord.register_component_state.call_args_list] == [
+        left.state_object,
+        right.state_object,
+    ]
 
 
 def test_double_domain_cleanup_keeps_the_other_channel_registration(tmp_path):

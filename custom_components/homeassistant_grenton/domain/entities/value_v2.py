@@ -113,6 +113,13 @@ class GrentonValueV2BinarySensor(ValueV2Configuration, GrentonEntityBinarySensor
     """Treat positive contact values as closed, with optional state inversion."""
 
     @property
+    def extra_state_attributes(self):
+        return {
+            **(super().extra_state_attributes or {}),
+            "state_source": self.state_object.source_attributes,
+        }
+
+    @property
     def is_on(self) -> bool | None:
         value = self.coordinator.get_value_for_component(self.state_object)
         try:
