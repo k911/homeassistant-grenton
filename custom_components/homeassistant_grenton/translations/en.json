@@ -111,13 +111,60 @@
         "data": {
           "action_off": "Turn off action"
         }
+      },
+      "clu_variables": {
+        "title": "Configure {clu_name} variables",
+        "description": "Add, edit, or remove custom CLU variables exposed in Home Assistant.",
+        "data": {
+          "operation": "Operation"
+        }
+      },
+      "clu_variable_select": {
+        "title": "Edit a CLU variable",
+        "description": "Select the variable to configure.",
+        "data": {
+          "variable_id": "Variable"
+        }
+      },
+      "clu_variable_remove": {
+        "title": "Remove a CLU variable entity",
+        "description": "Remove the selected variable from Home Assistant. Its value on the CLU is kept.",
+        "data": {
+          "variable_id": "Variable"
+        }
+      },
+      "configure_clu_variable": {
+        "title": "Configure a CLU variable",
+        "description": "Enter the variable name exactly as defined in Grenton and select its value type. Boolean variables become switches; other types become sensors.",
+        "data": {
+          "variable_name": "Variable name",
+          "label": "Display name",
+          "grenton_type": "Grenton type"
+        }
+      },
+      "configure_value_v2_type": {
+        "title": "Configure {entity_name} - Entity Type",
+        "description": "Choose a sensor or binary sensor. Binary sensors support configurable state inversion.",
+        "data": {
+          "entity_type": "Entity type"
+        }
+      },
+      "configure_value_v2_binary": {
+        "title": "Configure {entity_name} - Binary Sensor",
+        "description": "Choose the device class. By default, positive values mean off (closed) and 0 or negative values mean on (open). Enable Invert state to reverse this mapping. Missing or invalid values remain unknown.",
+        "data": {
+          "device_class": "Device class",
+          "invert_state": "Invert state"
+        },
+        "data_description": {
+          "invert_state": "Disabled: positive values are off, 0 is on. Enabled: positive values are on, 0 is off. For Door, Window and Opening, on means open and off means closed."
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
-      "entity_not_configurable": "This entity cannot be configured.",
-      "device_not_found": "Selected Grenton widget was not found."
+      "entity_not_configurable": "This entity cannot be configured."
     },
     "error": {
       "invalid_configuration": "Select valid options and enter valid values."
@@ -206,6 +253,25 @@
       },
       "clu_controller": {
         "name": "Controller"
+      },
+      "clu_uptime": {
+        "name": "Uptime"
+      },
+      "clu_bus_voltage": {
+        "name": "Bus voltage"
+      },
+      "clu_firmware_version": {
+        "name": "Firmware version"
+      }
+    },
+    "binary_sensor": {
+      "clu_cloud_connection": {
+        "name": "Cloud connection"
+      }
+    },
+    "switch": {
+      "clu_use_cloud": {
+        "name": "Use cloud"
       }
     }
   },
@@ -301,7 +367,8 @@
         "tamper": "Tamper",
         "update": "Update",
         "vibration": "Vibration",
-        "window": "Window"
+        "window": "Window",
+        "none": "None"
       }
     },
     "sensor_device_classes": {
@@ -356,6 +423,7 @@
         "temperature": "Temperature",
         "temperature_delta": "Temperature delta",
         "timestamp": "Timestamp",
+        "uptime": "Uptime",
         "volatile_organic_compounds": "Volatile organic compounds",
         "volatile_organic_compounds_parts": "Volatile organic compounds parts",
         "voltage": "Voltage",
@@ -365,7 +433,8 @@
         "water": "Water",
         "weight": "Weight",
         "wind_direction": "Wind direction",
-        "wind_speed": "Wind speed"
+        "wind_speed": "Wind speed",
+        "none": "None"
       }
     },
     "scene_call_types": {
@@ -448,32 +517,25 @@
         "light": "Light"
       }
     },
-    "device_configuration": {
-      "fields": {
-        "title": {
-          "name": "Configure widget entities"
-        },
-        "read_only": {
-          "name": "Read only"
-        },
-        "saved": {
-          "name": "Configuration saved"
-        },
-        "no_configuration": {
-          "name": "These entities have no additional configuration."
-        },
-        "loading": {
-          "name": "Loading…"
-        },
-        "close": {
-          "name": "Close"
-        },
-        "next": {
-          "name": "Next"
-        },
-        "save": {
-          "name": "Save"
-        }
+    "clu_variable_operations": {
+      "options": {
+        "add": "Add variable",
+        "edit": "Edit variable",
+        "remove": "Remove variable"
+      }
+    },
+    "grenton_variable_types": {
+      "options": {
+        "BOOLEAN": "Boolean",
+        "STRING": "String",
+        "INTEGER": "Integer",
+        "FLOAT": "Float"
+      }
+    },
+    "value_v2_entity_types": {
+      "options": {
+        "sensor": "Sensor",
+        "binary_sensor": "Binary sensor"
       }
     }
   }

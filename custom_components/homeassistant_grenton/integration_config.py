@@ -11,10 +11,13 @@ if TYPE_CHECKING:
     from .coordinator import GrentonCoordinator
     from .domain.devices.base import BaseGrentonDevice
     from .domain.entities.clu import GrentonCluEntity
+    from .domain.entities.clu_state import GrentonCluStateEntity
+    from .domain.entities.clu_variables import GrentonCluCustomVariable
 
 
 class GrentonConfigEntryData(TypedDict):
     """Type definition for config entry data."""
+
     ip_address: str
     port: int
     pin: str
@@ -24,9 +27,12 @@ class GrentonConfigEntryData(TypedDict):
 @dataclass
 class RuntimeData:
     """Runtime data stored in config entry."""
-    coordinator: "GrentonCoordinator"
-    devices: list["BaseGrentonDevice"]
-    clu_entities: list["GrentonCluEntity"] = field(default_factory=list)
+
+    coordinator: GrentonCoordinator
+    devices: list[BaseGrentonDevice]
+    clu_entities: list[
+        GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable
+    ] = field(default_factory=list)
 
 
 type GrentonConfigEntry = ConfigEntry[RuntimeData]

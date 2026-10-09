@@ -24,9 +24,9 @@ class BaseGrentonEntity(CoordinatorEntity[GrentonCoordinator]):
         self._attr_device_info = device_info
 
     @property
-    def name(self) -> str: # pyright: ignore[reportIncompatibleVariableOverride]
+    def name(self) -> str | None: # pyright: ignore[reportIncompatibleVariableOverride]
         """Return the name of the sensor."""
-        return self.label
+        return None if getattr(self, "_use_device_name", False) else self.label
 
     @callback
     def _handle_coordinator_update(self) -> None:

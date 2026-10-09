@@ -29,8 +29,8 @@ Your support helps maintain features, fix bugs, and improve documentation.
 
 | Widget Type (Literal) | Description |
 |-----------------------|-------------|
-| **VALUE_V2** | Single numeric value exposed as `sensor` with configurable device class/unit. |
-| **VALUE_DOUBLE** | Dual numeric values exposed as two `sensor` entities (A/B). |
+| **VALUE_V2** | Single value exposed as a configurable `sensor` or `binary_sensor`. |
+| **VALUE_DOUBLE** | Two values (A/B), each independently configurable as `sensor` or `binary_sensor`. |
 | **ON_OFF** | Single relay exposed as a configurable `switch` or on/off `light` (default: switch). |
 | **ON_OFF_DOUBLE** | Dual relays with each channel configurable as `switch` or on/off `light`. |
 | **DIMMER_V2** | Dimmable light exposed as `light` with brightness (0-100%). |
@@ -92,12 +92,41 @@ After initial setup, you can customize individual entities:
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
 
-You can also open a Grenton device under **Settings → Devices & Services → Devices**
-and click **Visit device**. This opens a configuration popup listing the entities
-in that widget/device, with entity selection limited to that device. Select an
-editable entity to review and change its settings through the same forms above.
-Entities without additional settings, including CLU controller sensors, are
-listed as read only. Closing the popup before saving leaves the settings unchanged.
+Widget devices are automatically named from their entity labels. Two distinct
+labels are joined with `·`; devices with more labels show the first two and
+`(+N)` for the remaining ones. The widget type remains in the Model field.
+You can rename a device using Home Assistant's native device settings.
+The name is respected across reloads and interface refreshes. Renaming preserves
+the device's room, entity IDs and entity labels, and does not reload the integration.
+For a widget with one entity, its default friendly name follows the device name
+without repeating the label. Widgets with multiple entities keep their individual
+entity labels, and existing custom entity names remain unchanged.
+
+### VALUE_V2 and VALUE_DOUBLE as Binary Sensors
+
+Select the value entity under **Grenton → Configure** and choose **Binary sensor**,
+then select a device class such as **Door**, **Window**, or **Opening**. With
+**Invert state** disabled (the default), positive values mean off/closed and zero
+means on/open. Negative values are also treated as on. Numeric strings are
+accepted, while missing or invalid values remain unknown. Binary sensors have no
+measurement unit or state class.
+
+Enable **Invert state** to reverse this mapping: positive values mean on/open,
+and zero or negative values mean off/closed. This option is configured separately
+for each VALUE_DOUBLE channel; missing or invalid values remain unknown.
+
+The default remains **Sensor**, with configurable device class and unit. Enum
+sensors have no measurement state class or unit. Changing between Sensor and
+Binary sensor reloads the integration and replaces the old entity registration
+on the same device. Update automations and dashboards to use the new entity ID.
+For VALUE_DOUBLE, configure each of the two entities independently; they can use
+different domains, device classes, and units while remaining on the same device.
+
+Open a value entity from its device page to inspect its read-only `state_source`
+attributes: call type and CLU ID, plus object name and attribute index for an
+Attribute source, or variable name for a Variable source. This is available for
+sensor and binary sensor presentations, independently for each VALUE_DOUBLE
+channel, and for custom CLU variable sensors.
 
 ### On/Off Controls as Lights
 
@@ -135,6 +164,57 @@ sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
 `port`. Each CLU has its own entity, so installations with multiple CLUs can
 select the controller on which to run a script. Refresh the interface through
 **Reconfigure** when CLUs are added or removed.
+
+The CLU type is detected from its serial number: `221…` is `CLU_Z_WAVE`,
+and `521…` is `CLU_GATE_HTTP`. The detected type is shown as the device model.
+Built-in values use indexed attributes on the CLU object ID imported from the
+interface, for example `CLU828599.0` for Uptime. The object ID can differ from
+`CLU` followed by the serial number; serial numbers are used only to detect
+the device type.
+
+| Entity | Index | Domain | Availability / purpose |
+| --- | --- | --- | --- |
+| Uptime | 0 | `sensor` | Both types; read-only running time in seconds (`duration`). |
+| Cloud connection | 19 | `binary_sensor` | Both types; read-only Connected / Disconnected status (`connectivity`). |
+| Use cloud | 18 | `switch` | Both types; enable or disable the CLU cloud connector. |
+| Firmware version | 17 | `sensor` | Both types; read-only software version, also shown in the device's firmware metadata. |
+| Bus voltage | 27 | `sensor` | CLU_Z_WAVE only; read-only voltage in V, with measurement statistics. |
+
+Read-only values appear under **Diagnostic**; Use cloud appears under
+**Configuration**. They share the existing CLU device and receive values
+through attribute subscriptions. Use cloud writes a boolean to attribute 18
+and reads the CLU state back. Values not yet reported remain unknown.
+Unrecognized serial prefixes still get a Controller entity for script calls;
+only supported types get built-in attribute entities.
+
+The constants in `domain/device_types.py` define `index: attribute name` maps
+for each known device type and the CLU serial prefixes. Extend these maps when
+adding types; the entity bindings use the mapped indexes and skip unsupported
+attributes.
+
+Open **Grenton → Configure** and select the CLU controller entity to configure
+custom variables. Choose **Add variable**, enter its Grenton variable name and
+optional display name, and select its Grenton type:
+
+- **Boolean** creates a switch that writes `true` / `false` and reads the CLU
+  state back after a change.
+- **String**, **Integer**, and **Float** create sensors with the same device
+  class and unit settings as VALUE_V2. Select **None** for a plain value sensor.
+
+For a variable containing Unix seconds, choose **Timestamp** to display the date
+and time, or **Date** to display its calendar date in Home Assistant's configured
+time zone. These classes have no measurement state class or unit. **Uptime**
+(**Czas pracy** in Polish) expects Unix seconds for the last boot time; the
+built-in CLU Uptime entity still reports elapsed seconds as a duration.
+
+The same dialog lets you edit or remove a configured variable. These are
+existing Grenton variables selected for exposure in Home Assistant; adding or
+removing an entity does not create or delete a variable on the CLU. Their
+configuration is retained when the interface is refreshed. Renaming a variable
+keeps its Home Assistant identity; changing between Boolean and a sensor type
+changes its entity domain, so update references to its entity ID as needed.
+Custom variable entities also appear in the integration's **Configure entity**
+list. Configuration changes reload the integration.
 
 Use **Developer Tools → Actions → Grenton: Run script** (`grenton.run_script`)
 to select a CLU controller entity or device, enter its script name, and add
@@ -201,7 +281,7 @@ with typed arguments.
 ### Scene Actions and Arguments
 
 Select a scene button in **Grenton → Configure** to view its current settings.
-Changing the call type updates the fields immediately in the same popup:
+Changing the call type updates the fields immediately in the same form:
 
 - **Script**: CLU, script name, and optional arguments.
 - **Method**: CLU, object name, method index, and optional arguments.

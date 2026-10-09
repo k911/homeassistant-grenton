@@ -65,6 +65,8 @@ def make_coordinator(entry, clus):
         async_add_listener=Mock(return_value=Mock()),
         async_setup=AsyncMock(),
         execute_action=AsyncMock(),
+        register_component_state=Mock(),
+        get_value_for_component=Mock(return_value=None),
     )
 
 
@@ -290,7 +292,7 @@ def test_setup_discovers_all_imported_clus_without_any_widgets(tmp_path):
         "clus": [
             {
                 "id": clu_id,
-                "serialNumber": f"serial-{clu_id}",
+                "serialNumber": "221000921" if clu_id == "clu1" else "521000922",
                 "name": clu_id,
                 "ip": "192.0.2.1",
                 "port": 1234,
@@ -316,10 +318,11 @@ def test_setup_discovers_all_imported_clus_without_any_widgets(tmp_path):
         ):
             assert await async_setup_entry(hass, entry)
         assert entry.runtime_data.devices == []
-        assert [entity.clu.id for entity in entry.runtime_data.clu_entities] == [
+        assert [entity.clu.id for entity in entry.runtime_data.clu_entities if isinstance(entity, GrentonCluEntity)] == [
             "clu1",
             "clu2",
         ]
+        assert len(entry.runtime_data.clu_entities) == 11
         coordinator.async_setup.assert_awaited_once()
         hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 

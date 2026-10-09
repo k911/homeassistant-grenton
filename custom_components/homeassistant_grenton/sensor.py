@@ -22,5 +22,8 @@ async def async_setup_entry(
             if isinstance(entity, (SensorEntity)):
                 entities.append(entity)
 
-    entities.extend(config_entry.runtime_data.clu_entities)
+    entities.extend(
+        entity for entity in config_entry.runtime_data.clu_entities
+        if isinstance(entity, SensorEntity)
+    )
     async_add_entities(entities)

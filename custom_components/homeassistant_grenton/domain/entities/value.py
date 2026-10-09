@@ -1,19 +1,28 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from math import isfinite
 from typing import Any, Dict
 
 import voluptuous as vol
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
-from homeassistant.components.sensor.const import DEVICE_CLASS_UNITS
+from homeassistant.components.sensor.const import DEVICE_CLASS_STATE_CLASSES, DEVICE_CLASS_UNITS
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.const import CONF_UNIT_OF_MEASUREMENT
 from homeassistant.helpers import selector
+from homeassistant.util import dt as dt_util
 
 from .base import BaseGrentonEntity
 from .configurable import ConfigurableEntity, BaseGrentonEntityConfigurationSchema, StepResult, StepDefinition
 from ..state_object import GrentonStateObject
 from ..enums import GrentonValueType
 from ...coordinator import GrentonCoordinator
+
+TEMPORAL_DEVICE_CLASSES = frozenset(
+    device_class
+    for device_class in SensorDeviceClass
+    if device_class.value in ("date", "timestamp", "uptime")
+)
 
 @dataclass
 class GrentonEntityValueConfigurationSchema(BaseGrentonEntityConfigurationSchema):
@@ -121,10 +130,36 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
         coordinator.register_component_state(state_object)
 
     @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the source alongside any existing variable metadata."""
+        return {
+            **(super().extra_state_attributes or {}),
+            "state_source": self.state_object.source_attributes,
+        }
+
+    @property
     def native_value(self): # pyright: ignore[reportIncompatibleVariableOverride]
         value = self.coordinator.get_value_for_component(self.state_object)
         if value is None:
             return None
+        if self.device_class in TEMPORAL_DEVICE_CLASSES:
+            if isinstance(value, bool):
+                return None
+            try:
+                seconds = float(value)
+                if not isfinite(seconds):
+                    return None
+                timestamp = datetime.fromtimestamp(seconds, UTC)
+            except (ValueError, TypeError, OverflowError, OSError):
+                return None
+            if self.device_class == SensorDeviceClass.DATE:
+                hass = self.hass or getattr(self.coordinator, "hass", None)
+                if hass is not None:
+                    time_zone = dt_util.get_time_zone(hass.config.time_zone)
+                    if time_zone is not None:
+                        timestamp = timestamp.astimezone(time_zone)
+                return timestamp.date()
+            return timestamp
         if self.value_type == GrentonValueType.FLOAT:
             try:
                 return float(value)
@@ -139,6 +174,12 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def state_class(self) -> SensorStateClass | None:  # pyright: ignore[reportIncompatibleVariableOverride]
+        if (
+            self.device_class is not None
+            and SensorStateClass.MEASUREMENT
+            not in DEVICE_CLASS_STATE_CLASSES.get(self.device_class, set())
+        ):
+            return None
         if self.value_type in (GrentonValueType.FLOAT, GrentonValueType.INTEGER):
             return SensorStateClass.MEASUREMENT
         return None
@@ -155,4 +196,9 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def native_unit_of_measurement(self): # pyright: ignore[reportIncompatibleVariableOverride]
+        if (
+            self.device_class == SensorDeviceClass.ENUM
+            or self.device_class in TEMPORAL_DEVICE_CLASSES
+        ):
+            return None
         return self._config.get(CONF_UNIT_OF_MEASUREMENT)

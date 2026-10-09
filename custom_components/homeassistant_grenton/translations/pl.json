@@ -111,13 +111,60 @@
         "data": {
           "action_off": "Akcja wyłączania"
         }
+      },
+      "clu_variables": {
+        "title": "Konfiguracja zmiennych {clu_name}",
+        "description": "Dodaj, edytuj lub usuń własne zmienne CLU udostępnione w Home Assistant.",
+        "data": {
+          "operation": "Operacja"
+        }
+      },
+      "clu_variable_select": {
+        "title": "Edycja zmiennej CLU",
+        "description": "Wybierz zmienną do konfiguracji.",
+        "data": {
+          "variable_id": "Zmienna"
+        }
+      },
+      "clu_variable_remove": {
+        "title": "Usunięcie encji zmiennej CLU",
+        "description": "Usuń wybraną zmienną z Home Assistant. Jej wartość na CLU zostanie zachowana.",
+        "data": {
+          "variable_id": "Zmienna"
+        }
+      },
+      "configure_clu_variable": {
+        "title": "Konfiguracja zmiennej CLU",
+        "description": "Podaj nazwę zmiennej dokładnie tak jak w Grenton i wybierz typ wartości. Zmienne logiczne są przełącznikami, a pozostałe typy czujnikami.",
+        "data": {
+          "variable_name": "Nazwa zmiennej",
+          "label": "Nazwa wyświetlana",
+          "grenton_type": "Typ Grenton"
+        }
+      },
+      "configure_value_v2_type": {
+        "title": "Konfiguracja {entity_name} - Typ encji",
+        "description": "Wybierz czujnik lub czujnik binarny. Czujniki binarne umożliwiają odwrócenie stanu.",
+        "data": {
+          "entity_type": "Typ encji"
+        }
+      },
+      "configure_value_v2_binary": {
+        "title": "Konfiguracja {entity_name} - Czujnik binarny",
+        "description": "Wybierz klasę urządzenia. Domyślnie wartości dodatnie oznaczają wyłączony (zamknięty), a 0 lub wartości ujemne oznaczają włączony (otwarty). Włącz opcję Odwróć stan, aby odwrócić to przypisanie. Brakujące lub nieprawidłowe wartości pozostają nieznane.",
+        "data": {
+          "device_class": "Klasa urządzenia",
+          "invert_state": "Odwróć stan"
+        },
+        "data_description": {
+          "invert_state": "Wyłączone: wartości dodatnie oznaczają wyłączony, a 0 oznacza włączony. Włączone: wartości dodatnie oznaczają włączony, a 0 oznacza wyłączony. Dla drzwi, okna i otwarcia stan włączony oznacza otwarty, a wyłączony oznacza zamknięty."
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
-      "entity_not_configurable": "Ta encja nie może być skonfigurowana.",
-      "device_not_found": "Nie znaleziono wybranego widgetu Grenton."
+      "entity_not_configurable": "Ta encja nie może być skonfigurowana."
     },
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości."
@@ -206,6 +253,25 @@
       },
       "clu_controller": {
         "name": "Sterownik"
+      },
+      "clu_uptime": {
+        "name": "Czas pracy"
+      },
+      "clu_bus_voltage": {
+        "name": "Napięcie magistrali"
+      },
+      "clu_firmware_version": {
+        "name": "Wersja oprogramowania"
+      }
+    },
+    "binary_sensor": {
+      "clu_cloud_connection": {
+        "name": "Połączenie z chmurą"
+      }
+    },
+    "switch": {
+      "clu_use_cloud": {
+        "name": "Używaj chmury"
       }
     }
   },
@@ -301,7 +367,8 @@
         "tamper": "Sabotaż",
         "update": "Aktualizacja",
         "vibration": "Wibracje",
-        "window": "Okno"
+        "window": "Okno",
+        "none": "Brak"
       }
     },
     "sensor_device_classes": {
@@ -356,6 +423,7 @@
         "temperature": "Temperatura",
         "temperature_delta": "Delta temperatury",
         "timestamp": "Znacznik czasu",
+        "uptime": "Czas pracy",
         "volatile_organic_compounds": "Lotne związki organiczne",
         "volatile_organic_compounds_parts": "Lotne związki organiczne",
         "voltage": "Napięcie",
@@ -365,7 +433,8 @@
         "water": "Woda",
         "weight": "Waga",
         "wind_direction": "Kierunek wiatru",
-        "wind_speed": "Prędkość wiatru"
+        "wind_speed": "Prędkość wiatru",
+        "none": "Brak"
       }
     },
     "scene_call_types": {
@@ -448,32 +517,25 @@
         "light": "Światło"
       }
     },
-    "device_configuration": {
-      "fields": {
-        "title": {
-          "name": "Konfiguruj encje widgetu"
-        },
-        "read_only": {
-          "name": "Tylko do odczytu"
-        },
-        "saved": {
-          "name": "Konfiguracja zapisana"
-        },
-        "no_configuration": {
-          "name": "Te encje nie mają dodatkowych ustawień."
-        },
-        "loading": {
-          "name": "Ładowanie…"
-        },
-        "close": {
-          "name": "Zamknij"
-        },
-        "next": {
-          "name": "Dalej"
-        },
-        "save": {
-          "name": "Zapisz"
-        }
+    "clu_variable_operations": {
+      "options": {
+        "add": "Dodaj zmienną",
+        "edit": "Edytuj zmienną",
+        "remove": "Usuń zmienną"
+      }
+    },
+    "grenton_variable_types": {
+      "options": {
+        "BOOLEAN": "Wartość logiczna",
+        "STRING": "Tekst",
+        "INTEGER": "Liczba całkowita",
+        "FLOAT": "Liczba zmiennoprzecinkowa"
+      }
+    },
+    "value_v2_entity_types": {
+      "options": {
+        "sensor": "Czujnik",
+        "binary_sensor": "Czujnik binarny"
       }
     }
   }
