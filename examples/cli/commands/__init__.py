@@ -100,7 +100,13 @@ Examples:
     execute_parser.add_argument(
         "--action",
         required=True,
-        help="Action index/name (e.g., set, toggle, turnOn)",
+        help="Method or attribute index (e.g., 10)",
+    )
+    execute_parser.add_argument(
+        "--call-type",
+        choices=["method", "attribute"],
+        default="method",
+        help="Call a method or set an attribute (default: method)",
     )
     execute_parser.add_argument(
         "--value",

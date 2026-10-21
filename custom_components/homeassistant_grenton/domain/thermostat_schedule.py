@@ -1,0 +1,146 @@
+"""Weekly thermostat data inferred from captured myGrenton schedules.
+
+Each Sunday-first 15-minute slot is a two-digit base-90 value scaled from zero
+to the maximum temperature (attribute 11), and clamped to 8099 at the maximum.
+The configured minimum (attribute 10) constrains writes without shifting the
+encoding. The final pair approximates 8100 / maximum; the preceding four trailer
+characters have unknown semantics. All six trailer characters are preserved.
+"""
+
+import math
+import re
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
+
+DAYS = ("sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
+SLOTS_PER_DAY = 96
+WEEK_LENGTH = 7 * SLOTS_PER_DAY * 2
+# Alphabet inferred from the sample values and their numeric ordering.
+ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ !#$()*+,-./:;<=>?@[]^_`{|}~"
+BASE = len(ALPHABET)
+SCALE = BASE * BASE
+
+
+def _validate_maximum(maximum: float) -> None:
+    if isinstance(maximum, bool) or not isinstance(maximum, (int, float)):
+        raise TypeError("Maximum temperature must be a number")
+    if not math.isfinite(maximum) or maximum <= 0:
+        raise ValueError("Maximum temperature must be finite and greater than zero")
+
+
+def encode_temperature(temperature: Any, maximum: float) -> str:
+    """Encode a nonnegative half-degree value using the configured maximum."""
+    _validate_maximum(maximum)
+    if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
+        raise TypeError("Schedule temperatures must be numbers")
+    if not math.isfinite(temperature) or not 0 <= temperature <= maximum:
+        raise ValueError(f"Schedule temperatures must be between 0 and {maximum} °C")
+    if not math.isclose(temperature * 2, round(temperature * 2), abs_tol=1e-6):
+        raise ValueError("Schedule temperatures must use 0.5 °C increments")
+    # Captures with a maximum of 33 demonstrate rounding to the nearest code.
+    value = min(math.floor(temperature / maximum * SCALE + 0.5), SCALE - 1)
+    return ALPHABET[value // BASE] + ALPHABET[value % BASE]
+
+
+def decode_temperature(pair: str, maximum: float) -> float:
+    """Decode a canonical half-degree value without silently rounding bad data."""
+    _validate_maximum(maximum)
+    if len(pair) != 2 or any(char not in ALPHABET for char in pair):
+        raise ValueError("Invalid encoded schedule temperature")
+    value = ALPHABET.index(pair[0]) * BASE + ALPHABET.index(pair[1])
+    temperature = math.floor(value / SCALE * maximum * 2 + 0.5) / 2
+    if encode_temperature(temperature, maximum) != pair:
+        raise ValueError("Schedule contains an unsupported temperature encoding")
+    return temperature
+
+
+@dataclass(frozen=True)
+class ThermostatSchedule:
+    temperatures: tuple[float, ...]
+    trailer: str
+
+    def periods(self) -> dict[str, list[dict[str, Any]]]:
+        """Represent each day as temperature changes starting at midnight."""
+        days: dict[str, list[dict[str, Any]]] = {}
+        for day_index, day in enumerate(DAYS):
+            periods: list[dict[str, Any]] = []
+            values = self.temperatures[day_index * 96 : (day_index + 1) * 96]
+            for slot, temperature in enumerate(values):
+                if slot == 0 or temperature != values[slot - 1]:
+                    periods.append(
+                        {
+                            "time": f"{slot // 4:02}:{slot % 4 * 15:02}",
+                            "temperature": temperature,
+                        }
+                    )
+            days[day] = periods
+        return days
+
+
+@lru_cache(maxsize=128)
+def decode_schedule(data: str, maximum: float) -> ThermostatSchedule:
+    """Validate the captured layout and retain its trailer verbatim."""
+    _validate_maximum(maximum)
+    if len(data) != WEEK_LENGTH + 6:
+        raise ValueError(
+            "Schedule must contain 672 two-character values and a six-character trailer"
+        )
+    # The trailing characters change with configuration but are not range text.
+    trailer = data[WEEK_LENGTH:]
+    if any(char not in ALPHABET for char in trailer):
+        raise ValueError("Invalid schedule trailer")
+    scale = ALPHABET.index(trailer[-2]) * BASE + ALPHABET.index(trailer[-1])
+    if abs(scale - SCALE / maximum) > 1:
+        raise ValueError(
+            "Schedule metadata does not match the current maximum temperature; wait for an updated schedule"
+        )
+    return ThermostatSchedule(
+        tuple(
+            decode_temperature(data[i : i + 2], maximum)
+            for i in range(0, WEEK_LENGTH, 2)
+        ),
+        trailer,
+    )
+
+
+def encode_schedule(
+    schedule: Any, existing_data: str, minimum: float, maximum: float
+) -> str:
+    """Build a complete week, preserving the controller's existing trailer."""
+    existing = decode_schedule(existing_data, maximum)
+    if isinstance(minimum, bool) or not isinstance(minimum, (int, float)):
+        raise TypeError("Minimum temperature must be a number")
+    if not math.isfinite(minimum) or minimum >= maximum:
+        raise ValueError("Minimum temperature must be finite and below the maximum")
+    if not isinstance(schedule, dict) or set(schedule) != set(DAYS):
+        raise ValueError("Schedule must contain all seven weekday names in lowercase")
+    encoded: list[str] = []
+    for day in DAYS:
+        periods = schedule[day]
+        if not isinstance(periods, list) or not 1 <= len(periods) <= SLOTS_PER_DAY:
+            raise ValueError(f"{day} must contain 1–96 temperature periods")
+        changes: list[tuple[int, str]] = []
+        for period in periods:
+            if not isinstance(period, dict) or set(period) != {"time", "temperature"}:
+                raise ValueError("Each period must contain time and temperature")
+            time = period["time"]
+            if not isinstance(time, str) or not re.fullmatch(
+                r"(?:[01]\d|2[0-3]):(?:00|15|30|45)", time
+            ):
+                raise ValueError("Period times must use HH:MM on 15-minute boundaries")
+            hour, minute = map(int, time.split(":"))
+            slot = hour * 4 + minute // 15
+            if (not changes and slot != 0) or (changes and slot <= changes[-1][0]):
+                raise ValueError(
+                    "Each day must start at 00:00 with strictly increasing times"
+                )
+            temperature = period["temperature"]
+            pair = encode_temperature(temperature, maximum)
+            if temperature < minimum:
+                raise ValueError(f"Schedule temperatures must be at least {minimum} °C")
+            changes.append((slot, pair))
+        for index, (start, pair) in enumerate(changes):
+            end = changes[index + 1][0] if index + 1 < len(changes) else SLOTS_PER_DAY
+            encoded.append(pair * (end - start))
+    return "".join(encoded) + existing.trailer

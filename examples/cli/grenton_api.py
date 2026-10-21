@@ -85,13 +85,25 @@ class GrentonManager:
 
         await self._test_clus(config.clus, config.encryption)
 
-    async def execute_action(self, config_path: Path, clu_name: str, object_name: str, action_index: str, action_value: str) -> None:
-        """Execute action on CLU object.
-
-        Creates a GrentonActionMethod message: object_name:execute(action_index, action_value)
-        """
-        from homeassistant_grenton.domain.action import GrentonActionMethod
+    async def execute_action(
+        self,
+        config_path: Path,
+        clu_name: str,
+        object_name: str,
+        action_index: str,
+        action_value: str,
+        *,
+        call_type: str = "method",
+    ) -> None:
+        """Call a method or write an attribute using the shared CLU action API."""
+        from homeassistant_grenton.domain.action import (
+            GrentonActionAttribute,
+            GrentonActionMethod,
+        )
         from homeassistant_grenton.domain.enums import GrentonActionEventType
+
+        if call_type not in ("method", "attribute"):
+            raise ValueError(f"Unsupported call type: {call_type}")
 
         config = load_configuration(config_path)
         if not config:
@@ -108,30 +120,36 @@ class GrentonManager:
             _LOGGER.info("Connecting to CLU '%s'", target_clu.name)
 
             api_client = GrentonCluApi(target_clu, config.encryption)
-            if not await api_client.connect():
-                _LOGGER.error("✗ Failed to connect to CLU")
-                sys.exit(1)
+            operation = "set" if call_type == "attribute" else "execute"
+            try:
+                if not await api_client.connect():
+                    _LOGGER.error("✗ Failed to connect to CLU")
+                    sys.exit(1)
 
-            _LOGGER.info("✓ Connected successfully")
-
-            # Create and execute action
-            _LOGGER.info("Executing: %s.execute(%s, %s)", object_name, action_index, action_value)
-
-            action = GrentonActionMethod(
-                clu_id=target_clu.id,
-                object_name=object_name,
-                event=GrentonActionEventType.CLICK,
-                index=action_index,
-                value=action_value,
-            )
-
-            result = await api_client.execute_action(action)
-
-            await api_client.disconnect()
+                _LOGGER.info("✓ Connected successfully")
+                _LOGGER.info(
+                    "Executing: %s.%s(%s, %s)",
+                    object_name, operation, action_index, action_value,
+                )
+                action_class = (
+                    GrentonActionAttribute
+                    if call_type == "attribute"
+                    else GrentonActionMethod
+                )
+                action = action_class(
+                    clu_id=target_clu.id,
+                    object_name=object_name,
+                    event=GrentonActionEventType.CLICK,
+                    index=action_index,
+                    value=action_value,
+                )
+                result = await api_client.execute_action(action)
+            finally:
+                await api_client.disconnect()
 
             if result:
                 _LOGGER.info("✓ Action executed successfully")
-                print(f"✓ {object_name}.execute({action_index}, \"{action_value}\")")
+                print(f'✓ {object_name}.{operation}({action_index}, "{action_value}")')
                 sys.exit(0)
             else:
                 _LOGGER.error("✗ Action execution failed")

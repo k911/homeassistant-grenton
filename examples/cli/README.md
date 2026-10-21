@@ -64,6 +64,29 @@ label for a newly created group. Attribute indices are written as numbers. If
 one label contains multiple attributes, their interface object-field names are
 added as descriptions so the entries remain distinguishable.
 
+### Set an attribute or call a method
+
+The `execute` command calls a method by default. Use `--call-type attribute` to
+write an attribute through the CLU API, without sending a new Object Manager
+configuration. For example, this sets thermostat attribute 10 (minimum
+temperature) to 10°C when you choose to run it:
+
+```bash
+python3 main.py execute --clu CLU_Z_WAVE_1 --object THE6183 \
+  --call-type attribute --action 10 --value 10
+```
+
+Use the CLU name from your saved configuration. Attribute 11 controls the maximum
+temperature. The existing method syntax remains available:
+
+```bash
+python3 main.py execute --clu CLU_Z_WAVE_1 --object DOU0699 --action 2 --value 1
+```
+
+Values are passed as quoted strings, matching the mobile interface's attribute
+and method actions. Successful writes print `set(...)`; rejected calls and
+connection failures exit with code 1.
+
 ### Watch attribute changes
 
 Attributes are specified as `OBJECT.INDEX`:
@@ -150,6 +173,11 @@ grenton_tracked_objects:
 
 - `0`: All CLUs connected successfully
 - `1`: Connection or authentication error
+
+## Tests
+
+From this directory, run `python3 -m unittest test_config test_execute`.
+The action tests mock the CLU connection and send no commands to live hardware.
 
 ## Watch implementation
 

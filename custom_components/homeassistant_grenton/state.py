@@ -7,8 +7,10 @@ from .domain.state_object import GrentonStateObject, GrentonAttributeValueObject
 GrentonValue = Union[str, bool, int, float, None]
 
 
-def cast_string_to_grenton_value(value: str) -> GrentonValue:
-    """Cast string value to appropriate Python type."""
+def cast_string_to_grenton_value(
+    value: str, *, preserve_string_whitespace: bool = False
+) -> GrentonValue:
+    """Cast values, optionally retaining whitespace inside quoted report text."""
     stripped_value = value.strip().strip('"')  # Remove surrounding quotes
     
     # Handle nil/None values
@@ -31,7 +33,7 @@ def cast_string_to_grenton_value(value: str) -> GrentonValue:
             return float(stripped_value)
         except ValueError:
             # Keep as string
-            return stripped_value
+            return value if preserve_string_whitespace else stripped_value
 
 
 @dataclass(frozen=True)

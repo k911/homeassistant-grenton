@@ -38,11 +38,110 @@ Your support helps maintain features, fix bugs, and improve documentation.
 | **CONTACT_SENSOR** | Contact/door/window sensor exposed as `binary_sensor`. |
 | **CONTACT_SENSOR_DOUBLE** | Dual contact channels exposed as two `binary_sensor` entities. |
 | **SLIDER** | User-configurable numeric control exposed as `number` (slider/box/auto modes). |
+| **THERMOSTAT_V2** | Heating thermostat exposed as `climate`, with Off/Heat/Auto modes, manual temperature control, and heating/idle feedback. |
 | **MULTISENSOR** | Composite multi-channel sensor mapped to multiple `sensor` entities (as provided). |
 | **ROLLER_SHUTTER** | Legacy roller shutter exposed as `sensor` (state enum) plus a `button` action entity. |
 | **ROLLER_SHUTTER_V3** | Roller shutter V3 exposed as a single `cover` entity (position; lamel/tilt when available). |
 | **CAMERA** | Camera stream exposed as `camera`. |
 | **SCENE** | Scene buttons with configurable script, method, attribute, or variable actions and arguments. |
+
+### Heating thermostats
+
+`THERMOSTAT_V2` creates one climate entity per widget. **Heat** enables manual
+operation (Grenton mode 0), **Auto** enables the weekly schedule (mode 2), and
+**Off** disables the thermostat. The separate turn-on action preserves the current
+Grenton mode. Schedule runs on the CLU, including while Home Assistant is offline.
+
+Manual target temperatures use 0.5°C increments. Temperature editing is disabled
+in Auto; choose Heat before changing the target. A temperature action cannot
+leave Auto, including when it also requests Heat.
+Setting only a temperature in manual mode preserves the enabled state.
+The widget's minimum and maximum temperature bindings supply the control's bounds.
+Home Assistant converts Celsius temperatures to the installation's preferred unit.
+While Auto hides the editable target control, the effective scheduled target is
+available as the read-only `scheduled_target_temperature_celsius` attribute.
+
+Heating/idle status comes from `controlOutValue`: 1 means heating and 0 means idle
+when the thermostat is enabled. Unsupported or missing values remain unknown.
+When enabled, modes 1 and 3 are retained in the `grenton_mode` attribute with an
+unknown HVAC mode and disabled temperature editing. Cooling and fan controls are
+not exposed.
+
+Reconfigure the integration to import the widget if it was added after the last
+interface import, then reload or restart after updating the integration.
+
+#### Weekly schedules
+
+The `weekly_schedule` entity attribute shows the decoded schedule in Celsius.
+Use `grenton.set_thermostat_schedule` to replace the complete week. Each day must
+start at `00:00`, with later changes in increasing order on 15-minute boundaries.
+Each temperature applies until the next change, or midnight for the last period.
+All seven lowercase English weekday names are required. The action preserves the
+current operating mode, power state and schedule metadata. Select Auto to use the
+schedule if the thermostat is currently in manual mode.
+
+Schedule editing reads the configured minimum and maximum from thermostat
+attributes **10** and **11** and accepts **0.5°C** increments within those limits.
+The captured encoding supports nonnegative temperatures. The current schedule
+and limits must have been received from the CLU before an update can be sent.
+After changing the maximum, wait for updated schedule data before editing it.
+
+```yaml
+action: grenton.set_thermostat_schedule
+target:
+  entity_id: climate.living_room
+data:
+  schedule:
+    monday: &daily
+      - time: "00:00"
+        temperature: 23
+      - time: "06:00"
+        temperature: 24
+      - time: "15:00"
+        temperature: 25.5
+      - time: "22:00"
+        temperature: 23
+    tuesday: *daily
+    wednesday: *daily
+    thursday: *daily
+    friday: *daily
+    saturday: *daily
+    sunday: *daily
+```
+
+**Schedule encoding:** the [codec](custom_components/homeassistant_grenton/domain/thermostat_schedule.py)
+is inferred from captures, including maxima of 20, 29, 30, 33 and 600°C; it is not
+a published Grenton specification. A complete string has **1,350 characters**:
+672 two-character slots (96 per day, every 15 minutes, Sunday through Saturday),
+then six metadata characters. Each slot starts at its corresponding quarter-hour.
+
+Slots use this ordered, zero-indexed base-90 alphabet. The space after `Z` is a
+digit and must be preserved, including at the start or end of a string:
+
+```text
+0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ !#$()*+,-./:;<=>?@[]^_`{|}~
+```
+
+For temperature `T` and configured maximum `M` (attribute 11):
+
+```text
+Encode: n = min(floor(T / M * 8100 + 0.5), 8099)
+        pair = alphabet[n // 90] + alphabet[n % 90]
+Decode: n = 90 * index(pair[0]) + index(pair[1])
+        T = floor(n / 8100 * M * 2 + 0.5) / 2
+```
+
+Decoding rounds to 0.5°C and requires re-encoding to reproduce the original pair.
+The minimum (attribute 10) constrains writes without offsetting the encoding.
+At `M = 600`, `_0` means 560°C, `30` means 20°C and `3r` means 22°C. `00` means
+0°C, not an off command; the maximum encodes as `~~`.
+
+The final metadata pair matches rounded `8100 / M` in captures: `30` is 270 for
+`M = 30`, and `0e` is 14 for `M = 600` (13.5 rounded). Read `M` from attribute 11;
+inverting this rounded factor can give the wrong temperature. The preceding four
+characters (observed as `+00:`) remain unexplained. Preserve all six metadata
+characters byte for byte. Captures validate the codec; live hardware writes
+still need verification.
 
 ## 🚀 Installation
 

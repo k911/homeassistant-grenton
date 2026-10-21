@@ -123,9 +123,12 @@ def _parse_client_report(wire_message: str, expected_count: int) -> list[Grenton
     values: list[GrentonValue] = []
     for token in tokens:
         token = token.strip()
-        if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
+        quoted = len(token) >= 2 and token.startswith('"') and token.endswith('"')
+        if quoted:
             token = token[1:-1]
-        values.append(cast_string_to_grenton_value(token))
+        values.append(
+            cast_string_to_grenton_value(token, preserve_string_whitespace=quoted)
+        )
     return values
 
 

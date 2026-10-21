@@ -171,6 +171,16 @@
     }
   },
   "services": {
+    "set_thermostat_schedule": {
+      "name": "Ustaw harmonogram termostatu",
+      "description": "Zastępuje cały tygodniowy harmonogram ogrzewania z uwzględnieniem limitów temperatury termostatu. Zachowuje stan zasilania, tryb i metadane harmonogramu.",
+      "fields": {
+        "schedule": {
+          "name": "Harmonogram tygodniowy",
+          "description": "Wszystkie siedem angielskich nazw dni tygodnia małymi literami, każda z listą par time i temperature. Każdy dzień zaczyna się o 00:00; czas co 15 minut, temperatura co 0,5°C."
+        }
+      }
+    },
     "run_scene": {
       "name": "Uruchom scenę",
       "description": "Uruchamia skrypt sceny Grenton, opcjonalnie przekazując parametr.",

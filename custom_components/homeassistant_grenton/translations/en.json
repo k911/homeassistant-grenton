@@ -171,6 +171,16 @@
     }
   },
   "services": {
+    "set_thermostat_schedule": {
+      "name": "Set thermostat schedule",
+      "description": "Replace the complete weekly heating schedule using the thermostat's configured temperature limits. Preserves power, mode, and schedule metadata.",
+      "fields": {
+        "schedule": {
+          "name": "Weekly schedule",
+          "description": "All seven lowercase English weekday names, each with time and temperature pairs. Start each day at 00:00; use 15-minute time boundaries and 0.5°C temperature increments."
+        }
+      }
+    },
     "run_scene": {
       "name": "Run scene",
       "description": "Run a Grenton SCENE script, optionally passing a parameter.",

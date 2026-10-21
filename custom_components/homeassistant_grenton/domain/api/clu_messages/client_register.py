@@ -8,6 +8,7 @@ from ....state import (
 )
 from ...clu import GrentonClu
 from ...device_types import attribute_index
+from ...lua_arguments import split_lua_arguments
 from ...scene_arguments import quote_lua_string
 from .base import GrentonCluApiNotification, GrentonCluApiRequest, GrentonCluApiResponse
 
@@ -42,10 +43,13 @@ def _parse_client_report(
     if not content:
         return session_id, []
 
-    raw_values = content.split(",")
+    # Schedule strings contain commas; only split between Lua values.
+    raw_values = split_lua_arguments(content)
     values: list[GrentonValue] = []
     for position, raw_value in enumerate(raw_values):
-        value = raw_value.strip().strip('"')
+        token = raw_value.strip()
+        quoted = len(token) >= 2 and token.startswith('"') and token.endswith('"')
+        value = token[1:-1] if quoted else token
         key = keys[position] if keys is not None and position < len(keys) else None
         if (
             isinstance(key, GrentonCluStateAttributeKey)
@@ -56,7 +60,9 @@ def _parse_client_report(
             # Versions are identifiers, even when they look like numbers (1.20).
             values.append(None if value == "nil" else value)
         else:
-            values.append(cast_string_to_grenton_value(value))
+            values.append(
+                cast_string_to_grenton_value(value, preserve_string_whitespace=quoted)
+            )
     return session_id, values
 
 
