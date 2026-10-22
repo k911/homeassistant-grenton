@@ -39,12 +39,131 @@ Your support helps maintain features, fix bugs, and improve documentation.
 | **CONTACT_SENSOR** | Contact/door/window sensor exposed as `binary_sensor`. |
 | **CONTACT_SENSOR_DOUBLE** | Dual contact channels exposed as two `binary_sensor` entities. |
 | **SLIDER** | User-configurable numeric control exposed as `number` (slider/box/auto modes). |
-| [**THERMOSTAT_V2**](#thermostat-thermostat_v2) | Thermostat exposed as `climate`, with Off/Heat/Auto and optional Cool modes, 0.5°C manual targets, editable weekly schedules, and temperature/activity feedback. |
+| [**THERMOSTAT_V2**](#thermostat-thermostat_v2) | Thermostat exposed as `climate`, with optional cooling, manual targets, editable weekly schedules, temperature/activity feedback, and a read-only Schedule sensor. |
 | **MULTISENSOR** | Composite multi-channel sensor mapped to multiple `sensor` entities (as provided). |
 | **ROLLER_SHUTTER** | Legacy roller shutter exposed as `sensor` (state enum) plus a `button` action entity. |
 | **ROLLER_SHUTTER_V3** | Roller shutter V3 exposed as a single `cover` entity (position; lamel/tilt when available). |
 | **CAMERA** | Camera stream exposed as `camera`. |
 | **SCENE** | Scene buttons with configurable script, method, attribute, or variable actions and arguments. |
+
+See [Device specifications](#device-specifications) for detailed behavior and setup.
+
+## 🚀 Installation
+
+### Option 1: HACS (Recommended)
+
+1. Open [HACS](https://www.hacs.xyz/docs/use/download/download/) in your Home Assistant instance
+2. Go to **Integrations**
+3. Click the three dots in the top right corner
+4. Select **Custom repositories**
+5. Add this repository URL: `https://github.com/sszczep/homeassistant-grenton`
+6. Select **Integration** as the category
+7. Click **Install**
+8. Restart Home Assistant
+
+### Option 2: Manual Installation
+
+1. Download the latest release from the [Releases](https://github.com/sszczep/homeassistant-grenton/releases) section
+2. Extract the zip file
+3. Copy the `homeassistant_grenton` folder into your `custom_components` directory (usually `/config/custom_components/`)
+4. Restart Home Assistant
+
+## 📖 Configuration
+
+### Initial Setup
+
+1. Go to **Settings** → **Devices & Services**
+2. Click **Add Integration**
+3. Search for **"Grenton"**
+4. Enter your Grenton Object Manager connection details:
+   - **IP Address**: IP address of your Grenton Object Manager
+   - **Port**: Port number (default: `9998`)
+   - **PIN**: Your Object Manager PIN code
+
+### Entity Configuration
+
+After initial setup, you can customize individual entities:
+
+1. Navigate to **Settings** → **Devices & Services** → **Grenton**
+2. Click **Configure** on the integration
+3. Select an entity from the dropdown menu
+4. Configure entity properties:
+   - **Sensors**: Choose device class and unit of measurement
+   - **Sliders (Numbers)**: Set display mode, device class, and unit
+   - **Binary Sensors**: Select appropriate device class
+   - **On/Off controls**: Choose whether the entity is a switch or a light
+   - **Scenes**: Review or change the action call type, CLU, script/object name, index, and arguments/value
+   - **Thermostats**: Enable cooling, select the control direction, and edit weekly schedules
+
+The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
+
+Widget devices are automatically named from their entity labels. Two distinct
+labels are joined with `·`; devices with more labels show the first two and
+`(+N)` for the remaining ones. The widget type remains in the Model field.
+You can rename a device using Home Assistant's native device settings.
+The name is respected across reloads and interface refreshes. Renaming preserves
+the device's room, entity IDs and entity labels, and does not reload the integration.
+For a widget with one entity, its default friendly name follows the device name
+without repeating the label. Widgets with multiple entities keep their individual
+entity labels, and existing custom entity names remain unchanged.
+
+## Device specifications
+
+Detailed behavior and configuration for supported widgets and CLU controllers.
+
+### VALUE_V2 and VALUE_DOUBLE as Binary Sensors
+
+Select the value entity under **Grenton → Configure** and choose **Binary sensor**,
+then select a device class such as **Door**, **Window**, or **Opening**. With
+**Invert state** disabled (the default), positive values mean off/closed and zero
+means on/open. Negative values are also treated as on. Numeric strings are
+accepted, while missing or invalid values remain unknown. Binary sensors have no
+measurement unit or state class.
+
+Enable **Invert state** to reverse this mapping: positive values mean on/open,
+and zero or negative values mean off/closed. This option is configured separately
+for each VALUE_DOUBLE channel; missing or invalid values remain unknown.
+
+The default remains **Sensor**, with configurable device class and unit. Enum
+sensors have no measurement state class or unit. Changing between Sensor and
+Binary sensor reloads the integration and replaces the old entity registration
+on the same device. Update automations and dashboards to use the new entity ID.
+For VALUE_DOUBLE, configure each of the two entities independently; they can use
+different domains, device classes, and units while remaining on the same device.
+
+Open a value entity from its device page to inspect its read-only `state_source`
+attributes: call type and CLU ID, plus object name and attribute index for an
+Attribute source, or variable name for a Variable source. This is available for
+sensor and binary sensor presentations, independently for each VALUE_DOUBLE
+channel, and for custom CLU variable sensors.
+
+### On/Off Controls as Lights
+
+Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
+forms, prefilled with the current imported or saved settings:
+
+1. **State**: choose Switch or Light and configure the state source (CLU and
+   object/attribute index, or CLU and variable name).
+2. **Turn on**: configure the action's call type, CLU and target.
+3. **Turn off**: configure its action independently and save all settings.
+
+Both actions support Method, Script, Attribute and Variable. Method/script calls
+have typed argument rows that can be added, removed or reordered; omit trailing
+arguments to use defaults. Attribute/variable actions have an editable value to
+set. State sources support Attribute and Variable. The entity's attributes expose
+the effective state source and both actions, including arguments and call payloads.
+
+Existing controls default to Switch. ON_OFF_DOUBLE channels can
+be configured independently.
+
+Saving reloads the integration and creates the selected entity type, preserving
+the Grenton state subscription, ON/OFF actions, and device. Light mode provides
+on/off control without brightness or color controls. The choice persists across
+restarts and interface reconfiguration.
+
+Changing the type changes the entity domain (`switch.…` ↔ `light.…`) and removes
+the previous entity registration. Update dashboards and automations to reference
+the new entity ID. You can change the choice again through the same dialog.
 
 ### Thermostat (THERMOSTAT_V2)
 
@@ -84,6 +203,21 @@ unknown HVAC mode and disabled temperature editing. Fan controls are not exposed
 
 Reconfigure the integration to import the widget if it was added after the last
 interface import, then reload or restart after updating the integration.
+
+#### Viewing the saved schedule
+
+Each thermostat has a **Schedule** sensor under **Sensors** on its device page.
+Its state summarizes the current scheduled target and next temperature change,
+for example **22°C until 20:00**. Open it to see whether the schedule is being
+followed, the heating/cooling direction, the next target and change time, and
+readable periods for all seven days. Constant schedules show **20°C all week**.
+Manual mode and Off retain the saved schedule with **Following schedule: No**.
+
+The sensor uses the existing CLU reports and refreshes at each quarter-hour
+without writing to the thermostat. It follows Home Assistant's temperature unit,
+language (English/Polish) and time zone; the time zone should match the CLU clock.
+Before valid schedule data arrives, its state is unknown. The climate entity's
+existing ID and the thermostat's device name stay unchanged.
 
 #### Weekly schedules
 
@@ -170,118 +304,6 @@ inverting this rounded factor can give the wrong temperature. The preceding four
 characters (observed as `+00:`) remain unexplained. Preserve all six metadata
 characters byte for byte. Captures validate the codec; live hardware writes
 still need verification.
-
-## 🚀 Installation
-
-### Option 1: HACS (Recommended)
-
-1. Open [HACS](https://www.hacs.xyz/docs/use/download/download/) in your Home Assistant instance
-2. Go to **Integrations**
-3. Click the three dots in the top right corner
-4. Select **Custom repositories**
-5. Add this repository URL: `https://github.com/sszczep/homeassistant-grenton`
-6. Select **Integration** as the category
-7. Click **Install**
-8. Restart Home Assistant
-
-### Option 2: Manual Installation
-
-1. Download the latest release from the [Releases](https://github.com/sszczep/homeassistant-grenton/releases) section
-2. Extract the zip file
-3. Copy the `homeassistant_grenton` folder into your `custom_components` directory (usually `/config/custom_components/`)
-4. Restart Home Assistant
-
-## 📖 Configuration
-
-### Initial Setup
-
-1. Go to **Settings** → **Devices & Services**
-2. Click **Add Integration**
-3. Search for **"Grenton"**
-4. Enter your Grenton Object Manager connection details:
-   - **IP Address**: IP address of your Grenton Object Manager
-   - **Port**: Port number (default: `9998`)
-   - **PIN**: Your Object Manager PIN code
-
-### Entity Configuration
-
-After initial setup, you can customize individual entities:
-
-1. Navigate to **Settings** → **Devices & Services** → **Grenton**
-2. Click **Configure** on the integration
-3. Select an entity from the dropdown menu
-4. Configure entity properties:
-   - **Sensors**: Choose device class and unit of measurement
-   - **Sliders (Numbers)**: Set display mode, device class, and unit
-   - **Binary Sensors**: Select appropriate device class
-   - **On/Off controls**: Choose whether the entity is a switch or a light
-   - **Scenes**: Review or change the action call type, CLU, script/object name, index, and arguments/value
-
-The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
-
-Widget devices are automatically named from their entity labels. Two distinct
-labels are joined with `·`; devices with more labels show the first two and
-`(+N)` for the remaining ones. The widget type remains in the Model field.
-You can rename a device using Home Assistant's native device settings.
-The name is respected across reloads and interface refreshes. Renaming preserves
-the device's room, entity IDs and entity labels, and does not reload the integration.
-For a widget with one entity, its default friendly name follows the device name
-without repeating the label. Widgets with multiple entities keep their individual
-entity labels, and existing custom entity names remain unchanged.
-
-### VALUE_V2 and VALUE_DOUBLE as Binary Sensors
-
-Select the value entity under **Grenton → Configure** and choose **Binary sensor**,
-then select a device class such as **Door**, **Window**, or **Opening**. With
-**Invert state** disabled (the default), positive values mean off/closed and zero
-means on/open. Negative values are also treated as on. Numeric strings are
-accepted, while missing or invalid values remain unknown. Binary sensors have no
-measurement unit or state class.
-
-Enable **Invert state** to reverse this mapping: positive values mean on/open,
-and zero or negative values mean off/closed. This option is configured separately
-for each VALUE_DOUBLE channel; missing or invalid values remain unknown.
-
-The default remains **Sensor**, with configurable device class and unit. Enum
-sensors have no measurement state class or unit. Changing between Sensor and
-Binary sensor reloads the integration and replaces the old entity registration
-on the same device. Update automations and dashboards to use the new entity ID.
-For VALUE_DOUBLE, configure each of the two entities independently; they can use
-different domains, device classes, and units while remaining on the same device.
-
-Open a value entity from its device page to inspect its read-only `state_source`
-attributes: call type and CLU ID, plus object name and attribute index for an
-Attribute source, or variable name for a Variable source. This is available for
-sensor and binary sensor presentations, independently for each VALUE_DOUBLE
-channel, and for custom CLU variable sensors.
-
-### On/Off Controls as Lights
-
-Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
-forms, prefilled with the current imported or saved settings:
-
-1. **State**: choose Switch or Light and configure the state source (CLU and
-   object/attribute index, or CLU and variable name).
-2. **Turn on**: configure the action's call type, CLU and target.
-3. **Turn off**: configure its action independently and save all settings.
-
-Both actions support Method, Script, Attribute and Variable. Method/script calls
-have typed argument rows that can be added, removed or reordered; omit trailing
-arguments to use defaults. Attribute/variable actions have an editable value to
-set. State sources support Attribute and Variable. The entity's attributes expose
-the effective state source and both actions, including arguments and call payloads.
-
-Existing controls default to Switch. ON_OFF_DOUBLE channels can
-be configured independently.
-
-Saving reloads the integration and creates the selected entity type, preserving
-the Grenton state subscription, ON/OFF actions, and device. Light mode provides
-on/off control without brightness or color controls. The choice persists across
-restarts and interface reconfiguration.
-
-Changing the type changes the entity domain (`switch.…` ↔ `light.…`) and removes
-the previous entity registration. Update dashboards and automations to reference
-the new entity ID. You can change the choice again through the same dialog.
 
 ### CLU Controllers and Scripts
 

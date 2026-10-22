@@ -280,6 +280,51 @@
       },
       "clu_firmware_version": {
         "name": "Wersja oprogramowania"
+      },
+      "thermostat_schedule": {
+        "name": "Harmonogram",
+        "state_attributes": {
+          "following_schedule": {
+            "name": "Praca według harmonogramu"
+          },
+          "direction": {
+            "name": "Kierunek pracy",
+            "state": {
+              "heating": "Grzanie",
+              "cooling": "Chłodzenie"
+            }
+          },
+          "scheduled_target": {
+            "name": "Bieżąca temperatura z harmonogramu"
+          },
+          "next_change": {
+            "name": "Następna zmiana"
+          },
+          "next_target": {
+            "name": "Następna temperatura"
+          },
+          "monday": {
+            "name": "Poniedziałek"
+          },
+          "tuesday": {
+            "name": "Wtorek"
+          },
+          "wednesday": {
+            "name": "Środa"
+          },
+          "thursday": {
+            "name": "Czwartek"
+          },
+          "friday": {
+            "name": "Piątek"
+          },
+          "saturday": {
+            "name": "Sobota"
+          },
+          "sunday": {
+            "name": "Niedziela"
+          }
+        }
       }
     },
     "binary_sensor": {

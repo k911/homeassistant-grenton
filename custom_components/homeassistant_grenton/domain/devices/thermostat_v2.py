@@ -7,4 +7,4 @@ from .base import BaseGrentonDevice
 
 @dataclass
 class GrentonDeviceThermostatV2(BaseGrentonDevice):
-    """A thermostat represented by one climate entity."""
+    """A thermostat with climate controls and a read-only schedule sensor."""

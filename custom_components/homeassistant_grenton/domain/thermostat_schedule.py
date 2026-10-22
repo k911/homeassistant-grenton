@@ -10,6 +10,7 @@ characters have unknown semantics. All six trailer characters are preserved.
 import math
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any
 
@@ -56,9 +57,42 @@ def decode_temperature(pair: str, maximum: float) -> float:
 
 
 @dataclass(frozen=True)
+class ScheduledPeriod:
+    """Scheduled target now and the next actual temperature change."""
+
+    temperature: float
+    next_change: datetime | None = None
+    next_temperature: float | None = None
+
+
+@dataclass(frozen=True)
 class ThermostatSchedule:
     temperatures: tuple[float, ...]
     trailer: str
+
+    def active_period(self, now: datetime) -> ScheduledPeriod:
+        """Walk real quarter-hours so skipped/repeated DST hours stay correct."""
+        if now.tzinfo is None:
+            raise ValueError("Schedule time must include a time zone")
+
+        def value(at: datetime) -> float:
+            slot = ((at.weekday() + 1) % 7) * 96 + at.hour * 4 + at.minute // 15
+            return self.temperatures[slot]
+
+        current = value(now)
+        if all(temperature == current for temperature in self.temperatures):
+            return ScheduledPeriod(current)
+        utc_now = now.astimezone(UTC)
+        boundary = utc_now.replace(
+            minute=utc_now.minute // 15 * 15, second=0, microsecond=0
+        ) + timedelta(minutes=15)
+        # A change confined to the skipped spring hour can miss a whole week.
+        # Cover two local weeks, including their possible DST offset change.
+        for offset in range(15 * 96):
+            local = (boundary + timedelta(minutes=15 * offset)).astimezone(now.tzinfo)
+            if (temperature := value(local)) != current:
+                return ScheduledPeriod(current, local, temperature)
+        return ScheduledPeriod(current)
 
     def periods(self) -> dict[str, list[dict[str, Any]]]:
         """Represent each day as temperature changes starting at midnight."""

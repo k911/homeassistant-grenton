@@ -3,6 +3,7 @@
 from ..coordinator import GrentonCoordinator
 from ..domain.action import GrentonAction, GrentonActionAttribute
 from ..domain.devices.thermostat_v2 import GrentonDeviceThermostatV2
+from ..domain.entities.thermostat_schedule_sensor import GrentonThermostatScheduleSensor
 from ..domain.entities.thermostat_v2 import GrentonEntityThermostatV2
 from ..domain.enums import GrentonActionEventType
 from ..domain.state_object import GrentonAttributeValueObject, GrentonStateObject
@@ -72,15 +73,17 @@ class DeviceThermostatV2Mapper:
                 event=GrentonActionEventType.CLICK,
                 value="$value$",
             )
+        thermostat = GrentonEntityThermostatV2(
+            coordinator=coordinator,
+            id=f"{dto.id}_climate",
+            label=dto.label,
+            states=states,
+            actions=actions,
+            device_info=device.device_info,
+            cooling_detected=cooling_detected,
+        )
         device.entities = [
-            GrentonEntityThermostatV2(
-                coordinator=coordinator,
-                id=f"{dto.id}_climate",
-                label=dto.label,
-                states=states,
-                actions=actions,
-                device_info=device.device_info,
-                cooling_detected=cooling_detected,
-            )
+            thermostat,
+            GrentonThermostatScheduleSensor(thermostat, f"{dto.id}_schedule"),
         ]
         return device

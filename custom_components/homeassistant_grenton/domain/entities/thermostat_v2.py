@@ -19,7 +19,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from ...coordinator import GrentonCoordinator
 from ..action import GrentonAction
 from ..state_object import GrentonStateObject
-from ..thermostat_schedule import decode_schedule, encode_schedule
+from ..thermostat_schedule import ThermostatSchedule, decode_schedule, encode_schedule
 from .base import BaseGrentonEntity
 from .configurable import ConfigurableEntity
 from .thermostat_configuration import (
@@ -63,6 +63,30 @@ class GrentonEntityThermostatV2(
         self._command_lock = asyncio.Lock()
         for state in states.values():
             coordinator.register_component_state(state)
+
+    @property
+    def name(self) -> None:
+        # This remains the main entity when the read-only schedule is added.
+        return None
+
+    @property
+    def decoded_schedule(self) -> ThermostatSchedule | None:
+        data, maximum = self._value("scheduleData"), self._number("maxTemperature")
+        if isinstance(data, str) and maximum is not None:
+            try:
+                return decode_schedule(data, maximum)
+            except ValueError:
+                pass
+        return None
+
+    @property
+    def following_schedule(self) -> bool | None:
+        state, mode = self._number("state"), self._number("mode")
+        if state == 0 or mode in (0, 1, 3):
+            return False
+        if state == 1 and mode == 2:
+            return True
+        return None
 
     @property
     def cooling_enabled(self) -> bool:
@@ -232,13 +256,8 @@ class GrentonEntityThermostatV2(
         }
         if self._number("mode") == 2:
             attributes["scheduled_target_temperature_celsius"] = self.target_temperature
-        data = self._value("scheduleData")
-        maximum = self._number("maxTemperature")
-        if isinstance(data, str) and maximum is not None:
-            try:
-                attributes["weekly_schedule"] = decode_schedule(data, maximum).periods()
-            except ValueError:
-                pass
+        if schedule := self.decoded_schedule:
+            attributes["weekly_schedule"] = schedule.periods()
         return attributes
 
     async def _execute(self, action_name: str, value: str) -> None:

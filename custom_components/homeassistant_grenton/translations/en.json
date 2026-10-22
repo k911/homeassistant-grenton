@@ -280,6 +280,51 @@
       },
       "clu_firmware_version": {
         "name": "Firmware version"
+      },
+      "thermostat_schedule": {
+        "name": "Schedule",
+        "state_attributes": {
+          "following_schedule": {
+            "name": "Following schedule"
+          },
+          "direction": {
+            "name": "Direction",
+            "state": {
+              "heating": "Heating",
+              "cooling": "Cooling"
+            }
+          },
+          "scheduled_target": {
+            "name": "Current scheduled target"
+          },
+          "next_change": {
+            "name": "Next change"
+          },
+          "next_target": {
+            "name": "Next target"
+          },
+          "monday": {
+            "name": "Monday"
+          },
+          "tuesday": {
+            "name": "Tuesday"
+          },
+          "wednesday": {
+            "name": "Wednesday"
+          },
+          "thursday": {
+            "name": "Thursday"
+          },
+          "friday": {
+            "name": "Friday"
+          },
+          "saturday": {
+            "name": "Saturday"
+          },
+          "sunday": {
+            "name": "Sunday"
+          }
+        }
       }
     },
     "binary_sensor": {
