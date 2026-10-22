@@ -366,6 +366,7 @@ class GrentonThermostatEditor extends GrentonEditor {
     const settings = this.selector?.grenton_thermostat ?? {};
     this._value ??= { cooling_enabled: false, edit_schedule: false, sections: [] };
     const draft = this._value;
+    this._periodTemperatureInputs = [];
     const cooling = this._input("cooling_enabled", draft.cooling_enabled,
       (value) => { draft.cooling_enabled = value; this._render(); }, "checkbox", false);
     cooling.disabled ||= !settings.cooling_available;
@@ -383,6 +384,29 @@ class GrentonThermostatEditor extends GrentonEditor {
         current.textContent = `${this._label("current_direction", "Current direction")}: ${this._label(settings.direction, settings.direction)}`;
         parent.append(current);
       }
+    }
+    const limits = this._input("edit_limits", draft.edit_limits ?? false,
+      (value) => { draft.edit_limits = value; this._render(); }, "checkbox", false);
+    limits.disabled ||= !settings.limits_available;
+    parent.append(this._field(this._label("edit_limits", "Edit temperature limits"), limits));
+    if (draft.edit_limits && settings.limits_available) {
+      for (const name of ["minimum", "maximum"]) {
+        draft[name] ??= settings[name];
+        const input = this._input(name, draft[name],
+          (value) => {
+            draft[name] = value;
+            for (const period of this._periodTemperatureInputs) {
+              period[name === "minimum" ? "min" : "max"] = String(value);
+            }
+          }, "number");
+        input.step = "0.5";
+        input.min = "0";
+        parent.append(this._field(this._label(name, name === "minimum" ? "Minimum temperature (°C)" : "Maximum temperature (°C)"), input));
+      }
+      const note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = this._label("limits_hint", "Scheduled temperatures are preserved when the range changes. All targets must fit the new limits; edit the schedule below if needed.");
+      parent.append(note);
     }
     const edit = this._input("edit_schedule", draft.edit_schedule,
       (value) => { draft.edit_schedule = value; this._render(); }, "checkbox", false);
@@ -402,7 +426,9 @@ class GrentonThermostatEditor extends GrentonEditor {
     }
     if (!draft.edit_schedule || !settings.schedule_available) return;
     const sections = draft.sections ??= [];
-    sections.forEach((section, index) => this._renderSection(parent, section, index, settings));
+    const bounds = draft.edit_limits && settings.limits_available
+      ? { ...settings, minimum: draft.minimum, maximum: draft.maximum } : settings;
+    sections.forEach((section, index) => this._renderSection(parent, section, index, bounds));
     parent.append(this._button(this._label("add_section", "Add section"), () => this._change(() => {
       const assigned = new Set(sections.flatMap((section) => section.days));
       sections.push({ days: WEEKDAYS.filter((day) => !assigned.has(day)), periods: [{
@@ -471,6 +497,7 @@ class GrentonThermostatEditor extends GrentonEditor {
       });
       const temperature = this._input(`section_${index}_period_${periodIndex}_temperature`, period.temperature,
         (value) => { period.temperature = value; }, "number");
+      this._periodTemperatureInputs.push(temperature);
       temperature.step = "0.5";
       temperature.min = String(Math.max(0, settings.minimum ?? 0));
       temperature.max = String(settings.maximum);

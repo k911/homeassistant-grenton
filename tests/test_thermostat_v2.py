@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.components.climate import (
@@ -68,6 +68,21 @@ def thermostat(**values):
     coord = coordinator()
     values = {"8": 0, **values}
     coord.get_value_for_component.side_effect = lambda state: values.get(state.index)
+    pending = {}
+
+    async def write(action, **kwargs):
+        if action.index in ("9", "10", "11"):
+            pending[action.index] = (
+                action.value if action.index == "9" else float(action.value)
+            )
+
+    async def refresh(*args, **kwargs):
+        values.update(pending)
+        pending.clear()
+        return True
+
+    coord.execute_action.side_effect = write
+    coord.async_refresh_clu_state = AsyncMock(side_effect=refresh)
     device = DeviceMapper.to_domain(widget(), coord)
     return device.entities[0], coord
 

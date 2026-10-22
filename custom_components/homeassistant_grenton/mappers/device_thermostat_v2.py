@@ -3,6 +3,7 @@
 from ..coordinator import GrentonCoordinator
 from ..domain.action import GrentonAction, GrentonActionAttribute
 from ..domain.devices.thermostat_v2 import GrentonDeviceThermostatV2
+from ..domain.entities.thermostat_limit_sensor import GrentonThermostatLimitSensor
 from ..domain.entities.thermostat_schedule_sensor import GrentonThermostatScheduleSensor
 from ..domain.entities.thermostat_v2 import GrentonEntityThermostatV2
 from ..domain.enums import GrentonActionEventType
@@ -37,6 +38,8 @@ class DeviceThermostatV2Mapper:
                 "setModeAction",
                 "setTargetTemperatureAction",
                 "setScheduleDataAction",
+                "setMinTemperatureAction",
+                "setMaxTemperatureAction",
             )
         }
         cooling_detected = (
@@ -85,5 +88,9 @@ class DeviceThermostatV2Mapper:
         device.entities = [
             thermostat,
             GrentonThermostatScheduleSensor(thermostat, f"{dto.id}_schedule"),
+            GrentonThermostatLimitSensor(thermostat, f"{dto.id}_min_temperature", True),
+            GrentonThermostatLimitSensor(
+                thermostat, f"{dto.id}_max_temperature", False
+            ),
         ]
         return device

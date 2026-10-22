@@ -1,10 +1,28 @@
 from __future__ import annotations
-from typing import Union, Any
+
+from collections.abc import Sequence
 from dataclasses import dataclass
-from .domain.state_object import GrentonStateObject, GrentonAttributeValueObject, GrentonVariableValueObject
+from enum import Enum
+from typing import Any, Union
+
+from .domain.state_object import (
+    GrentonAttributeValueObject,
+    GrentonStateObject,
+    GrentonVariableValueObject,
+)
 
 # Type alias for Grenton values (string, boolean, number, or None)
 GrentonValue = Union[str, bool, int, float, None]
+
+
+class MissingState(Enum):
+    """A failed read, distinct from an actual CLU nil value."""
+
+    VALUE = "missing"
+
+
+MISSING_STATE = MissingState.VALUE
+GrentonRegistrationValue = GrentonValue | MissingState
 
 
 def cast_string_to_grenton_value(
@@ -156,15 +174,11 @@ class GrentonCluState:
     def update_keys(
         self,
         keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey],
-        values: list[GrentonValue],
+        values: Sequence[GrentonRegistrationValue],
     ) -> None:
-        """Update state for the given keys with the matching values.
-
-        Positions where value is None are skipped — a None marks a failed chunk
-        in register_component_states, not an actual nil value from the CLU.
-        """
+        """Apply real reports, including nil; retain values only on failed reads."""
         for key, value in zip(keys, values):
-            if value is None:
+            if isinstance(value, MissingState):
                 continue
             if isinstance(key, GrentonCluStateVariableKey):
                 if key in self.variables:

@@ -325,7 +325,7 @@ def test_real_ha_schedule_action_targets_thermostat_without_mode_or_power_writes
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
         await async_setup(hass, {})
-        minimum, data, temperature, expected_pair, second_period = {
+        minimum, data, temperature, expected_pair, _second_period = {
             30: (
                 0,
                 DEFAULT_DAY * 7 + "+00:30",
@@ -382,8 +382,11 @@ def test_real_ha_schedule_action_targets_thermostat_without_mode_or_power_writes
         ]
         assert entity.actions["setScheduleDataAction"].value == "$value$"
         assert entity.hvac_mode == "auto"
-        state = hass.states.get(entity.entity_id)
-        assert state.attributes["weekly_schedule"]["sunday"][1] == second_period
+        assert entity.decoded_schedule.periods() == constant_week(temperature)
+        entity._handle_coordinator_update()
+        assert hass.states.get(entity.entity_id).attributes[
+            "weekly_schedule"
+        ] == constant_week(temperature)
         assert entity.min_temp == minimum
         assert entity.max_temp == maximum
         invalid_week = constant_week(20.1)

@@ -325,6 +325,12 @@
             "name": "Niedziela"
           }
         }
+      },
+      "thermostat_minimum": {
+        "name": "Temperatura minimalna"
+      },
+      "thermostat_maximum": {
+        "name": "Temperatura maksymalna"
       }
     },
     "binary_sensor": {
@@ -692,6 +698,18 @@
         },
         "current_direction": {
           "name": "Bieżący kierunek"
+        },
+        "edit_limits": {
+          "name": "Edytuj limity temperatury"
+        },
+        "minimum": {
+          "name": "Temperatura minimalna (°C)"
+        },
+        "maximum": {
+          "name": "Temperatura maksymalna (°C)"
+        },
+        "limits_hint": {
+          "name": "Zmiana zakresu zachowuje temperatury harmonogramu. Wszystkie temperatury muszą mieścić się w nowych limitach; w razie potrzeby edytuj harmonogram poniżej."
         }
       }
     }

@@ -38,7 +38,7 @@ def make_sensor(**overrides):
     coord = coordinator()
     coord.get_value_for_component.side_effect = lambda state: values.get(state.index)
     device = DeviceMapper.to_domain(widget(), coord)
-    climate, schedule = device.entities
+    climate, schedule = device.entities[:2]
     schedule._now = Mock(return_value=datetime(2026, 10, 19, 14, 30, tzinfo=WARSAW))
     return device, climate, schedule, coord, values
 
@@ -309,7 +309,7 @@ def test_native_sensor_registration_shares_device_preserves_climate_id_and_remov
 
 
 def test_sensor_platform_discovers_the_schedule_but_not_the_climate_control():
-    device, _, schedule, _, _ = make_sensor()
+    device, _, _, _, _ = make_sensor()
     entry = SimpleNamespace(
         runtime_data=SimpleNamespace(devices=[device], clu_entities=[])
     )
@@ -319,4 +319,4 @@ def test_sensor_platform_discovers_the_schedule_but_not_the_climate_control():
             Mock(), entry, lambda entities: added.extend(entities)
         )
     )
-    assert added == [schedule]
+    assert added == device.entities[1:]

@@ -4,7 +4,7 @@ Each Sunday-first 15-minute slot is a two-digit base-90 value scaled from zero
 to the maximum temperature (attribute 11), and clamped to 8099 at the maximum.
 The configured minimum (attribute 10) constrains writes without shifting the
 encoding. The final pair approximates 8100 / maximum; the preceding four trailer
-characters have unknown semantics. All six trailer characters are preserved.
+characters have unknown semantics. Preserve them when changing the range.
 """
 
 import math
@@ -139,10 +139,18 @@ def decode_schedule(data: str, maximum: float) -> ThermostatSchedule:
 
 
 def encode_schedule(
-    schedule: Any, existing_data: str, minimum: float, maximum: float
+    schedule: Any,
+    existing_data: str,
+    minimum: float,
+    maximum: float,
+    *,
+    existing_maximum: float | None = None,
 ) -> str:
-    """Build a complete week, preserving the controller's existing trailer."""
-    existing = decode_schedule(existing_data, maximum)
+    """Build a week; retain metadata, rescaling its final pair for a new maximum."""
+    existing = decode_schedule(
+        existing_data, maximum if existing_maximum is None else existing_maximum
+    )
+    _validate_maximum(maximum)
     if isinstance(minimum, bool) or not isinstance(minimum, (int, float)):
         raise TypeError("Minimum temperature must be a number")
     if not math.isfinite(minimum) or minimum >= maximum:
@@ -171,10 +179,23 @@ def encode_schedule(
                 )
             temperature = period["temperature"]
             pair = encode_temperature(temperature, maximum)
+            if decode_temperature(pair, maximum) != temperature:
+                raise ValueError("Temperature cannot be represented at this maximum")
             if temperature < minimum:
                 raise ValueError(f"Schedule temperatures must be at least {minimum} °C")
             changes.append((slot, pair))
         for index, (start, pair) in enumerate(changes):
             end = changes[index + 1][0] if index + 1 < len(changes) else SLOTS_PER_DAY
             encoded.append(pair * (end - start))
-    return "".join(encoded) + existing.trailer
+    trailer = existing.trailer
+    if existing_maximum is not None and existing_maximum != maximum:
+        factor = math.floor(SCALE / maximum + 0.5)
+        if not 1 <= factor < SCALE:
+            raise ValueError(
+                "Maximum temperature cannot be represented in schedule metadata"
+            )
+        trailer = trailer[:4] + ALPHABET[factor // BASE] + ALPHABET[factor % BASE]
+    payload = "".join(encoded) + trailer
+    # Reject ranges too wide to represent the requested half-degree targets.
+    decode_schedule(payload, maximum)
+    return payload

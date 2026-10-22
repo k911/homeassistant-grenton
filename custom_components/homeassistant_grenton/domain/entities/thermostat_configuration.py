@@ -1,5 +1,6 @@
 """Dynamic thermostat settings and day-grouped weekly schedule selector."""
 
+import math
 import re
 from copy import deepcopy
 from dataclasses import dataclass
@@ -14,6 +15,17 @@ from .configurable import (
     StepDefinition,
     StepResult,
 )
+
+
+def validate_limits(minimum: Any, maximum: Any) -> None:
+    """Require ordered, nonnegative half-degree limits supported by the codec."""
+    for value in (minimum, maximum):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("Temperature limits must be numbers")
+        if not math.isfinite(value) or value < 0 or value * 2 != round(value * 2):
+            raise ValueError("Temperature limits must be nonnegative 0.5 °C increments")
+    if minimum >= maximum or maximum <= 1:
+        raise ValueError("Minimum must be below maximum, and maximum must exceed 1 °C")
 
 
 def schedule_sections(
@@ -60,6 +72,7 @@ class GrentonThermostatSelector(selector.Selector):
         {
             vol.Required("cooling_available"): bool,
             vol.Required("schedule_available"): bool,
+            vol.Optional("limits_available", default=False): bool,
             vol.Optional("minimum"): vol.Coerce(float),
             vol.Optional("maximum"): vol.Coerce(float),
             vol.Optional("direction"): vol.In(["heating", "cooling"]),
@@ -91,6 +104,21 @@ class GrentonThermostatSelector(selector.Selector):
             raise vol.Invalid("Choose heating, cooling, or keep the current direction")
         if cooling and direction != "unchanged":
             result["control_direction"] = direction
+        minimum, maximum = self.config.get("minimum"), self.config.get("maximum")
+        edit_limits = data.get("edit_limits", False)
+        if not isinstance(edit_limits, bool):
+            raise vol.Invalid("Limit editing must be enabled or disabled")
+        if edit_limits:
+            if not self.config["limits_available"]:
+                raise vol.Invalid(
+                    "Wait for the current schedule and limits from the CLU"
+                )
+            minimum, maximum = data.get("minimum"), data.get("maximum")
+            try:
+                validate_limits(minimum, maximum)
+            except (TypeError, ValueError) as err:
+                raise vol.Invalid(str(err)) from err
+            result["limits"] = {"minimum": minimum, "maximum": maximum}
         if edit:
             if not self.config["schedule_available"]:
                 raise vol.Invalid(
@@ -120,10 +148,8 @@ class GrentonThermostatSelector(selector.Selector):
                             "Start at 00:00 with increasing quarter-hour times"
                         )
                     try:
-                        encode_temperature(
-                            period["temperature"], self.config["maximum"]
-                        )
-                        if period["temperature"] < self.config["minimum"]:
+                        encode_temperature(period["temperature"], maximum)
+                        if period["temperature"] < minimum:
                             raise ValueError(
                                 "Temperature is below the configured minimum"
                             )
@@ -151,6 +177,9 @@ class GrentonThermostatConfigurationSchema(BaseGrentonEntityConfigurationSchema)
                 {
                     "cooling_enabled": current.get("cooling_enabled", False),
                     "edit_schedule": False,
+                    "edit_limits": False,
+                    "minimum": self.settings.get("minimum"),
+                    "maximum": self.settings.get("maximum"),
                     "control_direction": "unchanged",
                     "sections": self.sections,
                 },

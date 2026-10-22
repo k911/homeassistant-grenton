@@ -15,14 +15,19 @@ from .domain.api.clu import GrentonCluApi
 from .domain.api.clu_messages import GrentonCluApiActionRequest
 from .domain.clu import GrentonClu
 from .domain.encryption import GrentonEncryption
-from .domain.state_object import GrentonStateObject
+from .domain.state_object import GrentonStateObject, GrentonVariableValueObject
 from .state import (
+    MISSING_STATE,
     GrentonCluState,
     GrentonCluStateAttributeKey,
     GrentonCluStateVariableKey,
+    GrentonRegistrationValue,
     GrentonState,
     GrentonValue,
+    MissingState,
 )
+
+StateKey = GrentonCluStateVariableKey | GrentonCluStateAttributeKey
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +47,8 @@ class GrentonCoordinator(DataUpdateCoordinator):
         
         # Map CLU IDs to their API instances
         self._apis: dict[str, GrentonCluApi] = {}
+        self._read_locks = {clu.id: asyncio.Lock() for clu in clus}
+        self._report_versions: dict[str, dict[StateKey, int]] = {clu.id: {} for clu in clus}
         
         # Initialize API instances for each CLU
         for clu in clus:
@@ -79,27 +86,47 @@ class GrentonCoordinator(DataUpdateCoordinator):
             except Exception as e:
                 _LOGGER.error("Unexpected error in ping loop: %s", e)
     
-    async def _send_register(self, clu_id: str) -> None:
+    @staticmethod
+    def _state_key(state: GrentonStateObject) -> GrentonCluStateVariableKey | GrentonCluStateAttributeKey:
+        if isinstance(state, GrentonVariableValueObject):
+            return GrentonCluStateVariableKey(state.index)
+        return GrentonCluStateAttributeKey(state.object_name, state.index)
+
+    async def _send_register(self, clu_id: str) -> set[StateKey]:
+        async with self._read_locks[clu_id]:
+            return await self._read_registered_states(clu_id)
+
+    async def _read_registered_states(self, clu_id: str) -> set[StateKey]:
         api = self._apis.get(clu_id)
         if not api:
             _LOGGER.warning("[%s] No API found for CLU during state registration", clu_id)
-            return
+            return set()
         
         clu_state = self.state.clus[clu_id]
         
         # Check if there are any states to register
         if not clu_state.has_states_to_register():
             _LOGGER.debug("[%s] No component states to register", clu_id)
-            return
+            return set()
         
         try:
             keys = clu_state.get_subscription_order()
+            versions = self._report_versions[clu_id].copy()
             values = await api.register_component_states(keys)
-            if values:
-                clu_state.update_keys(keys, values)
-                self.async_set_updated_data(self.state.__dict__)
+            if values is None or len(values) != len(keys):
+                _LOGGER.warning("[%s] Incomplete state registration response", clu_id)
+                return set()
+            # A pushed change received during the read is newer than its snapshot.
+            current = self._report_versions[clu_id]
+            merged: list[GrentonRegistrationValue] = [value if current.get(key, 0) == versions.get(key, 0) else MISSING_STATE
+                      for key, value in zip(keys, values)]
+            clu_state.update_keys(keys, merged)
+            self.async_set_updated_data(self.state.__dict__)
+            return {key for key, value in zip(keys, values)
+                    if not isinstance(value, MissingState) or current.get(key, 0) != versions.get(key, 0)}
         except Exception as e:
             _LOGGER.error("[%s] Error during registration: %s", clu_id, e)
+            return set()
     
     async def _register_loop(self) -> None:
         while True:
@@ -158,18 +185,30 @@ class GrentonCoordinator(DataUpdateCoordinator):
         values: list[GrentonValue],
     ) -> None:
         """Process a report from a CLU and update state for the given keys."""
+        if len(keys) != len(values):
+            _LOGGER.warning("[%s] Ignoring incomplete state report", clu_id)
+            return
         clu_state = self.state.clus[clu_id]
+        for key in keys:
+            versions = self._report_versions[clu_id]
+            versions[key] = versions.get(key, 0) + 1
         clu_state.update_keys(keys, values)
 
         self.async_set_updated_data(self.state.__dict__)
         _LOGGER.debug("[%s] Processed report with %d values", clu_id, len(values))
     
-    def register_component_state(self, state: GrentonStateObject) -> None:
+    def register_component_state(self, state: GrentonStateObject, *, large_value: bool = False) -> None:
         self.state.register_state(state)
+        if large_value and (api := self._apis.get(state.clu_id)) is not None:
+            api.large_value_keys.add(self._state_key(state))
 
-    async def async_refresh_clu_state(self, clu_id: str) -> None:
-        """Read back tracked values using the CLU's existing subscription."""
-        await self._send_register(clu_id)
+    async def async_refresh_clu_state(self, clu_id: str, *, required_states: list[GrentonStateObject] | None = None) -> bool:
+        """Read back tracked values; report whether the required reads succeeded."""
+        received = await self._send_register(clu_id)
+        required = ({self._state_key(state) for state in required_states}
+                    if required_states is not None
+                    else set(self.state.clus[clu_id].get_subscription_order()))
+        return required <= received
     
     async def async_setup(self) -> None:
         # Connect all APIs
@@ -189,8 +228,14 @@ class GrentonCoordinator(DataUpdateCoordinator):
         # Send initial registrations
         register_tasks = [self._send_register(clu_id) for clu_id in self.state.clus.keys()]
         if register_tasks:
-            await asyncio.gather(*register_tasks, return_exceptions=True)
-        
+            results = await asyncio.gather(*register_tasks, return_exceptions=True)
+            # Retry incomplete initial pulls once before publishing entities.
+            retries = [self._send_register(clu_id)
+                       for clu_id, result in zip(self.state.clus, results)
+                       if not isinstance(result, set) or not set(self.state.clus[clu_id].get_subscription_order()) <= result]
+            if retries:
+                await asyncio.gather(*retries, return_exceptions=True)
+
         # Start background tasks
         self._ping_task = asyncio.create_task(self._ping_loop())
         self._register_task = asyncio.create_task(self._register_loop())

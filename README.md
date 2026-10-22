@@ -192,6 +192,16 @@ in Auto; choose Heat or Cool before changing the target. A temperature action
 cannot leave Auto, including when it also requests a manual mode.
 Setting only a temperature in manual mode preserves the enabled state.
 The widget's minimum and maximum temperature bindings supply the control's bounds.
+Each device also exposes **Minimum temperature** and **Maximum temperature** sensors
+from attributes **10** and **11**, using Home Assistant's preferred temperature unit.
+To change them, open **Grenton → Configure**, select the thermostat and enable
+**Edit temperature limits**. Enter both limits in Celsius, in 0.5°C increments.
+The captured schedule format supports nonnegative targets and a maximum above 1°C.
+Changing the maximum re-encodes the saved week to preserve its temperatures.
+Targets outside the new limits are rejected; edit the schedule in the same popup
+or change the manual target first. Limits and schedules are read back from the CLU
+before success is reported. A failed multi-write save can leave partial changes;
+reopen configuration to inspect the device's current values before retrying.
 Home Assistant converts Celsius temperatures to the installation's preferred unit.
 While Auto hides the editable target control, the effective scheduled target is
 available as the read-only `scheduled_target_temperature_celsius` attribute.
@@ -232,7 +242,7 @@ periods intact; it is disabled once the last start is `23:45`. Add or remove
 sections directly in the popup. It loads the current CLU schedule;
 saving replaces the complete week without changing power or manual/schedule mode.
 Direction also stays unchanged unless explicitly selected in the popup. Leaving
-schedule editing unchecked saves the cooling option and any direction selection.
+schedule editing unchecked still applies selected limit and direction changes and saves the cooling option.
 
 The `weekly_schedule` entity attribute shows the decoded schedule in Celsius.
 Use `grenton.set_thermostat_schedule` to replace the complete week. Each day must
@@ -246,7 +256,21 @@ Schedule editing reads the configured minimum and maximum from thermostat
 attributes **10** and **11** and accepts **0.5°C** increments within those limits.
 The captured encoding supports nonnegative temperatures. The current schedule
 and limits must have been received from the CLU before an update can be sent.
-After changing the maximum, wait for updated schedule data before editing it.
+At startup, the integration pulls the saved week and limits from the CLU and
+checks their encoding together; it never pushes a cached Home Assistant schedule.
+Incomplete startup reads are retried once, then recovered through normal reports
+and the periodic refresh. Each large schedule uses its own subscription, and
+outgoing packets are paced across the CLU's sockets to reduce request bursts.
+Newer pushed reports take precedence over an older in-flight read. Failed reads
+retain cached values; an actual CLU `nil` clears them.
+
+Every schedule save first reads fresh data, then verifies the reported week and
+limits after writing, with up to three readback attempts. An acknowledgement alone
+does not count as a confirmed save. Missing or inconsistent data keeps the schedule
+sensor unknown and disables editing; the climate's `schedule_status` attribute
+and logs explain the decoding problem. Timeout logs identify ping, state-read or
+write requests. Repeated ping timeouts indicate missed CLU replies; they do not
+establish a schedule-format problem.
 
 ```yaml
 action: grenton.set_thermostat_schedule
@@ -301,9 +325,11 @@ At `M = 600`, `_0` means 560°C, `30` means 20°C and `3r` means 22°C. `00` mea
 The final metadata pair matches rounded `8100 / M` in captures: `30` is 270 for
 `M = 30`, and `0e` is 14 for `M = 600` (13.5 rounded). Read `M` from attribute 11;
 inverting this rounded factor can give the wrong temperature. The preceding four
-characters (observed as `+00:`) remain unexplained. Preserve all six metadata
-characters byte for byte. Captures validate the codec; live hardware writes
-still need verification.
+characters (observed as `+00:`) remain unexplained. Ordinary schedule edits
+preserve all six characters. When changing the maximum through the popup, preserve
+the first four and regenerate the final pair as rounded `8100 / M`, together with
+all temperature slots. Captures validate the codec; the save path also checks
+readback, but limit changes still need confirmation on physical hardware.
 
 ### CLU Controllers and Scripts
 

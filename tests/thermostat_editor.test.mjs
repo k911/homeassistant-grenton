@@ -146,3 +146,23 @@ test("enabling cooling reveals an independent direction selector without selecti
   assert.equal(editor.emitted.edit_schedule, false);
   assert.equal(editor.emitted.mode, undefined);
 });
+
+for (const language of ["en", "pl"]) {
+  test(`${language}: limits are opt-in and update period bounds without changing targets`, () => {
+    const editor = makeEditor({ language, settings: { limits_available: true } });
+    assert.equal(editor.field("minimum"), undefined);
+    editor.field("edit_limits").checked = true;
+    editor.field("edit_limits").fire("input");
+    assert.equal(editor.field("minimum").value, 10);
+    assert.equal(editor.field("maximum").value, 30);
+    const maximum = editor.field("maximum");
+    maximum.valueAsNumber = 33; maximum.validity = { badInput: false };
+    maximum.fire("input");
+    assert.equal(editor.emitted.maximum, 33);
+    assert.equal(editor.field("section_0_period_0_temperature").max, "33");
+    assert.equal(editor.emitted.sections[0].periods[0].temperature, 20);
+    editor.field("edit_limits").checked = false;
+    editor.field("edit_limits").fire("input");
+    assert.equal(editor.field("section_0_period_0_temperature").max, "30");
+  });
+}

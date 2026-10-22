@@ -1,6 +1,7 @@
 """Heating, optional cooling and schedules for Grenton THERMOSTAT_V2 widgets."""
 
 import asyncio
+import logging
 import math
 from dataclasses import replace
 from typing import Any
@@ -13,7 +14,8 @@ from homeassistant.components.climate import (
 )
 from homeassistant.components.climate.const import ATTR_HVAC_MODE
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ...coordinator import GrentonCoordinator
@@ -25,7 +27,10 @@ from .configurable import ConfigurableEntity
 from .thermostat_configuration import (
     GrentonThermostatConfigurationSchema,
     schedule_sections,
+    validate_limits,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 MODE_VALUES = {HVACMode.HEAT: 0, HVACMode.COOL: 0, HVACMode.AUTO: 2}
 
@@ -61,8 +66,12 @@ class GrentonEntityThermostatV2(
         self._cooling_detected = cooling_detected
         ConfigurableEntity.__init__(self)
         self._command_lock = asyncio.Lock()
-        for state in states.values():
-            coordinator.register_component_state(state)
+        self._last_schedule_status: str | None = None
+        for name, state in states.items():
+            if name == "scheduleData":
+                coordinator.register_component_state(state, large_value=True)
+            else:
+                coordinator.register_component_state(state)
 
     @property
     def name(self) -> None:
@@ -78,6 +87,37 @@ class GrentonEntityThermostatV2(
             except ValueError:
                 pass
         return None
+
+    @property
+    def schedule_status(self) -> str:
+        data, maximum = self._value("scheduleData"), self._number("maxTemperature")
+        if not isinstance(data, str) or not data or maximum is None:
+            return "Waiting for schedule data and maximum temperature from the CLU"
+        try:
+            decode_schedule(data, maximum)
+        except ValueError as error:
+            return str(error)
+        return "ready"
+
+    def _analyse_schedule(self) -> None:
+        status = self.schedule_status
+        if status != self._last_schedule_status:
+            self._last_schedule_status = status
+            if status == "ready":
+                _LOGGER.debug(
+                    "[%s] CLU weekly schedule decoded successfully", self.unique_id
+                )
+            else:
+                _LOGGER.warning("[%s] Schedule unavailable: %s", self.unique_id, status)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._analyse_schedule()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._analyse_schedule()
+        super()._handle_coordinator_update()
 
     @property
     def following_schedule(self) -> bool | None:
@@ -130,6 +170,10 @@ class GrentonEntityThermostatV2(
                     minimum=minimum,
                     maximum=maximum,
                 )
+        settings["limits_available"] = settings["schedule_available"] and all(
+            name in self.actions
+            for name in ("setMinTemperatureAction", "setMaxTemperatureAction")
+        )
         return GrentonThermostatConfigurationSchema(settings, sections)
 
     async def apply_configuration(self, user_input: dict[str, Any]) -> dict[str, Any]:
@@ -142,8 +186,10 @@ class GrentonEntityThermostatV2(
                 "Enable cooling before selecting its direction"
             )
         async with self._command_lock:
-            if "schedule" in user_input:
-                await self._set_schedule(user_input["schedule"])
+            if "schedule" in user_input or "limits" in user_input:
+                await self._set_schedule_and_limits(
+                    user_input.get("schedule"), user_input.get("limits")
+                )
             if direction is not None:
                 await self._execute(
                     "setControlDirectionAction", "1" if direction == "cooling" else "0"
@@ -251,6 +297,7 @@ class GrentonEntityThermostatV2(
         # Preserve effective scheduled targets when editing is not advertised.
         attributes = {
             "grenton_mode": self._value("mode"),
+            "schedule_status": self.schedule_status,
             "control_direction": self._value("controlDirection"),
             "control_direction_name": self.control_direction_name,
         }
@@ -339,21 +386,114 @@ class GrentonEntityThermostatV2(
         async with self._command_lock:
             await self._set_schedule(schedule)
 
-    async def _set_schedule(self, schedule: Any) -> None:
-        """Write the week while the caller holds the command lock."""
-        data = self._value("scheduleData")
-        if not isinstance(data, str) or not data:
-            raise ServiceValidationError(
-                "The thermostat schedule has not been received yet"
+    async def _refresh_schedule(self) -> bool:
+        states = [
+            self.states[name]
+            for name in ("scheduleData", "minTemperature", "maxTemperature")
+        ]
+        # Bindings may refer to different CLUs; each required source must reply.
+        results = []
+        for clu_id in dict.fromkeys(state.clu_id for state in states):
+            results.append(
+                await self.coordinator.async_refresh_clu_state(
+                    clu_id,
+                    required_states=[
+                        state for state in states if state.clu_id == clu_id
+                    ],
+                )
             )
-        minimum = self._number("minTemperature")
-        maximum = self._number("maxTemperature")
-        if minimum is None or maximum is None:
+        return all(results)
+
+    async def _set_schedule(self, schedule: Any) -> None:
+        if schedule is None:
+            raise ServiceValidationError("Provide a complete weekly schedule")
+        await self._set_schedule_and_limits(schedule)
+
+    async def _set_schedule_and_limits(
+        self, schedule: Any = None, limits: Any = None
+    ) -> None:
+        """Validate everything, write under the command lock, then verify CLU data."""
+        if not await self._refresh_schedule():
+            raise HomeAssistantError(
+                "Could not read the current thermostat schedule and limits from the CLU"
+            )
+        data = self._value("scheduleData")
+        minimum, maximum = (
+            self._number("minTemperature"),
+            self._number("maxTemperature"),
+        )
+        if not isinstance(data, str) or not data or minimum is None or maximum is None:
             raise ServiceValidationError(
-                "The thermostat temperature limits have not been received yet"
+                "The thermostat schedule and limits have not been received yet"
             )
         try:
-            payload = encode_schedule(schedule, data, minimum, maximum)
+            existing = decode_schedule(data, maximum)
+            new_minimum, new_maximum = minimum, maximum
+            if limits is not None:
+                if not isinstance(limits, dict) or set(limits) != {
+                    "minimum",
+                    "maximum",
+                }:
+                    raise ValueError("Provide both minimum and maximum temperature")
+                new_minimum, new_maximum = limits["minimum"], limits["maximum"]
+                validate_limits(new_minimum, new_maximum)
+                if (
+                    self._number("mode") == 0
+                    and (target := self.target_temperature) is not None
+                    and not new_minimum <= target <= new_maximum
+                ):
+                    raise ValueError(
+                        "The manual target is outside the proposed limits; change the target first"
+                    )
+            payload = encode_schedule(
+                existing.periods() if schedule is None else schedule,
+                data,
+                new_minimum,
+                new_maximum,
+                existing_maximum=maximum,
+            )
         except (TypeError, ValueError) as error:
             raise ServiceValidationError(str(error)) from error
-        await self._execute("setScheduleDataAction", payload)
+        commands: list[tuple[str, str]] = []
+        bounds = [
+            ("setMinTemperatureAction", new_minimum, minimum),
+            ("setMaxTemperatureAction", new_maximum, maximum),
+        ]
+        if new_minimum >= maximum:
+            bounds.reverse()
+        commands.extend(
+            (name, str(value)) for name, value, old in bounds if value != old
+        )
+        if schedule is not None or new_maximum != maximum:
+            commands.append(("setScheduleDataAction", payload))
+        if any(name not in self.actions for name, _ in commands):
+            raise ServiceValidationError("The thermostat action is not configured")
+        if not commands:
+            return
+        try:
+            for name, value in commands:
+                await self._execute(name, value)
+        except HomeAssistantError:
+            # A timeout may happen after the CLU applied a write. Reconcile it.
+            await self._refresh_schedule()
+            raise
+        expected = decode_schedule(payload, new_maximum)
+        for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(0.2 * attempt)
+            fresh = await self._refresh_schedule()
+            actual = self.decoded_schedule
+            if (
+                fresh
+                and self._number("minTemperature") == new_minimum
+                and self._number("maxTemperature") == new_maximum
+                and actual is not None
+                and actual.temperatures == expected.temperatures
+            ):
+                return
+        _LOGGER.warning(
+            "[%s] CLU did not confirm thermostat schedule/limit changes", self.unique_id
+        )
+        raise HomeAssistantError(
+            "The CLU did not confirm the saved schedule and temperature limits. Reopen configuration to inspect the current device values."
+        )

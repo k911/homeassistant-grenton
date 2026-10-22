@@ -3,7 +3,7 @@
 import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.components.climate import HVACAction, HVACMode
@@ -50,6 +50,21 @@ def thermostat(
         **(values or {}),
     }
     coord.get_value_for_component.side_effect = lambda state: feedback.get(state.index)
+    pending = {}
+
+    async def write(action, **kwargs):
+        if action.index in ("9", "10", "11"):
+            pending[action.index] = (
+                action.value if action.index == "9" else float(action.value)
+            )
+
+    async def refresh(*args, **kwargs):
+        feedback.update(pending)
+        pending.clear()
+        return True
+
+    coord.execute_action.side_effect = write
+    coord.async_refresh_clu_state = AsyncMock(side_effect=refresh)
     entity = DeviceMapper.to_domain(
         GrentonWidgetThermostatV2Dto.model_validate(dto), coord
     ).entities[0]

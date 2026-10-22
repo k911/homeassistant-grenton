@@ -180,7 +180,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
 
         # A report changes only its own CLU, including a reboot and new firmware.
         keys = coord.state.clus["clu1"].get_subscription_order()
-        await coord._process_report("clu1", keys, [0, False, True, "3.2.0"])
+        await coord._process_report("clu1", keys[:4], [0, False, True, "3.2.0"])
         assert entities[1].native_value == 0
         assert entities[2].is_on is False
         assert entities[3].is_on is True
