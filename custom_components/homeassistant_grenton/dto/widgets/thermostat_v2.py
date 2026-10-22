@@ -1,4 +1,4 @@
-"""Heating thermostat widget from the mobile interface."""
+"""Thermostat widget with optional cooling bindings from the mobile interface."""
 
 from typing import Literal
 

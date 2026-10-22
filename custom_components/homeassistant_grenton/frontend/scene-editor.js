@@ -347,3 +347,158 @@ if (!customElements.get("ha-selector-grenton_scene")) {
 if (!customElements.get("ha-selector-grenton_arguments")) {
   customElements.define("ha-selector-grenton_arguments", GrentonArgumentsEditor);
 }
+
+const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+class GrentonThermostatEditor extends GrentonEditor {
+  _label(name, fallback) {
+    return this._text(`thermostat_editor.fields.${name}.name`, fallback);
+  }
+
+  _change(action) {
+    action();
+    this._emit();
+    this._render();
+  }
+
+  _render() {
+    const parent = this._container();
+    const settings = this.selector?.grenton_thermostat ?? {};
+    this._value ??= { cooling_enabled: false, edit_schedule: false, sections: [] };
+    const draft = this._value;
+    const cooling = this._input("cooling_enabled", draft.cooling_enabled,
+      (value) => { draft.cooling_enabled = value; this._render(); }, "checkbox", false);
+    cooling.disabled ||= !settings.cooling_available;
+    parent.append(this._field(this._label("cooling_enabled", "Enable cooling"), cooling));
+    if (draft.cooling_enabled && settings.cooling_available) {
+      parent.append(this._field(this._label("control_direction", "Control direction (preserves manual/schedule mode)"),
+        this._select("control_direction", [
+          { value: "unchanged", label: this._label("unchanged", "Keep current direction") },
+          { value: "heating", label: this._label("heating", "Heating") },
+          { value: "cooling", label: this._label("cooling", "Cooling") },
+        ], draft.control_direction ?? "unchanged", (value) => { draft.control_direction = value; })));
+      if (settings.direction) {
+        const current = document.createElement("p");
+        current.className = "hint";
+        current.textContent = `${this._label("current_direction", "Current direction")}: ${this._label(settings.direction, settings.direction)}`;
+        parent.append(current);
+      }
+    }
+    const edit = this._input("edit_schedule", draft.edit_schedule,
+      (value) => { draft.edit_schedule = value; this._render(); }, "checkbox", false);
+    edit.disabled ||= !settings.schedule_available;
+    parent.append(this._field(this._label("edit_schedule", "Edit weekly schedule"), edit));
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = settings.schedule_available
+      ? this._label("schedule_hint", "Assign each day to one section. Each period lasts until the next start time; the last ends at midnight. Temperatures are in °C. Auto preserves the current heating/cooling direction.")
+      : this._label("schedule_unavailable", "Wait for the current schedule and temperature limits from the CLU, then reopen configuration.");
+    parent.append(hint);
+    if (!settings.cooling_available) {
+      const unavailable = document.createElement("p");
+      unavailable.className = "hint";
+      unavailable.textContent = this._label("cooling_unavailable", "Cooling requires readable and writable thermostat direction bindings.");
+      parent.append(unavailable);
+    }
+    if (!draft.edit_schedule || !settings.schedule_available) return;
+    const sections = draft.sections ??= [];
+    sections.forEach((section, index) => this._renderSection(parent, section, index, settings));
+    parent.append(this._button(this._label("add_section", "Add section"), () => this._change(() => {
+      const assigned = new Set(sections.flatMap((section) => section.days));
+      sections.push({ days: WEEKDAYS.filter((day) => !assigned.has(day)), periods: [{
+        time: "00:00", temperature: sections[0]?.periods[0]?.temperature ?? Math.max(0, settings.minimum ?? 0),
+      }] });
+    }), sections.length >= 7));
+  }
+
+  _renderSection(parent, section, index, settings) {
+    const container = document.createElement("div");
+    container.className = "argument";
+    container.dataset.section = index;
+    const heading = document.createElement("div");
+    heading.className = "heading";
+    const title = document.createElement("strong");
+    title.textContent = `${this._label("section", "Section")} ${index + 1}`;
+    heading.append(title, this._button(this._label("remove_section", "Remove section"), () => this._change(() => {
+      this._value.sections.splice(index, 1);
+    }), this._value.sections.length === 1));
+    container.append(heading);
+    const presets = { weekdays: WEEKDAYS.slice(0, 5), weekend: WEEKDAYS.slice(5), all: WEEKDAYS };
+    const preset = Object.keys(presets).find((key) =>
+      presets[key].length === section.days.length && presets[key].every((day) => section.days.includes(day))) ?? "custom";
+    container.append(this._field(this._label("days", "Days"), this._select(`section_${index}_days`, [
+      { value: "weekdays", label: this._label("weekdays", "Monday–Friday") },
+      { value: "weekend", label: this._label("weekend", "Saturday–Sunday") },
+      { value: "all", label: this._label("all", "Every day") },
+      { value: "custom", label: this._label("custom", "Selected days") },
+    ], preset, (value) => {
+      if (presets[value]) section.days = [...presets[value]];
+      this._render();
+    })));
+    const days = document.createElement("div");
+    days.className = "inputs";
+    WEEKDAYS.forEach((day) => {
+      days.append(this._field(this._label(day, day), this._input(`section_${index}_${day}`, section.days.includes(day),
+        (checked) => {
+          section.days = checked ? [...section.days, day] : section.days.filter((item) => item !== day);
+          this._render();
+        }, "checkbox", false)));
+    });
+    container.append(days);
+    const used = this._value.sections.flatMap((item) => item.days);
+    if (section.days.length === 0 || section.days.some((day) => used.filter((item) => item === day).length > 1)) {
+      const warning = document.createElement("p");
+      warning.className = "hint";
+      warning.textContent = this._label("day_conflict", "Select at least one day per section, with no day shared between sections.");
+      container.append(warning);
+    }
+    const periods = section.periods;
+    periods.forEach((period, periodIndex) => {
+      const row = document.createElement("div");
+      row.className = "argument";
+      const fields = document.createElement("div");
+      fields.className = "inputs";
+      const time = this._input(`section_${index}_period_${periodIndex}_time`, period.time,
+        (value) => { period.time = value; }, "time");
+      time.step = "900";
+      time.min = "00:00";
+      time.max = "23:45";
+      time.disabled ||= periodIndex === 0;
+      time.addEventListener("change", () => {
+        periods.sort((a, b) => a.time.localeCompare(b.time));
+        this._emit();
+        this._render();
+      });
+      const temperature = this._input(`section_${index}_period_${periodIndex}_temperature`, period.temperature,
+        (value) => { period.temperature = value; }, "number");
+      temperature.step = "0.5";
+      temperature.min = String(Math.max(0, settings.minimum ?? 0));
+      temperature.max = String(settings.maximum);
+      fields.append(
+        this._field(this._label("start_time", "Start time"), time),
+        this._field(this._label("temperature", "Temperature (°C)"), temperature),
+      );
+      row.append(fields, this._button(this._label("remove_period", "Remove period"), () => this._change(() => {
+        periods.splice(periodIndex, 1);
+      }), periodIndex === 0));
+      container.append(row);
+    });
+    container.append(this._button(this._label("add_period", "Add period"), () => this._change(() => {
+      const usedTimes = new Set(periods.map((period) => period.time));
+      for (let slot = 1; slot < 96; slot++) {
+        const time = `${String(Math.floor(slot / 4)).padStart(2, "0")}:${String(slot % 4 * 15).padStart(2, "0")}`;
+        if (!usedTimes.has(time)) {
+          const previous = [...periods].reverse().find((period) => period.time < time);
+          periods.push({ time, temperature: previous?.temperature ?? periods[0].temperature });
+          periods.sort((a, b) => a.time.localeCompare(b.time));
+          break;
+        }
+      }
+    }), periods.length >= 96));
+    parent.append(container);
+  }
+}
+
+if (!customElements.get("ha-selector-grenton_thermostat")) {
+  customElements.define("ha-selector-grenton_thermostat", GrentonThermostatEditor);
+}

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
 from .domain.entities.clu import GrentonCluEntity
@@ -144,10 +145,19 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         # Check if we're done with all steps
         if self.current_step_index >= len(steps):
             self.automatic_reload = getattr(entity, "reload_after_configuration", False)
-            options = await entity.apply_configuration(self.entity_config)
-            self.entity_config = None
-            self.current_step_index = 0
-            return self.async_create_entry(title="", data=options)
+            try:
+                options = await entity.apply_configuration(self.entity_config)
+            except HomeAssistantError:
+                # Keep the popup and draft open when a device write fails.
+                errors["base"] = "cannot_apply_configuration"
+                self.current_step_index = len(steps) - 1
+                if len(steps) == 1:
+                    self.entity_config = {}
+                current_config = {**current_config, **(user_input or {})}
+            else:
+                self.entity_config = None
+                self.current_step_index = 0
+                return self.async_create_entry(title="", data=options)
 
         # Build schema for current step
         step_def = steps[self.current_step_index]

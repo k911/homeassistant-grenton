@@ -98,6 +98,7 @@ def test_page_discovers_thermostat_and_registers_all_heating_feedback():
         call.args[0].index for call in coord.register_component_state.call_args_list
     } == {
         "6",
+        "7",
         "8",
         "9",
         "10",
@@ -173,6 +174,7 @@ def test_power_preserves_mode_and_explicit_heat_and_auto_select_the_mode():
     assert payloads(coord) == [
         'THERMOSTAT1:set(6,"1")',
         'THERMOSTAT1:set(6,"0")',
+        'THERMOSTAT1:set(7,"0")',
         'THERMOSTAT1:set(8,"0")',
         'THERMOSTAT1:set(6,"1")',
         'THERMOSTAT1:set(8,"2")',
@@ -246,7 +248,11 @@ def test_setting_temperature_and_hvac_mode_sets_manual_target_before_power(mode,
     asyncio.run(entity.async_set_temperature(temperature=23, hvac_mode=mode))
     assert payloads(coord) == (
         ['THERMOSTAT1:set(3,"23.0")']
-        + (['THERMOSTAT1:set(8,"0")'] if mode == HVACMode.HEAT else [])
+        + (
+            ['THERMOSTAT1:set(7,"0")', 'THERMOSTAT1:set(8,"0")']
+            if mode == HVACMode.HEAT
+            else []
+        )
         + [f'THERMOSTAT1:set(6,"{state}")']
     )
 
@@ -284,7 +290,11 @@ def test_temperature_calls_without_a_target_can_change_only_power():
     entity, coord = thermostat()
     asyncio.run(entity.async_set_temperature(hvac_mode=HVACMode.HEAT))
     asyncio.run(entity.async_set_temperature())
-    assert payloads(coord) == ['THERMOSTAT1:set(8,"0")', 'THERMOSTAT1:set(6,"1")']
+    assert payloads(coord) == [
+        'THERMOSTAT1:set(7,"0")',
+        'THERMOSTAT1:set(8,"0")',
+        'THERMOSTAT1:set(6,"1")',
+    ]
 
 
 def test_concurrent_temperature_changes_keep_their_commands_together():
@@ -306,6 +316,7 @@ def test_concurrent_temperature_changes_keep_their_commands_together():
         'THERMOSTAT1:set(3,"21.0")',
         'THERMOSTAT1:set(6,"0")',
         'THERMOSTAT1:set(3,"24.0")',
+        'THERMOSTAT1:set(7,"0")',
         'THERMOSTAT1:set(8,"0")',
         'THERMOSTAT1:set(6,"1")',
     ]
@@ -363,8 +374,24 @@ def test_native_climate_entity_registration_and_state(tmp_path):
             not state.attributes["supported_features"]
             & ClimateEntityFeature.TARGET_TEMPERATURE
         )
+        await entity.apply_configuration({"cooling_enabled": True})
         coord.get_value_for_component.side_effect = lambda source: {
             "6": 1,
+            "7": 1,
+            "8": 2,
+            "13": 1,
+            "14": 21.2,
+            "12": 23.5,
+        }.get(source.index)
+        entity._handle_coordinator_update()
+        cooling_state = hass.states.get(entity.entity_id)
+        assert cooling_state.state == "auto"
+        assert cooling_state.attributes["control_direction_name"] == "cooling"
+        assert cooling_state.attributes["hvac_action"] == "cooling"
+        assert "cool" in cooling_state.attributes["hvac_modes"]
+        coord.get_value_for_component.side_effect = lambda source: {
+            "6": 1,
+            "7": 0,
             "8": 0,
             "13": 0,
             "14": 21.2,

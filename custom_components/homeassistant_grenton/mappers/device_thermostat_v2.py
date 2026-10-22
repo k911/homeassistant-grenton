@@ -1,10 +1,11 @@
-"""Map a thermostat widget to its heating climate entity."""
+"""Map a thermostat widget to its climate entity."""
 
 from ..coordinator import GrentonCoordinator
-from ..domain.action import GrentonAction
+from ..domain.action import GrentonAction, GrentonActionAttribute
 from ..domain.devices.thermostat_v2 import GrentonDeviceThermostatV2
 from ..domain.entities.thermostat_v2 import GrentonEntityThermostatV2
-from ..domain.state_object import GrentonStateObject
+from ..domain.enums import GrentonActionEventType
+from ..domain.state_object import GrentonAttributeValueObject, GrentonStateObject
 from ..dto.widgets.thermostat_v2 import GrentonWidgetThermostatV2Dto
 
 
@@ -37,6 +38,40 @@ class DeviceThermostatV2Mapper:
                 "setScheduleDataAction",
             )
         }
+        cooling_detected = (
+            bindings.controlDirection is not None
+            and bindings.setControlDirectionAction is not None
+        )
+        # Direction is a built-in thermostat attribute even when omitted by OM.
+        # Derive its target only from an attribute on the thermostat itself.
+        anchor = next(
+            (
+                states[name]
+                for name in ("mode", "state", "targetTemperature")
+                if isinstance(states[name], GrentonAttributeValueObject)
+            ),
+            None,
+        )
+        if bindings.controlDirection is not None:
+            states["controlDirection"] = GrentonStateObject.from_dto(
+                bindings.controlDirection
+            )
+        elif anchor is not None:
+            states["controlDirection"] = GrentonAttributeValueObject(
+                clu_id=anchor.clu_id, object_name=anchor.object_name, index="7"
+            )
+        if bindings.setControlDirectionAction is not None:
+            actions["setControlDirectionAction"] = GrentonAction.from_dto(
+                bindings.setControlDirectionAction
+            )
+        elif anchor is not None:
+            actions["setControlDirectionAction"] = GrentonActionAttribute(
+                clu_id=anchor.clu_id,
+                object_name=anchor.object_name,
+                index="7",
+                event=GrentonActionEventType.CLICK,
+                value="$value$",
+            )
         device.entities = [
             GrentonEntityThermostatV2(
                 coordinator=coordinator,
@@ -45,6 +80,7 @@ class DeviceThermostatV2Mapper:
                 states=states,
                 actions=actions,
                 device_info=device.device_info,
+                cooling_detected=cooling_detected,
             )
         ]
         return device

@@ -20,6 +20,7 @@ Your support helps maintain features, fix bugs, and improve documentation.
 - **🔌 Automatic Device Discovery** - Connects to Grenton Object Manager and automatically discovers all configured devices
 - **CLU Controllers and Scripts** - Discovers every CLU from the imported interface and runs its scripts with dynamic typed arguments
 - **🏠 Multiple Widget Types** - Support for lights, switches, dimmers, sensors, covers, and more
+- **Thermostats** - `THERMOSTAT_V2` climate entities with heating, optional cooling, a weekly schedule editor, temperature readings, and activity status
 - **⚙️ Per-Entity Configuration** - Customize device class and unit of measurement for each supported entity through the UI
 - **🔄 Real-time Updates** - Automatic state synchronization with Grenton system
 - **🌍 Multi-language Support** - Fully translated UI in English and Polish
@@ -38,39 +39,64 @@ Your support helps maintain features, fix bugs, and improve documentation.
 | **CONTACT_SENSOR** | Contact/door/window sensor exposed as `binary_sensor`. |
 | **CONTACT_SENSOR_DOUBLE** | Dual contact channels exposed as two `binary_sensor` entities. |
 | **SLIDER** | User-configurable numeric control exposed as `number` (slider/box/auto modes). |
-| **THERMOSTAT_V2** | Heating thermostat exposed as `climate`, with Off/Heat/Auto modes, manual temperature control, and heating/idle feedback. |
+| [**THERMOSTAT_V2**](#thermostat-thermostat_v2) | Thermostat exposed as `climate`, with Off/Heat/Auto and optional Cool modes, 0.5°C manual targets, editable weekly schedules, and temperature/activity feedback. |
 | **MULTISENSOR** | Composite multi-channel sensor mapped to multiple `sensor` entities (as provided). |
 | **ROLLER_SHUTTER** | Legacy roller shutter exposed as `sensor` (state enum) plus a `button` action entity. |
 | **ROLLER_SHUTTER_V3** | Roller shutter V3 exposed as a single `cover` entity (position; lamel/tilt when available). |
 | **CAMERA** | Camera stream exposed as `camera`. |
 | **SCENE** | Scene buttons with configurable script, method, attribute, or variable actions and arguments. |
 
-### Heating thermostats
+### Thermostat (THERMOSTAT_V2)
 
-`THERMOSTAT_V2` creates one climate entity per widget. **Heat** enables manual
-operation (Grenton mode 0), **Auto** enables the weekly schedule (mode 2), and
+`THERMOSTAT_V2` creates one climate entity per widget, showing the current
+temperature and heating/cooling/idle status. **Heat** and optional **Cool** enable
+manual operation (Grenton mode 0), **Auto** enables the weekly schedule (mode 2), and
 **Off** disables the thermostat. The separate turn-on action preserves the current
 Grenton mode. Schedule runs on the CLU, including while Home Assistant is offline.
 
+Cooling defaults to disabled unless the interface supplies both `controlDirection`
+and `setControlDirectionAction` (also accepted as `setControlDirection`). To override
+this, open **Grenton → Configure**, select the thermostat and toggle **Enable cooling**.
+The choice persists across reloads and interface refreshes. Missing direction
+bindings use thermostat attribute **7** on the imported thermostat object.
+**Heat** selects direction 0; **Cool** selects direction 1. **Auto** preserves that
+direction. The popup's **Control direction** field changes heating/cooling
+independently of manual/schedule mode, so an Auto thermostat can switch to cooling
+and remain Auto. By default it keeps the current direction. While following a
+cooling schedule, the climate state is `auto`, `control_direction_name` is
+`cooling`, and `hvac_action` is `cooling` when the output is active (`idle` otherwise).
+The numeric value is also available as `control_direction`. Disabling cooling
+hides Cool without changing the running CLU settings.
+
 Manual target temperatures use 0.5°C increments. Temperature editing is disabled
-in Auto; choose Heat before changing the target. A temperature action cannot
-leave Auto, including when it also requests Heat.
+in Auto; choose Heat or Cool before changing the target. A temperature action
+cannot leave Auto, including when it also requests a manual mode.
 Setting only a temperature in manual mode preserves the enabled state.
 The widget's minimum and maximum temperature bindings supply the control's bounds.
 Home Assistant converts Celsius temperatures to the installation's preferred unit.
 While Auto hides the editable target control, the effective scheduled target is
 available as the read-only `scheduled_target_temperature_celsius` attribute.
 
-Heating/idle status comes from `controlOutValue`: 1 means heating and 0 means idle
-when the thermostat is enabled. Unsupported or missing values remain unknown.
+Activity comes from `controlOutValue`: 1 means heating or cooling according to
+direction, and 0 means idle when enabled. Unsupported or missing values remain unknown.
 When enabled, modes 1 and 3 are retained in the `grenton_mode` attribute with an
-unknown HVAC mode and disabled temperature editing. Cooling and fan controls are
-not exposed.
+unknown HVAC mode and disabled temperature editing. Fan controls are not exposed.
 
 Reconfigure the integration to import the widget if it was added after the last
 interface import, then reload or restart after updating the integration.
 
 #### Weekly schedules
+
+Open **Grenton → Configure**, select the thermostat and enable **Edit weekly schedule**.
+The popup groups days with identical schedules into **1–7 sections**. Each section
+selects Monday–Friday, Saturday–Sunday, every day, or individual days, with
+**1–96 temperature periods** inside it. Every day must belong to exactly one
+section. Periods use start times on 15-minute boundaries, beginning at `00:00`;
+each lasts until the next start time, and the last ends at midnight. Add or remove
+sections and periods directly in the popup. It loads the current CLU schedule;
+saving replaces the complete week without changing power or manual/schedule mode.
+Direction also stays unchanged unless explicitly selected in the popup. Leaving
+schedule editing unchecked saves the cooling option and any direction selection.
 
 The `weekly_schedule` entity attribute shows the decoded schedule in Celsius.
 Use `grenton.set_thermostat_schedule` to replace the complete week. Each day must

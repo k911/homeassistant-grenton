@@ -159,6 +159,13 @@
         "data_description": {
           "invert_state": "Wyłączone: wartości dodatnie oznaczają wyłączony, a 0 oznacza włączony. Włączone: wartości dodatnie oznaczają włączony, a 0 oznacza wyłączony. Dla drzwi, okna i otwarcia stan włączony oznacza otwarty, a wyłączony oznacza zamknięty."
         }
+      },
+      "configure_thermostat": {
+        "title": "Konfiguracja {entity_name} - Termostat",
+        "description": "Włącz opcjonalne chłodzenie, wybierz kierunek grzania/chłodzenia niezależnie od trybu ręcznego/harmonogramu i edytuj harmonogram tygodniowy. Zapis harmonogramu zachowuje zasilanie i tryb pracy.",
+        "data": {
+          "thermostat": "Ustawienia termostatu"
+        }
       }
     },
     "abort": {
@@ -167,13 +174,14 @@
       "entity_not_configurable": "Ta encja nie może być skonfigurowana."
     },
     "error": {
-      "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości."
+      "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości.",
+      "cannot_apply_configuration": "Nie udało się zapisać konfiguracji w CLU. Sprawdź połączenie i aktualne limity temperatur, a następnie spróbuj ponownie."
     }
   },
   "services": {
     "set_thermostat_schedule": {
       "name": "Ustaw harmonogram termostatu",
-      "description": "Zastępuje cały tygodniowy harmonogram ogrzewania z uwzględnieniem limitów temperatury termostatu. Zachowuje stan zasilania, tryb i metadane harmonogramu.",
+      "description": "Zastąp cały harmonogram tygodniowy termostatu, korzystając ze skonfigurowanych limitów temperatur. Zachowuje zasilanie, tryb, kierunek grzania/chłodzenia i metadane harmonogramu.",
       "fields": {
         "schedule": {
           "name": "Harmonogram tygodniowy",
@@ -546,6 +554,100 @@
       "options": {
         "sensor": "Czujnik",
         "binary_sensor": "Czujnik binarny"
+      }
+    },
+    "thermostat_editor": {
+      "fields": {
+        "cooling_enabled": {
+          "name": "Włącz chłodzenie"
+        },
+        "edit_schedule": {
+          "name": "Edytuj harmonogram tygodniowy"
+        },
+        "schedule_hint": {
+          "name": "Przypisz każdy dzień do jednej sekcji. Okres trwa do następnej godziny rozpoczęcia, a ostatni do północy. Temperatury podawane są w °C. Tryb Auto zachowuje bieżący kierunek grzania/chłodzenia."
+        },
+        "schedule_unavailable": {
+          "name": "Poczekaj na aktualny harmonogram i limity temperatur z CLU, a następnie ponownie otwórz konfigurację."
+        },
+        "cooling_unavailable": {
+          "name": "Chłodzenie wymaga powiązań odczytu i zapisu kierunku pracy termostatu."
+        },
+        "add_section": {
+          "name": "Dodaj sekcję"
+        },
+        "remove_section": {
+          "name": "Usuń sekcję"
+        },
+        "section": {
+          "name": "Sekcja"
+        },
+        "days": {
+          "name": "Dni"
+        },
+        "weekdays": {
+          "name": "Poniedziałek–piątek"
+        },
+        "weekend": {
+          "name": "Sobota–niedziela"
+        },
+        "all": {
+          "name": "Codziennie"
+        },
+        "custom": {
+          "name": "Wybrane dni"
+        },
+        "monday": {
+          "name": "Poniedziałek"
+        },
+        "tuesday": {
+          "name": "Wtorek"
+        },
+        "wednesday": {
+          "name": "Środa"
+        },
+        "thursday": {
+          "name": "Czwartek"
+        },
+        "friday": {
+          "name": "Piątek"
+        },
+        "saturday": {
+          "name": "Sobota"
+        },
+        "sunday": {
+          "name": "Niedziela"
+        },
+        "day_conflict": {
+          "name": "Wybierz co najmniej jeden dzień w sekcji. Każdy dzień może należeć tylko do jednej sekcji."
+        },
+        "start_time": {
+          "name": "Godzina rozpoczęcia"
+        },
+        "temperature": {
+          "name": "Temperatura (°C)"
+        },
+        "remove_period": {
+          "name": "Usuń okres"
+        },
+        "add_period": {
+          "name": "Dodaj okres"
+        },
+        "control_direction": {
+          "name": "Kierunek pracy (zachowuje tryb ręczny/harmonogram)"
+        },
+        "unchanged": {
+          "name": "Zachowaj bieżący kierunek"
+        },
+        "heating": {
+          "name": "Grzanie"
+        },
+        "cooling": {
+          "name": "Chłodzenie"
+        },
+        "current_direction": {
+          "name": "Bieżący kierunek"
+        }
       }
     }
   }

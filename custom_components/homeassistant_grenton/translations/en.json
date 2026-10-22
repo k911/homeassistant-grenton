@@ -159,6 +159,13 @@
         "data_description": {
           "invert_state": "Disabled: positive values are off, 0 is on. Enabled: positive values are on, 0 is off. For Door, Window and Opening, on means open and off means closed."
         }
+      },
+      "configure_thermostat": {
+        "title": "Configure {entity_name} - Thermostat",
+        "description": "Enable optional cooling, choose the heating/cooling direction independently of manual/schedule mode, and edit the weekly schedule. Saving a schedule preserves power and operating mode.",
+        "data": {
+          "thermostat": "Thermostat settings"
+        }
       }
     },
     "abort": {
@@ -167,13 +174,14 @@
       "entity_not_configurable": "This entity cannot be configured."
     },
     "error": {
-      "invalid_configuration": "Select valid options and enter valid values."
+      "invalid_configuration": "Select valid options and enter valid values.",
+      "cannot_apply_configuration": "Could not save the configuration to the CLU. Check the connection and current temperature limits, then retry."
     }
   },
   "services": {
     "set_thermostat_schedule": {
       "name": "Set thermostat schedule",
-      "description": "Replace the complete weekly heating schedule using the thermostat's configured temperature limits. Preserves power, mode, and schedule metadata.",
+      "description": "Replace the complete weekly thermostat schedule using its configured temperature limits. Preserves power, mode, heating/cooling direction and schedule metadata.",
       "fields": {
         "schedule": {
           "name": "Weekly schedule",
@@ -546,6 +554,100 @@
       "options": {
         "sensor": "Sensor",
         "binary_sensor": "Binary sensor"
+      }
+    },
+    "thermostat_editor": {
+      "fields": {
+        "cooling_enabled": {
+          "name": "Enable cooling"
+        },
+        "edit_schedule": {
+          "name": "Edit weekly schedule"
+        },
+        "schedule_hint": {
+          "name": "Assign each day to one section. Each period lasts until the next start time; the last ends at midnight. Temperatures are in °C. Auto preserves the current heating/cooling direction."
+        },
+        "schedule_unavailable": {
+          "name": "Wait for the current schedule and temperature limits from the CLU, then reopen configuration."
+        },
+        "cooling_unavailable": {
+          "name": "Cooling requires readable and writable thermostat direction bindings."
+        },
+        "add_section": {
+          "name": "Add section"
+        },
+        "remove_section": {
+          "name": "Remove section"
+        },
+        "section": {
+          "name": "Section"
+        },
+        "days": {
+          "name": "Days"
+        },
+        "weekdays": {
+          "name": "Monday–Friday"
+        },
+        "weekend": {
+          "name": "Saturday–Sunday"
+        },
+        "all": {
+          "name": "Every day"
+        },
+        "custom": {
+          "name": "Selected days"
+        },
+        "monday": {
+          "name": "Monday"
+        },
+        "tuesday": {
+          "name": "Tuesday"
+        },
+        "wednesday": {
+          "name": "Wednesday"
+        },
+        "thursday": {
+          "name": "Thursday"
+        },
+        "friday": {
+          "name": "Friday"
+        },
+        "saturday": {
+          "name": "Saturday"
+        },
+        "sunday": {
+          "name": "Sunday"
+        },
+        "day_conflict": {
+          "name": "Select at least one day per section, with no day shared between sections."
+        },
+        "start_time": {
+          "name": "Start time"
+        },
+        "temperature": {
+          "name": "Temperature (°C)"
+        },
+        "remove_period": {
+          "name": "Remove period"
+        },
+        "add_period": {
+          "name": "Add period"
+        },
+        "control_direction": {
+          "name": "Control direction (preserves manual/schedule mode)"
+        },
+        "unchanged": {
+          "name": "Keep current direction"
+        },
+        "heating": {
+          "name": "Heating"
+        },
+        "cooling": {
+          "name": "Cooling"
+        },
+        "current_direction": {
+          "name": "Current direction"
+        }
       }
     }
   }

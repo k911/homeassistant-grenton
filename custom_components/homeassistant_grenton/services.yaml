@@ -1,6 +1,6 @@
 set_thermostat_schedule:
   name: Set thermostat schedule
-  description: Replace the complete weekly heating schedule using the thermostat's configured temperature limits. Preserves power, mode, and schedule metadata.
+  description: Replace the complete weekly thermostat schedule using its configured temperature limits. Preserves power, mode, heating/cooling direction, and schedule metadata.
   target:
     entity:
       integration: grenton
