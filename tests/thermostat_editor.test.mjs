@@ -15,6 +15,7 @@ class Element {
   }
   append(...children) { this.children.push(...children); }
   setAttribute() {}
+  select() { this.selectionStart = 0; this.selectionEnd = this.value.length; }
   addEventListener(event, listener) { this.listeners[event] = listener; }
   fire(event) { if (!this.disabled) this.listeners[event]?.(); }
 }
@@ -57,7 +58,8 @@ for (const language of ["en", "pl"]) {
     assert.equal(editor.field("section_0_period_0_temperature").step, "0.5");
     assert.equal(editor.field("section_0_period_0_temperature").min, "10");
     assert.equal(editor.field("section_0_period_0_temperature").max, "30");
-    assert.equal(editor.field("section_0_period_0_time").disabled, true);
+    assert.equal(editor.field("section_0_period_0_time_hour").disabled, true);
+    assert.equal(editor.field("section_0_period_0_time_minute").disabled, true);
   });
 }
 
@@ -81,10 +83,13 @@ test("periods use quarter-hour times, numeric half-degree temperatures and dynam
   const editor = makeEditor();
   editor.button("Add period").fire("click");
   assert.equal(editor.emitted.sections[0].periods[1].time, "00:15");
-  const time = editor.field("section_0_period_1_time");
-  assert.equal(time.step, "900");
-  assert.equal(time.max, "23:45");
-  time.value = "09:00"; time.fire("input"); time.fire("change");
+  const hour = editor.field("section_0_period_1_time_hour");
+  const minute = editor.field("section_0_period_1_time_minute");
+  assert.equal(hour.inputMode, "numeric");
+  assert.equal(hour.maxLength, 2);
+  assert.deepEqual(minute.children.map((option) => option.value), ["00", "15", "30", "45"]);
+  hour.value = "9"; hour.fire("input"); hour.fire("blur");
+  minute.value = "00"; minute.fire("change");
   const temperature = editor.field("section_0_period_1_temperature");
   temperature.value = "22.5"; temperature.valueAsNumber = 22.5; temperature.validity = { badInput: false };
   temperature.fire("input");
@@ -166,3 +171,67 @@ for (const language of ["en", "pl"]) {
     assert.equal(editor.field("section_0_period_0_temperature").max, "30");
   });
 }
+
+for (const target of ["13", "18"]) {
+  test(`typing ${target} keeps the same hour input and waits for the second digit`, () => {
+    const editor = makeEditor({ sections: [{ days: DAYS, periods: [
+      { time: "00:00", temperature: 20 }, { time: "09:15", temperature: 22 },
+    ] }] });
+    const root = editor.root;
+    const hour = editor.field("section_0_period_1_time_hour");
+    hour.fire("focus");
+    assert.equal(hour.selectionStart, 0);
+    assert.equal(hour.selectionEnd, 2);
+    hour.value = "1";
+    hour.fire("input"); hour.fire("change");
+    editor.value = editor.emitted; // HA echoes value-changed back to the selector.
+    assert.equal(hour.value, "1");
+    assert.equal(editor.root, root);
+    assert.equal(editor.field("section_0_period_1_time_hour"), hour);
+    hour.value = target;
+    hour.fire("input"); hour.fire("change"); hour.fire("blur");
+    editor.value = editor.emitted;
+    assert.equal(hour.value, target);
+    assert.equal(editor.root, root);
+    assert.equal(editor.emitted.sections[0].periods[1].time, `${target}:15`);
+    assert.equal(editor.emitted.sections[0].periods[1].temperature, 22);
+  });
+}
+
+test("single-digit hours are padded only on blur and invalid drafts are not hidden", () => {
+  const editor = makeEditor();
+  editor.button("Add period").fire("click");
+  const hour = editor.field("section_0_period_1_time_hour");
+  hour.value = "9"; hour.fire("input");
+  assert.equal(hour.value, "9");
+  assert.equal(editor.emitted.sections[0].periods[1].time, "09:15");
+  hour.fire("blur");
+  assert.equal(hour.value, "09");
+  for (const invalid of ["", "24", "99", "a", "-1"]) {
+    hour.value = invalid; hour.fire("input"); hour.fire("blur");
+    assert.equal(editor.emitted.sections[0].periods[1].time, `${invalid}:15`);
+    assert.equal(editor.button("Add period").disabled, true);
+  }
+});
+
+test("editing time preserves row positions, updates append availability and uses the latest end", () => {
+  const editor = makeEditor({ sections: [{ days: DAYS, periods: [
+    { time: "00:00", temperature: 20 }, { time: "09:15", temperature: 22 },
+    { time: "18:00", temperature: 19 },
+  ] }] });
+  const root = editor.root;
+  const hour = editor.field("section_0_period_1_time_hour");
+  const minute = editor.field("section_0_period_1_time_minute");
+  hour.value = "23"; hour.fire("input"); hour.fire("blur");
+  minute.value = "45"; minute.fire("change");
+  assert.equal(editor.root, root);
+  assert.equal(editor.button("Add period").disabled, true);
+  assert.equal(editor.emitted.sections[0].periods[1].temperature, 22);
+  minute.value = "30"; minute.fire("change");
+  assert.equal(editor.button("Add period").disabled, false);
+  editor.button("Add period").fire("click");
+  assert.deepEqual(editor.emitted.sections[0].periods, [
+    { time: "00:00", temperature: 20 }, { time: "18:00", temperature: 19 },
+    { time: "23:30", temperature: 22 }, { time: "23:45", temperature: 22 },
+  ]);
+});

@@ -710,6 +710,12 @@
         },
         "limits_hint": {
           "name": "Zmiana zakresu zachowuje temperatury harmonogramu. Wszystkie temperatury muszą mieścić się w nowych limitach; w razie potrzeby edytuj harmonogram poniżej."
+        },
+        "hour": {
+          "name": "Godzina (0–23)"
+        },
+        "minute": {
+          "name": "Minuta"
         }
       }
     }

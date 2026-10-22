@@ -393,3 +393,23 @@ def test_cooling_configuration_without_schedule_feedback_never_writes_the_clu():
         selector(
             {"cooling_enabled": True, "edit_schedule": True, "sections": sections()}
         )
+
+
+def test_popup_sorts_the_submitted_copy_without_reordering_the_editor_draft():
+    periods = [
+        {"time": "00:00", "temperature": 20},
+        {"time": "18:15", "temperature": 22},
+        {"time": "13:30", "temperature": 19},
+    ]
+    draft = {
+        "cooling_enabled": False,
+        "edit_schedule": True,
+        "sections": [{"days": list(DAYS), "periods": periods}],
+    }
+    original = deepcopy(draft)
+    selector = editor()
+    assert selector(selector(draft)) == original
+    config = selector.configuration(draft)
+    for day in DAYS:
+        assert config["schedule"][day] == [periods[0], periods[2], periods[1]]
+    assert draft == original

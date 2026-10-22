@@ -128,6 +128,11 @@ class GrentonThermostatSelector(selector.Selector):
             for periods in result["schedule"].values():
                 if not isinstance(periods, list) or not 1 <= len(periods) <= 96:
                     raise vol.Invalid("Use one to 96 periods per section")
+                if all(
+                    isinstance(period, dict) and isinstance(period.get("time"), str)
+                    for period in periods
+                ):
+                    periods.sort(key=lambda period: period["time"])
                 previous = ""
                 for index, period in enumerate(periods):
                     if not isinstance(period, dict) or set(period) != {

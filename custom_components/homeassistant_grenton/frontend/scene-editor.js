@@ -24,6 +24,9 @@ const STYLE = `
   .heading strong { font-size: 14px; }
   .buttons { display: flex; gap: 6px; }
   .inputs { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(140px, 2fr); gap: 12px; }
+  .schedule-time { border: 0; padding: 0; margin: 0; min-width: 0;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .schedule-time legend { padding: 0; margin-bottom: 6px; font-size: 14px; }
   .hint { font-size: 13px; color: var(--secondary-text-color, #666); margin: 0; }
   .add { justify-self: start; color: var(--primary-color, #03a9f4); }
   .arguments { margin-top: 16px; }
@@ -437,6 +440,41 @@ class GrentonThermostatEditor extends GrentonEditor {
     }), sections.length >= 7));
   }
 
+  _periodTime(name, period, fixed, onChange) {
+    const group = document.createElement("fieldset");
+    group.className = "schedule-time";
+    const legend = document.createElement("legend");
+    legend.textContent = this._label("start_time", "Start time");
+    const [initialHour, initialMinute] = period.time.split(":");
+    const update = () => {
+      const rawHour = hour.value;
+      // Keep the input itself untouched while typing. Emit invalid drafts too,
+      // so Save cannot silently submit the previous valid time.
+      const valid = /^(?:[01]?\d|2[0-3])$/.test(rawHour);
+      period.time = `${valid ? rawHour.padStart(2, "0") : rawHour}:${minute.value}`;
+      onChange();
+    };
+    const hour = this._input(`${name}_hour`, initialHour, update);
+    hour.inputMode = "numeric";
+    hour.maxLength = 2;
+    hour.pattern = "(?:[01]?[0-9]|2[0-3])";
+    hour.disabled ||= fixed;
+    hour.addEventListener("focus", () => hour.select());
+    hour.addEventListener("blur", () => {
+      if (/^(?:[01]?\d|2[0-3])$/.test(hour.value)) {
+        hour.value = hour.value.padStart(2, "0");
+      }
+    });
+    const minute = this._select(`${name}_minute`,
+      ["00", "15", "30", "45"].map((value) => ({ value, label: value })),
+      initialMinute, update);
+    minute.disabled ||= fixed;
+    group.append(legend,
+      this._field(this._label("hour", "Hour (0–23)"), hour),
+      this._field(this._label("minute", "Minute"), minute));
+    return group;
+  }
+
   _renderSection(parent, section, index, settings) {
     const container = document.createElement("div");
     container.className = "argument";
@@ -479,22 +517,24 @@ class GrentonThermostatEditor extends GrentonEditor {
       container.append(warning);
     }
     const periods = section.periods;
+    const nextSlot = () => {
+      const slots = periods.map((period) => {
+        const match = /^([01]\d|2[0-3]):(00|15|30|45)$/.exec(period.time);
+        return match ? Number(match[1]) * 4 + Number(match[2]) / 15 : NaN;
+      });
+      return slots.every(Number.isFinite) ? Math.max(...slots) + 1 : 96;
+    };
+    let addPeriod;
+    const updateAddPeriod = () => {
+      addPeriod.disabled = this.disabled || periods.length >= 96 || nextSlot() >= 96;
+    };
     periods.forEach((period, periodIndex) => {
       const row = document.createElement("div");
       row.className = "argument";
       const fields = document.createElement("div");
       fields.className = "inputs";
-      const time = this._input(`section_${index}_period_${periodIndex}_time`, period.time,
-        (value) => { period.time = value; }, "time");
-      time.step = "900";
-      time.min = "00:00";
-      time.max = "23:45";
-      time.disabled ||= periodIndex === 0;
-      time.addEventListener("change", () => {
-        periods.sort((a, b) => a.time.localeCompare(b.time));
-        this._emit();
-        this._render();
-      });
+      const time = this._periodTime(`section_${index}_period_${periodIndex}_time`,
+        period, periodIndex === 0, updateAddPeriod);
       const temperature = this._input(`section_${index}_period_${periodIndex}_temperature`, period.temperature,
         (value) => { period.temperature = value; }, "number");
       this._periodTemperatureInputs.push(temperature);
@@ -502,7 +542,7 @@ class GrentonThermostatEditor extends GrentonEditor {
       temperature.min = String(Math.max(0, settings.minimum ?? 0));
       temperature.max = String(settings.maximum);
       fields.append(
-        this._field(this._label("start_time", "Start time"), time),
+        time,
         this._field(this._label("temperature", "Temperature (°C)"), temperature),
       );
       row.append(fields, this._button(this._label("remove_period", "Remove period"), () => this._change(() => {
@@ -510,13 +550,14 @@ class GrentonThermostatEditor extends GrentonEditor {
       }), periodIndex === 0));
       container.append(row);
     });
-    const last = periods.at(-1);
-    const lastTime = /^([01]\d|2[0-3]):(00|15|30|45)$/.exec(last?.time ?? "");
-    const nextSlot = lastTime ? Number(lastTime[1]) * 4 + Number(lastTime[2]) / 15 + 1 : 96;
-    container.append(this._button(this._label("add_period", "Add period"), () => this._change(() => {
-      const time = `${String(Math.floor(nextSlot / 4)).padStart(2, "0")}:${String(nextSlot % 4 * 15).padStart(2, "0")}`;
-      periods.push({ time, temperature: last.temperature });
-    }), periods.length >= 96 || nextSlot >= 96));
+    addPeriod = this._button(this._label("add_period", "Add period"), () => this._change(() => {
+      const slot = nextSlot();
+      periods.sort((a, b) => a.time.localeCompare(b.time));
+      const time = `${String(Math.floor(slot / 4)).padStart(2, "0")}:${String(slot % 4 * 15).padStart(2, "0")}`;
+      periods.push({ time, temperature: periods.at(-1).temperature });
+    }));
+    updateAddPeriod();
+    container.append(addPeriod);
     parent.append(container);
   }
 }

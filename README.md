@@ -235,8 +235,11 @@ Open **Grenton → Configure**, select the thermostat and enable **Edit weekly s
 The popup groups days with identical schedules into **1–7 sections**. Each section
 selects Monday–Friday, Saturday–Sunday, every day, or individual days, with
 **1–96 temperature periods** inside it. Every day must belong to exactly one
-section. Periods use start times on 15-minute boundaries, beginning at `00:00`;
-each lasts until the next start time, and the last ends at midnight. **Add period**
+section. The time controls accept a one- or two-digit hour (0–23) and only
+minutes `00`, `15`, `30` or `45`. Hour entry keeps focus while typing and adds a
+leading zero when you leave the field. Rows stay in place during editing; saving
+orders them by start time. Periods begin at `00:00`; each lasts until the next
+start time, and the last ends at midnight. **Add period**
 appends 15 minutes after the last start, keeping its temperature and all existing
 periods intact; it is disabled once the last start is `23:45`. Add or remove
 sections directly in the popup. It loads the current CLU schedule;
