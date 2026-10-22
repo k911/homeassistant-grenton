@@ -24,9 +24,17 @@ const STYLE = `
   .heading strong { font-size: 14px; }
   .buttons { display: flex; gap: 6px; }
   .inputs { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(140px, 2fr); gap: 12px; }
+  .schedule-periods { display: grid; gap: 8px; margin: 12px 0 8px; }
+  .schedule-period-row { display: grid; align-items: center;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 42px; gap: 8px; }
+  .schedule-period-headings { align-items: end; font-size: 14px; }
   .schedule-time { border: 0; padding: 0; margin: 0; min-width: 0;
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .schedule-time legend { padding: 0; margin-bottom: 6px; font-size: 14px; }
+    display: grid; align-items: center;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 4px; }
+  .schedule-period-row input, .schedule-period-row select {
+    height: 42px; min-width: 0; padding: 8px; }
+  .schedule-time select { padding-inline: 4px; }
+  .schedule-period-remove { width: 42px; height: 42px; padding: 0; font-size: 22px; }
   .hint { font-size: 13px; color: var(--secondary-text-color, #666); margin: 0; }
   .add { justify-self: start; color: var(--primary-color, #03a9f4); }
   .arguments { margin-top: 16px; }
@@ -443,8 +451,7 @@ class GrentonThermostatEditor extends GrentonEditor {
   _periodTime(name, period, fixed, onChange) {
     const group = document.createElement("fieldset");
     group.className = "schedule-time";
-    const legend = document.createElement("legend");
-    legend.textContent = this._label("start_time", "Start time");
+    group.setAttribute("aria-label", this._label("start_time", "Start time"));
     const [initialHour, initialMinute] = period.time.split(":");
     const update = () => {
       const rawHour = hour.value;
@@ -455,6 +462,7 @@ class GrentonThermostatEditor extends GrentonEditor {
       onChange();
     };
     const hour = this._input(`${name}_hour`, initialHour, update);
+    hour.setAttribute("aria-label", this._label("hour", "Hour"));
     hour.inputMode = "numeric";
     hour.maxLength = 2;
     hour.pattern = "(?:[01]?[0-9]|2[0-3])";
@@ -469,9 +477,11 @@ class GrentonThermostatEditor extends GrentonEditor {
       ["00", "15", "30", "45"].map((value) => ({ value, label: value })),
       initialMinute, update);
     minute.disabled ||= fixed;
-    group.append(legend,
-      this._field(this._label("hour", "Hour (0–23)"), hour),
-      this._field(this._label("minute", "Minute"), minute));
+    minute.setAttribute("aria-label", this._label("minute", "Minute"));
+    const separator = document.createElement("span");
+    separator.textContent = ":";
+    separator.setAttribute("aria-hidden", "true");
+    group.append(hour, separator, minute);
     return group;
   }
 
@@ -528,11 +538,19 @@ class GrentonThermostatEditor extends GrentonEditor {
     const updateAddPeriod = () => {
       addPeriod.disabled = this.disabled || periods.length >= 96 || nextSlot() >= 96;
     };
+    const rows = document.createElement("div");
+    rows.className = "schedule-periods";
+    const headings = document.createElement("div");
+    headings.className = "schedule-period-row schedule-period-headings";
+    for (const [name, fallback] of [["start_time", "Start time"], ["temperature", "Temperature (°C)"]]) {
+      const title = document.createElement("span");
+      title.textContent = this._label(name, fallback);
+      headings.append(title);
+    }
+    rows.append(headings);
     periods.forEach((period, periodIndex) => {
       const row = document.createElement("div");
-      row.className = "argument";
-      const fields = document.createElement("div");
-      fields.className = "inputs";
+      row.className = "schedule-period-row";
       const time = this._periodTime(`section_${index}_period_${periodIndex}_time`,
         period, periodIndex === 0, updateAddPeriod);
       const temperature = this._input(`section_${index}_period_${periodIndex}_temperature`, period.temperature,
@@ -541,15 +559,15 @@ class GrentonThermostatEditor extends GrentonEditor {
       temperature.step = "0.5";
       temperature.min = String(Math.max(0, settings.minimum ?? 0));
       temperature.max = String(settings.maximum);
-      fields.append(
-        time,
-        this._field(this._label("temperature", "Temperature (°C)"), temperature),
-      );
-      row.append(fields, this._button(this._label("remove_period", "Remove period"), () => this._change(() => {
+      temperature.setAttribute("aria-label", this._label("temperature", "Temperature (°C)"));
+      const remove = this._button("×", () => this._change(() => {
         periods.splice(periodIndex, 1);
-      }), periodIndex === 0));
-      container.append(row);
+      }), periodIndex === 0, this._label("remove_period", "Remove period"));
+      remove.className = "schedule-period-remove";
+      row.append(time, temperature, remove);
+      rows.append(row);
     });
+    container.append(rows);
     addPeriod = this._button(this._label("add_period", "Add period"), () => this._change(() => {
       const slot = nextSlot();
       periods.sort((a, b) => a.time.localeCompare(b.time));

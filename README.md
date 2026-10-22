@@ -237,7 +237,9 @@ selects Monday–Friday, Saturday–Sunday, every day, or individual days, with
 **1–96 temperature periods** inside it. Every day must belong to exactly one
 section. The time controls accept a one- or two-digit hour (0–23) and only
 minutes `00`, `15`, `30` or `45`. Hour entry keeps focus while typing and adds a
-leading zero when you leave the field. Rows stay in place during editing; saving
+leading zero when you leave the field. Compact rows share one set of column
+headings per section, with equal-height inputs and more space for time.
+Rows stay in place during editing; saving
 orders them by start time. Periods begin at `00:00`; each lasts until the next
 start time, and the last ends at midnight. **Add period**
 appends 15 minutes after the last start, keeping its temperature and all existing

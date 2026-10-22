@@ -14,7 +14,7 @@ class Element {
     this.isConnected = true;
   }
   append(...children) { this.children.push(...children); }
-  setAttribute() {}
+  setAttribute(name, value) { (this.attributes ??= {})[name] = value; }
   select() { this.selectionStart = 0; this.selectionEnd = this.value.length; }
   addEventListener(event, listener) { this.listeners[event] = listener; }
   fire(event) { if (!this.disabled) this.listeners[event]?.(); }
@@ -96,7 +96,7 @@ test("periods use quarter-hour times, numeric half-degree temperatures and dynam
   assert.deepEqual(editor.emitted.sections[0].periods, [
     { time: "00:00", temperature: 20 }, { time: "09:00", temperature: 22.5 },
   ]);
-  const remove = descendants(editor.section(0)).filter((item) => item.tag === "button" && item.textContent === "Remove period");
+  const remove = descendants(editor.section(0)).filter((item) => item.tag === "button" && item.title === "Remove period");
   assert.equal(remove[0].disabled, true);
   remove[1].fire("click");
   assert.equal(editor.emitted.sections[0].periods.length, 1);

@@ -712,7 +712,7 @@
           "name": "Scheduled temperatures are preserved when the range changes. All targets must fit the new limits; edit the schedule below if needed."
         },
         "hour": {
-          "name": "Hour (0–23)"
+          "name": "Hour"
         },
         "minute": {
           "name": "Minute"
