@@ -67,6 +67,14 @@ class GrentonThermostatSelector(selector.Selector):
     )
 
     def __call__(self, data: Any) -> dict[str, Any]:
+        # HA's flow manager validates before our generic step handler does.
+        # Keep the editor draft intact across both passes; normalize only in
+        # the step's post-validation hook, immediately before applying it.
+        self.configuration(data)
+        return deepcopy(data)
+
+    def configuration(self, data: Any) -> dict[str, Any]:
+        """Validate the editor draft and build the commands to apply."""
         if not isinstance(data, dict):
             raise vol.Invalid("Thermostat settings must be an object")
         cooling = data.get("cooling_enabled")
@@ -148,13 +156,14 @@ class GrentonThermostatConfigurationSchema(BaseGrentonEntityConfigurationSchema)
                 },
             )
         )
+        editor = GrentonThermostatSelector(self.settings)
         return StepResult(
             schema=vol.Schema(
                 {
                     vol.Required(
                         "thermostat", description={"suggested_value": draft}
-                    ): GrentonThermostatSelector(self.settings)
+                    ): editor
                 }
             ),
-            validator=lambda data: data["thermostat"],
+            validator=lambda data: editor.configuration(data["thermostat"]),
         )

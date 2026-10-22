@@ -483,18 +483,13 @@ class GrentonThermostatEditor extends GrentonEditor {
       }), periodIndex === 0));
       container.append(row);
     });
+    const last = periods.at(-1);
+    const lastTime = /^([01]\d|2[0-3]):(00|15|30|45)$/.exec(last?.time ?? "");
+    const nextSlot = lastTime ? Number(lastTime[1]) * 4 + Number(lastTime[2]) / 15 + 1 : 96;
     container.append(this._button(this._label("add_period", "Add period"), () => this._change(() => {
-      const usedTimes = new Set(periods.map((period) => period.time));
-      for (let slot = 1; slot < 96; slot++) {
-        const time = `${String(Math.floor(slot / 4)).padStart(2, "0")}:${String(slot % 4 * 15).padStart(2, "0")}`;
-        if (!usedTimes.has(time)) {
-          const previous = [...periods].reverse().find((period) => period.time < time);
-          periods.push({ time, temperature: previous?.temperature ?? periods[0].temperature });
-          periods.sort((a, b) => a.time.localeCompare(b.time));
-          break;
-        }
-      }
-    }), periods.length >= 96));
+      const time = `${String(Math.floor(nextSlot / 4)).padStart(2, "0")}:${String(nextSlot % 4 * 15).padStart(2, "0")}`;
+      periods.push({ time, temperature: last.temperature });
+    }), periods.length >= 96 || nextSlot >= 96));
     parent.append(container);
   }
 }

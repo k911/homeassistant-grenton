@@ -2,9 +2,13 @@
 
 import asyncio
 from copy import deepcopy
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from homeassistant.components.climate import HVACAction, HVACMode
+from homeassistant.config_entries import OptionsFlowManager
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from probatio import Invalid
 from test_on_off_configuration import coordinator
@@ -118,7 +122,9 @@ def test_mode_commands_select_direction_only_for_manual_heat_or_cool():
 def test_popup_direction_change_preserves_auto_mode_and_power(direction, value):
     entity, coord = thermostat(values={"8": 2})
     selector = GrentonThermostatSelector(entity._get_schema_instance().settings)
-    config = selector({"cooling_enabled": True, "control_direction": direction})
+    config = selector.configuration(
+        {"cooling_enabled": True, "control_direction": direction}
+    )
     options = asyncio.run(entity.apply_configuration(config))
     assert payloads(coord) == [f'THERMOSTAT1:set(7,"{value}")']
     assert entity.hvac_mode == HVACMode.AUTO
@@ -226,9 +232,9 @@ def test_seven_sections_with_96_periods_each_round_trip_through_grouping():
     }
     grouped = [{"days": [day], "periods": periods} for day, periods in schedule.items()]
     assert (
-        editor()({"cooling_enabled": True, "edit_schedule": True, "sections": grouped})[
-            "schedule"
-        ]
+        editor().configuration(
+            {"cooling_enabled": True, "edit_schedule": True, "sections": grouped}
+        )["schedule"]
         == schedule
     )
     assert sections_schedule(schedule_sections(schedule)) == schedule
@@ -280,6 +286,57 @@ def test_popup_prefills_groups_and_saves_one_complete_week_without_changing_mode
     )
 
 
+def test_native_options_manager_sends_the_schedule_after_its_schema_validation(
+    tmp_path,
+):
+    """HA validates the selector before the integration's generic flow does."""
+
+    async def run():
+        entity, coord = thermostat(values={"8": 2, "7": 1})
+        flow, entry_patch = make_flow(coord, entity)
+        entry = coord.config_entry
+        entry.entry_id = "interface1"
+        entry.update_listeners = []
+        hass = HomeAssistant(str(tmp_path))
+        hass.config_entries = SimpleNamespace(
+            async_get_known_entry=Mock(return_value=entry),
+            async_update_entry=Mock(return_value=True),
+            async_schedule_reload=Mock(),
+        )
+        flow.hass = hass
+        flow.handler = entry.entry_id
+        manager = OptionsFlowManager(hass)
+        manager._async_add_flow_progress(flow)
+        with entry_patch:
+            await manager._async_handle_step(
+                flow, "entity_list", {"entity": entity.entity_id}
+            )
+            draft = {
+                "cooling_enabled": False,
+                "edit_schedule": True,
+                "control_direction": "unchanged",
+                "sections": sections(),
+            }
+            draft["sections"][0]["periods"] = [
+                {"time": "00:00", "temperature": 21},
+                {"time": "09:00", "temperature": 23.5},
+            ]
+            result = await manager.async_configure(flow.flow_id, {"thermostat": draft})
+        assert result["type"] == "create_entry"
+        coord.execute_action.assert_awaited_once()
+        written = coord.execute_action.await_args.args[0]
+        assert written.index == "9"
+        assert all(
+            periods == draft["sections"][0]["periods"]
+            for periods in decode_schedule(written.value, 30).periods().values()
+        )
+        assert entity.hvac_mode == HVACMode.AUTO
+        assert entity.control_direction_name == "cooling"
+        await hass.async_stop()
+
+    asyncio.run(run())
+
+
 def test_failed_schedule_save_keeps_draft_popup_open_and_does_not_save_cooling():
     entity, coord = thermostat()
     flow, entry_patch = make_flow(coord, entity)
@@ -314,7 +371,7 @@ def test_cooling_configuration_without_schedule_feedback_never_writes_the_clu():
     schema = entity._get_schema_instance()
     assert not schema.settings["schedule_available"]
     selector = GrentonThermostatSelector(schema.settings)
-    config = selector({"cooling_enabled": True, "edit_schedule": False})
+    config = selector.configuration({"cooling_enabled": True, "edit_schedule": False})
     asyncio.run(entity.apply_configuration(config))
     coord.execute_action.assert_not_called()
     with pytest.raises(Invalid):

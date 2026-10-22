@@ -106,6 +106,27 @@ test("seven-section and 96-period limits disable additional rows", () => {
   assert.equal(editor.button("Add period", editor.section(0)).disabled, true);
 });
 
+test("adding a period appends after the last start without changing existing periods", () => {
+  const periods = [
+    { time: "00:00", temperature: 20 },
+    { time: "09:00", temperature: 22.5 },
+    { time: "20:00", temperature: 19 },
+  ];
+  const editor = makeEditor({ sections: [{ days: DAYS, periods }] });
+  editor.button("Add period").fire("click");
+  assert.deepEqual(editor.emitted.sections[0].periods, [
+    ...periods, { time: "20:15", temperature: 19 },
+  ]);
+});
+
+test("the final quarter-hour disables append even when earlier gaps remain", () => {
+  const periods = [{ time: "00:00", temperature: 20 }, { time: "23:30", temperature: 19 }];
+  const editor = makeEditor({ sections: [{ days: DAYS, periods }] });
+  editor.button("Add period").fire("click");
+  assert.equal(editor.emitted.sections[0].periods.at(-1).time, "23:45");
+  assert.equal(editor.button("Add period").disabled, true);
+});
+
 test("unavailable schedule feedback and bindings disable dependent editors", () => {
   const editor = makeEditor({ settings: { cooling_available: false, schedule_available: false } });
   assert.equal(editor.field("cooling_enabled").disabled, true);

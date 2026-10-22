@@ -92,8 +92,10 @@ The popup groups days with identical schedules into **1–7 sections**. Each sec
 selects Monday–Friday, Saturday–Sunday, every day, or individual days, with
 **1–96 temperature periods** inside it. Every day must belong to exactly one
 section. Periods use start times on 15-minute boundaries, beginning at `00:00`;
-each lasts until the next start time, and the last ends at midnight. Add or remove
-sections and periods directly in the popup. It loads the current CLU schedule;
+each lasts until the next start time, and the last ends at midnight. **Add period**
+appends 15 minutes after the last start, keeping its temperature and all existing
+periods intact; it is disabled once the last start is `23:45`. Add or remove
+sections directly in the popup. It loads the current CLU schedule;
 saving replaces the complete week without changing power or manual/schedule mode.
 Direction also stays unchanged unless explicitly selected in the popup. Leaving
 schedule editing unchecked saves the cooling option and any direction selection.
