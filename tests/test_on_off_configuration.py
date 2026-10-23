@@ -169,6 +169,42 @@ def test_on_off_light_detection_from_imported_channel_metadata(
 
 
 @pytest.mark.parametrize("double", [False, True])
+@pytest.mark.parametrize("saved_type", [None, "switch", "light"])
+def test_cached_grenton_image_field_detects_bulb_and_preserves_saved_type(
+    double, saved_type
+):
+    dto = widget(double)
+    payload = dto.model_dump()
+    payload["components"][0].pop("icon", None)
+    payload["components"][0].update(
+        label="Świa Łazienka Parter - Kinkiet", image="bulb"
+    )
+    imported = type(dto).model_validate_json(json.dumps(payload))
+    assert imported.components[0].icon == "bulb"
+    options = (
+        {"entities": {"office_0": {"entity_type": saved_type}}} if saved_type else {}
+    )
+    device = DeviceMapper.to_domain(imported, coordinator(options))
+    assert isinstance(device.entities[0], LightEntity) == (saved_type != "switch")
+    # The canonical DTO also survives interface serialization/reconfiguration.
+    restored = type(dto).model_validate_json(imported.model_dump_json())
+    assert restored.components[0].icon == "bulb"
+    if double:
+        assert isinstance(device.entities[1], SwitchEntity)
+
+
+@pytest.mark.parametrize("double", [False, True])
+def test_widget_image_field_is_used_when_channel_has_no_icon(double):
+    dto = widget(double)
+    payload = dto.model_dump()
+    payload["image"] = "bulb"
+    entities = DeviceMapper.to_domain(
+        type(dto).model_validate(payload), coordinator()
+    ).entities
+    assert all(isinstance(entity, LightEntity) for entity in entities)
+
+
+@pytest.mark.parametrize("double", [False, True])
 @pytest.mark.parametrize("entity_type", ["switch", "light"])
 def test_saved_entity_type_overrides_automatic_light_detection(double, entity_type):
     dto = widget(double)

@@ -201,7 +201,8 @@ set. State sources support Attribute and Variable. The entity's attributes expos
 the effective state source and both actions, including arguments and call payloads.
 
 Controls are detected as **Light** when their imported name contains `Light`,
-`Światło` or `swiatlo` (case-insensitive), or their icon is `bulb`. Detection is
+`Światło` or `swiatlo` (case-insensitive), or their icon is `bulb` (Grenton's
+`image` field; `icon` is also accepted). Detection is
 independent for each ON_OFF_DOUBLE channel. A channel icon takes precedence
 over a widget icon; the widget icon is used when the channel has none. Other
 controls default to **Switch**. Saved entity-type choices override detection,
