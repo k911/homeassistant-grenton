@@ -51,8 +51,12 @@ def decode_temperature(pair: str, maximum: float) -> float:
         raise ValueError("Invalid encoded schedule temperature")
     value = ALPHABET.index(pair[0]) * BASE + ALPHABET.index(pair[1])
     temperature = math.floor(value / SCALE * maximum * 2 + 0.5) / 2
-    if encode_temperature(temperature, maximum) != pair:
-        raise ValueError("Schedule contains an unsupported temperature encoding")
+    expected = encode_temperature(temperature, maximum)
+    if expected != pair:
+        raise ValueError(
+            f"Schedule contains an unsupported temperature encoding: pair {pair!r} "
+            f"(code {value}), nearest target {temperature:g} °C requires {expected!r}"
+        )
     return temperature
 
 
@@ -129,13 +133,19 @@ def decode_schedule(data: str, maximum: float) -> ThermostatSchedule:
         raise ValueError(
             "Schedule metadata does not match the current maximum temperature; wait for an updated schedule"
         )
-    return ThermostatSchedule(
-        tuple(
-            decode_temperature(data[i : i + 2], maximum)
-            for i in range(0, WEEK_LENGTH, 2)
-        ),
-        trailer,
-    )
+    temperatures: list[float] = []
+    for slot in range(7 * SLOTS_PER_DAY):
+        try:
+            temperatures.append(
+                decode_temperature(data[slot * 2 : slot * 2 + 2], maximum)
+            )
+        except ValueError as error:
+            day, within_day = divmod(slot, SLOTS_PER_DAY)
+            raise ValueError(
+                f"{error}; {DAYS[day]} {within_day // 4:02}:{within_day % 4 * 15:02}, "
+                f"maximum {maximum:g} °C, trailer {trailer!r}"
+            ) from error
+    return ThermostatSchedule(tuple(temperatures), trailer)
 
 
 def encode_schedule(

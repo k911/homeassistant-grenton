@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional, cast
 
@@ -49,6 +50,7 @@ class _SubscriptionEndpoint:
     session_id: int
     keep_alive_id: str = field(default_factory=lambda: secrets.token_hex(4))
     registration_id: str = field(default_factory=lambda: secrets.token_hex(4))
+    ready: bool = True
 
 
 class GrentonCluApi:
@@ -69,6 +71,7 @@ class GrentonCluApi:
         # require one in-flight registration per subscription socket.
         self._registration_lock = asyncio.Lock()
         self.large_value_keys: set[StateKey] = set()
+        self._closed = False
 
         # Main socket — used for pings and actions only.
         self.transport: Optional[asyncio.DatagramTransport] = None
@@ -86,16 +89,24 @@ class GrentonCluApi:
 
     async def connect(self) -> bool:
         """Open the main UDP socket used for pings and actions."""
+        if self.transport is not None:
+            return True
+        self._closed = False
         try:
             loop = asyncio.get_event_loop()
 
             protocol = GrentonCluApiProtocol(self)
             self.protocol = protocol
 
-            self.transport, _ = await loop.create_datagram_endpoint(
+            transport, _ = await loop.create_datagram_endpoint(
                 lambda: protocol,
                 local_addr=('0.0.0.0', 0),
             )
+            if self._closed:
+                transport.close()
+                self.protocol = None
+                return False
+            self.transport = transport
 
             _LOGGER.debug("[%s] Opened main UDP socket to %s:%d", self.clu.id, self.clu.ip, self.clu.port)
             return True
@@ -107,6 +118,8 @@ class GrentonCluApi:
 
     async def disconnect(self) -> None:
         """Close all sockets — main and per-subscription."""
+        self._closed = True
+        self.on_subscription_report = None
         await self._close_subscription_endpoints()
 
         if self.transport:
@@ -130,7 +143,7 @@ class GrentonCluApi:
 
     async def ping(self) -> bool:
         """Keep the action and every subscription UDP endpoint alive."""
-        if not self.protocol:
+        if self._closed or not self.protocol:
             _LOGGER.warning("[%s] No protocol available for ping", self.clu.id)
             return False
 
@@ -138,7 +151,7 @@ class GrentonCluApi:
         # main/action socket does not keep the separate subscriptions alive.
         endpoints = [(self.protocol, self.keep_alive_id), *[
             (endpoint.protocol, endpoint.keep_alive_id)
-            for endpoint in self._subscription_endpoints
+            for endpoint in self._subscription_endpoints if endpoint.ready
         ]]
         responses = await asyncio.gather(*(
             protocol.send_request(GrentonCluApiPingRequest(message_id))
@@ -146,7 +159,9 @@ class GrentonCluApi:
         ))
         return len(responses) == len(endpoints) and all(response is not None for response in responses)
 
-    async def register_component_states(self, keys: list[StateKey]) -> list[GrentonRegistrationValue] | None:
+    async def register_component_states(
+        self, keys: list[StateKey], *, required_keys: set[StateKey] | None = None
+    ) -> Sequence[GrentonRegistrationValue] | None:
         """Subscribe to state keys, chunked to stay under the CLU's UDP buffer.
 
         Keys are split into chunks of MAX_KEYS_PER_REGISTER, each registered on
@@ -163,20 +178,20 @@ class GrentonCluApi:
         for chunks that failed are filled with MISSING_STATE, distinct from a real CLU nil.
         """
         async with self._registration_lock:
+            if self._closed:
+                return None
             if not keys:
                 _LOGGER.debug("[%s] No state keys to register", self.clu.id)
                 return None
 
-            chunks: list[list[StateKey]] = []
-            for key in keys:
-                # A thermostat week alone is 1350 characters. Keep it out of
-                # ordinary batches so responses remain within a single MTU.
-                if key in self.large_value_keys:
-                    chunks.append([key])
-                elif not chunks or len(chunks[-1]) >= MAX_KEYS_PER_REGISTER or chunks[-1][-1] in self.large_value_keys:
-                    chunks.append([key])
-                else:
-                    chunks[-1].append(key)
+            # Pack ordinary keys across widget boundaries. Large weeks remain
+            # isolated without leaving a small ordinary group around each one.
+            ordinary = [key for key in keys if key not in self.large_value_keys]
+            chunks = [
+                ordinary[i : i + MAX_KEYS_PER_REGISTER]
+                for i in range(0, len(ordinary), MAX_KEYS_PER_REGISTER)
+            ]
+            chunks.extend([key] for key in keys if key in self.large_value_keys)
 
             # Rebuild sockets only when the subscribed key set actually changes
             # (e.g. after a reconfigure); otherwise keep them open so push survives.
@@ -184,16 +199,37 @@ class GrentonCluApi:
                 await self._close_subscription_endpoints()
                 for chunk in chunks:
                     await self._open_chunk_socket(chunk)
+                _LOGGER.info(
+                    "[%s] Tracking %d values in %d persistent subscriptions (%d large values)",
+                    self.clu.id,
+                    len(keys),
+                    len(chunks),
+                    len(keys) - len(ordinary),
+                )
 
             for index, endpoint in enumerate(self._subscription_endpoints.copy()):
                 if endpoint.protocol is None:
                     await self._open_chunk_socket(endpoint.keys)
-                    self._subscription_endpoints[index] = self._subscription_endpoints.pop()
+                    if self._closed:
+                        return None
+                    self._subscription_endpoints[index] = (
+                        self._subscription_endpoints.pop()
+                    )
 
-            results = await asyncio.gather(
-                *(self._register_chunk(endpoint) for endpoint in self._subscription_endpoints)
-            )
-            return [value for chunk_values in results for value in chunk_values]
+            values_by_key: dict[StateKey, GrentonRegistrationValue] = {}
+            # A readback reuses only the affected groups. It must never replace
+            # the subscription key set or open temporary subscriber sockets.
+            for endpoint in self._subscription_endpoints.copy():
+                if self._closed:
+                    break
+                if required_keys is not None and required_keys.isdisjoint(
+                    endpoint.keys
+                ):
+                    continue
+                # Keep only one registration awaiting a reply on this CLU.
+                values = await self._register_chunk(endpoint)
+                values_by_key.update(zip(endpoint.keys, values))
+            return [values_by_key.get(key, MISSING_STATE) for key in keys]
 
     async def _open_chunk_socket(self, chunk: list[StateKey]) -> None:
         """Open one persistent UDP socket dedicated to a chunk of keys.
@@ -202,6 +238,8 @@ class GrentonCluApi:
         chunk keeps its slot in the returned value ordering.
         """
         loop = asyncio.get_event_loop()
+        if self._closed:
+            return
         protocol = GrentonCluApiProtocol(self)
         protocol.subscription_keys = chunk
 
@@ -209,46 +247,86 @@ class GrentonCluApi:
         async def on_report(values: list[GrentonValue]) -> None:
             if self.on_subscription_report is not None:
                 await self.on_subscription_report(chunk, values)
+
         protocol.subscription_callback = on_report
 
         try:
             transport, _ = await loop.create_datagram_endpoint(
                 lambda: protocol,
-                local_addr=('0.0.0.0', 0),
+                local_addr=("0.0.0.0", 0),
             )
         except Exception as e:
-            _LOGGER.error("[%s] Failed to create subscription socket: %s", self.clu.id, e)
-            self._subscription_endpoints.append(_SubscriptionEndpoint(None, None, chunk, 0))
+            _LOGGER.error(
+                "[%s] Failed to create subscription socket: %s", self.clu.id, e
+            )
+            self._subscription_endpoints.append(
+                _SubscriptionEndpoint(None, None, chunk, 0)
+            )
             return
 
-        endpoint = _SubscriptionEndpoint(transport, protocol, chunk, 0)
+        if self._closed:
+            transport.close()
+            return
+        endpoint = _SubscriptionEndpoint(transport, protocol, chunk, 0, ready=False)
+        # Track ownership before awaiting I/O so shutdown can close this socket.
+        self._subscription_endpoints.append(endpoint)
         # Establish this endpoint's client session before registering its keys.
         # Add it to the ping loop only after this initial request has finished.
-        if await protocol.send_request(GrentonCluApiPingRequest(endpoint.keep_alive_id)) is None:
-            _LOGGER.warning("[%s] Initial subscription keepalive failed", self.clu.id)
-        self._subscription_endpoints.append(endpoint)
-        _LOGGER.debug("[%s] Opened persistent subscription socket %s to %s:%d for %d key(s)",
-                      self.clu.id, transport.get_extra_info("sockname"), self.clu.ip, self.clu.port, len(chunk))
+        try:
+            if (
+                await protocol.send_request(
+                    GrentonCluApiPingRequest(endpoint.keep_alive_id)
+                )
+                is None
+            ):
+                _LOGGER.warning(
+                    "[%s] Initial subscription keepalive failed", self.clu.id
+                )
+        except BaseException:
+            transport.close()
+            if endpoint in self._subscription_endpoints:
+                self._subscription_endpoints.remove(endpoint)
+            raise
+        endpoint.ready = True
+        _LOGGER.debug(
+            "[%s] Opened persistent subscription socket %s to %s:%d for %d key(s)",
+            self.clu.id,
+            transport.get_extra_info("sockname"),
+            self.clu.ip,
+            self.clu.port,
+            len(chunk),
+        )
 
-    async def _register_chunk(self, endpoint: "_SubscriptionEndpoint") -> list[GrentonRegistrationValue]:
+    async def _register_chunk(
+        self, endpoint: "_SubscriptionEndpoint"
+    ) -> list[GrentonRegistrationValue]:
         """(Re)register a chunk on its persistent socket; return current values.
 
         session id 0 mirrors the original single-subscription form the CLU
         honours for on-change push. Reports are routed by socket, not session.
         """
-        if endpoint.protocol is None:
+        if self._closed or endpoint.protocol is None:
             return [MISSING_STATE] * len(endpoint.keys)
 
         # Some CLU firmware needs the same registration ID on every refresh,
         # as used by the single-socket CLI, to retain unsolicited reports.
-        request = GrentonCluApiClientRegisterRequest(endpoint.keys, endpoint.session_id, endpoint.registration_id)
-        wire = await endpoint.protocol.send_request(request)
+        request = GrentonCluApiClientRegisterRequest(
+            endpoint.keys, endpoint.session_id, endpoint.registration_id
+        )
+        try:
+            wire = await endpoint.protocol.send_request(request)
+        except ConnectionError:
+            return [MISSING_STATE] * len(endpoint.keys)
         if wire is None:
             return [MISSING_STATE] * len(endpoint.keys)
         try:
-            values = GrentonCluApiClientRegisterResponse(wire, endpoint.keys, self.clu).values
+            values = GrentonCluApiClientRegisterResponse(
+                wire, endpoint.keys, self.clu
+            ).values
             if len(values) != len(endpoint.keys):
-                raise ValueError(f"Expected {len(endpoint.keys)} values, received {len(values)}")
+                raise ValueError(
+                    f"Expected {len(endpoint.keys)} values, received {len(values)}"
+                )
             return list(values)
         except ValueError as e:
             _LOGGER.error("[%s] Failed to parse register response: %s", self.clu.id, e)
@@ -256,7 +334,7 @@ class GrentonCluApi:
 
     async def execute_action(self, action: GrentonAction) -> bool:
         """Execute an action on the CLU via the main socket."""
-        if not self.protocol:
+        if self._closed or not self.protocol:
             _LOGGER.warning("[%s] No protocol available for action execution", self.clu.id)
             return False
 
@@ -416,6 +494,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
         _LOGGER.error("[%s] UDP error: %s", self.api.clu.name, exc)
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
+        self.transport = None
         if exc:
             _LOGGER.error("[%s] UDP connection lost: %s", self.api.clu.name, exc)
         else:

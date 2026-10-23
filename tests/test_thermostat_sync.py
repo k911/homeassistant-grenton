@@ -61,7 +61,7 @@ def test_schedule_reports_are_isolated_and_subscription_sockets_are_reused(tmp_p
         assert entity.decoded_schedule is not None
         assert await api.register_component_states(keys) == values
         assert api._subscription_endpoints == endpoints
-        assert api._open_chunk_socket.await_count == 3
+        assert api._open_chunk_socket.await_count == 2
         await hass.async_stop()
 
     asyncio.run(run())

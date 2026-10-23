@@ -270,10 +270,13 @@ Newer pushed reports take precedence over an older in-flight read. Failed reads
 retain cached values; an actual CLU `nil` clears them.
 
 Every schedule save first reads fresh data, then verifies the reported week and
-limits after writing, with up to three readback attempts. An acknowledgement alone
+limits after writing, with up to three readback attempts. These reads refresh only
+the existing subscription groups containing that thermostat's schedule and limits. An acknowledgement alone
 does not count as a confirmed save. Missing or inconsistent data keeps the schedule
 sensor unknown and disables editing; the climate's `schedule_status` attribute
-and logs explain the decoding problem. Timeout logs identify ping, state-read or
+and logs explain the decoding problem, including the first rejected pair, day/time
+and reported maximum. Unsupported data is not rewritten automatically.
+Timeout logs identify ping, state-read or
 write requests. Repeated ping timeouts indicate missed CLU replies; they do not
 establish a schedule-format problem.
 
@@ -344,6 +347,26 @@ sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
 `port`. Each CLU has its own entity, so installations with multiple CLUs can
 select the controller on which to run a script. Refresh the interface through
 **Reconfigure** when CLUs are added or removed.
+
+Each CLU has one action socket plus persistent subscription sockets: ordinary
+values are packed in groups of up to 30, and each large thermostat schedule has
+its own group. Duplicate bindings share a subscription. Every socket receives a
+keepalive every 5 seconds; subscription groups refresh every 45 seconds on the
+same socket with the same message ID. Registration requests run one at a time
+per CLU; outgoing packets are spaced by at least 20 ms. Failed initial reads retry
+only affected groups, and explicit readbacks reuse the relevant existing groups.
+Startup logs report the value and subscription counts. For `N` groups, nominal
+traffic is `12 × (N + 1)` keepalives and `60 × N / 45` registrations per minute,
+before user actions, readbacks, retries and CLU responses/change reports.
+
+Home Assistant stop, successful integration unload and failed setup close all
+local sockets and stop background traffic. Opening sockets are tracked during
+shutdown too. UDP closure does **not** send a remote session-close handshake.
+The integration does not issue an unverified unsubscribe command; the CLU's
+remote client cleanup and expiry behavior remain firmware-dependent and unverified.
+A hard process kill cannot run integration cleanup, although the OS closes its sockets.
+A ping timeout alone does not prove a reboot; a drop in the CLU Uptime sensor does
+provide evidence of a restart. Neither identifies its cause.
 
 The CLU type is detected from its serial number: `221…` is `CLU_Z_WAVE`,
 and `521…` is `CLU_GATE_HTTP`. The detected type is shown as the device model.

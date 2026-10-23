@@ -193,14 +193,22 @@ class GrentonCluCliApi(GrentonCluApi):
 
     async def connect(self) -> bool:
         """Open the single socket used for pings and subscriptions."""
+        if self.transport is not None:
+            return True
+        self._closed = False
         try:
             loop = asyncio.get_event_loop()
             protocol = GrentonCluCliApiProtocol(self)
             self.protocol = protocol
-            self.transport, _ = await loop.create_datagram_endpoint(
+            transport, _ = await loop.create_datagram_endpoint(
                 lambda: protocol,
                 local_addr=("0.0.0.0", 0),
             )
+            if self._closed:
+                transport.close()
+                self.protocol = None
+                return False
+            self.transport = transport
             _LOGGER.debug(
                 "[%s] Opened CLI UDP socket to %s:%d",
                 self.clu.id,
@@ -221,8 +229,10 @@ class GrentonCluCliApi(GrentonCluApi):
     async def register_component_states(
         self,
         keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey],
+        *,
+        required_keys: set[StateKey] | None = None,
     ) -> list[GrentonValue] | None:
-        """Register all watched states through the main CLI socket."""
+        """Register the CLI's single group; a required-key hint cannot split it."""
         if not keys:
             _LOGGER.debug("[%s] No state keys to register", self.clu.id)
             return None

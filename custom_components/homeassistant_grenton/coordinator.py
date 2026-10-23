@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -49,6 +51,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
         self._apis: dict[str, GrentonCluApi] = {}
         self._read_locks = {clu.id: asyncio.Lock() for clu in clus}
         self._report_versions: dict[str, dict[StateKey, int]] = {clu.id: {} for clu in clus}
+        self._shutdown_lock = asyncio.Lock()
+        self._stopping = False
+        self._stop_listener: Callable[[], None] | None = None
         
         # Initialize API instances for each CLU
         for clu in clus:
@@ -58,6 +63,8 @@ class GrentonCoordinator(DataUpdateCoordinator):
         return self.state
     
     async def _send_ping(self, clu_id: str) -> None:
+        if self._stopping:
+            return
         api = self._apis.get(clu_id)
         if not api:
             _LOGGER.warning("[%s] No API found for CLU during ping", clu_id)
@@ -92,42 +99,62 @@ class GrentonCoordinator(DataUpdateCoordinator):
             return GrentonCluStateVariableKey(state.index)
         return GrentonCluStateAttributeKey(state.object_name, state.index)
 
-    async def _send_register(self, clu_id: str) -> set[StateKey]:
+    async def _send_register(
+        self, clu_id: str, required_keys: set[StateKey] | None = None
+    ) -> set[StateKey]:
         async with self._read_locks[clu_id]:
-            return await self._read_registered_states(clu_id)
+            if self._stopping:
+                return set()
+            return await self._read_registered_states(clu_id, required_keys)
 
-    async def _read_registered_states(self, clu_id: str) -> set[StateKey]:
+    async def _read_registered_states(
+        self, clu_id: str, required_keys: set[StateKey] | None = None
+    ) -> set[StateKey]:
         api = self._apis.get(clu_id)
         if not api:
-            _LOGGER.warning("[%s] No API found for CLU during state registration", clu_id)
+            _LOGGER.warning(
+                "[%s] No API found for CLU during state registration", clu_id
+            )
             return set()
-        
+
         clu_state = self.state.clus[clu_id]
-        
+
         # Check if there are any states to register
         if not clu_state.has_states_to_register():
             _LOGGER.debug("[%s] No component states to register", clu_id)
             return set()
-        
+
         try:
             keys = clu_state.get_subscription_order()
             versions = self._report_versions[clu_id].copy()
-            values = await api.register_component_states(keys)
+            values = (
+                await api.register_component_states(keys)
+                if required_keys is None
+                else await api.register_component_states(
+                    keys, required_keys=required_keys
+                )
+            )
             if values is None or len(values) != len(keys):
                 _LOGGER.warning("[%s] Incomplete state registration response", clu_id)
                 return set()
             # A pushed change received during the read is newer than its snapshot.
             current = self._report_versions[clu_id]
-            merged: list[GrentonRegistrationValue] = [value if current.get(key, 0) == versions.get(key, 0) else MISSING_STATE
-                      for key, value in zip(keys, values)]
+            merged: list[GrentonRegistrationValue] = [
+                value if current.get(key, 0) == versions.get(key, 0) else MISSING_STATE
+                for key, value in zip(keys, values)
+            ]
             clu_state.update_keys(keys, merged)
             self.async_set_updated_data(self.state.__dict__)
-            return {key for key, value in zip(keys, values)
-                    if not isinstance(value, MissingState) or current.get(key, 0) != versions.get(key, 0)}
+            return {
+                key
+                for key, value in zip(keys, values)
+                if not isinstance(value, MissingState)
+                or current.get(key, 0) != versions.get(key, 0)
+            }
         except Exception as e:
             _LOGGER.error("[%s] Error during registration: %s", clu_id, e)
             return set()
-    
+
     async def _register_loop(self) -> None:
         while True:
             try:
@@ -158,6 +185,10 @@ class GrentonCoordinator(DataUpdateCoordinator):
     async def execute_action(
         self, action: GrentonAction, *, raise_on_error: bool = False
     ) -> None:
+        if self._stopping:
+            if raise_on_error:
+                raise HomeAssistantError("Grenton is shutting down")
+            return
         api = self._apis.get(action.clu_id)
         if not api:
             if raise_on_error:
@@ -185,6 +216,8 @@ class GrentonCoordinator(DataUpdateCoordinator):
         values: list[GrentonValue],
     ) -> None:
         """Process a report from a CLU and update state for the given keys."""
+        if self._stopping:
+            return
         if len(keys) != len(values):
             _LOGGER.warning("[%s] Ignoring incomplete state report", clu_id)
             return
@@ -202,44 +235,64 @@ class GrentonCoordinator(DataUpdateCoordinator):
         if large_value and (api := self._apis.get(state.clu_id)) is not None:
             api.large_value_keys.add(self._state_key(state))
 
-    async def async_refresh_clu_state(self, clu_id: str, *, required_states: list[GrentonStateObject] | None = None) -> bool:
+    async def async_refresh_clu_state(
+        self, clu_id: str, *, required_states: list[GrentonStateObject] | None = None
+    ) -> bool:
         """Read back tracked values; report whether the required reads succeeded."""
-        received = await self._send_register(clu_id)
-        required = ({self._state_key(state) for state in required_states}
-                    if required_states is not None
-                    else set(self.state.clus[clu_id].get_subscription_order()))
+        required = (
+            {self._state_key(state) for state in required_states}
+            if required_states is not None
+            else set(self.state.clus[clu_id].get_subscription_order())
+        )
+        received = await self._send_register(
+            clu_id, required if required_states is not None else None
+        )
         return required <= received
-    
+
     async def async_setup(self) -> None:
+        self._stop_listener = self.hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STOP, self._async_handle_stop
+        )
         # Connect all APIs
         connection_tasks: list[Any] = []
         for clu in self.clus:
             api = self._apis[clu.id]
             connection_tasks.append(self._connect_api(api))
-        
+
         # Wait for all connections to complete
         await asyncio.gather(*connection_tasks, return_exceptions=True)
-        
+
         # Send initial pings to establish sessions
         ping_tasks = [self._send_ping(clu_id) for clu_id in self._apis.keys()]
         if ping_tasks:
             await asyncio.gather(*ping_tasks, return_exceptions=True)
-        
+
         # Send initial registrations
-        register_tasks = [self._send_register(clu_id) for clu_id in self.state.clus.keys()]
+        register_tasks = [
+            self._send_register(clu_id) for clu_id in self.state.clus.keys()
+        ]
         if register_tasks:
             results = await asyncio.gather(*register_tasks, return_exceptions=True)
             # Retry incomplete initial pulls once before publishing entities.
-            retries = [self._send_register(clu_id)
-                       for clu_id, result in zip(self.state.clus, results)
-                       if not isinstance(result, set) or not set(self.state.clus[clu_id].get_subscription_order()) <= result]
+            retries = [
+                self._send_register(
+                    clu_id,
+                    set(self.state.clus[clu_id].get_subscription_order())
+                    - (result if isinstance(result, set) else set()),
+                )
+                for clu_id, result in zip(self.state.clus, results)
+                if not isinstance(result, set)
+                or not set(self.state.clus[clu_id].get_subscription_order()) <= result
+            ]
             if retries:
                 await asyncio.gather(*retries, return_exceptions=True)
 
         # Start background tasks
+        if self._stopping:
+            raise HomeAssistantError("Grenton setup was interrupted by shutdown")
         self._ping_task = asyncio.create_task(self._ping_loop())
         self._register_task = asyncio.create_task(self._register_loop())
-    
+
     async def _connect_api(self, api: GrentonCluApi) -> None:
         """Connect a single API instance."""
         try:
@@ -259,32 +312,34 @@ class GrentonCoordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.error("Error connecting API for CLU %s: %s", api.clu.id, e)
     
+    async def _async_handle_stop(self, event: Event) -> None:
+        # async_listen_once already removed this listener before dispatch.
+        self._stop_listener = None
+        await self.async_shutdown()
+
     async def async_shutdown(self) -> None:
-        # Cancel background tasks
-        if hasattr(self, '_ping_task'):
-            self._ping_task.cancel()
-            try:
-                await self._ping_task
-            except asyncio.CancelledError:
-                pass
-            _LOGGER.debug("Cancelled ping task")
-        
-        if hasattr(self, '_register_task'):
-            self._register_task.cancel()
-            try:
-                await self._register_task
-            except asyncio.CancelledError:
-                pass
-            _LOGGER.debug("Cancelled register task")
-        
-        # Disconnect all APIs
-        disconnect_tasks: list[Any] = []
-        for api in self._apis.values():
-            disconnect_tasks.append(self._disconnect_api(api))
-        
-        await asyncio.gather(*disconnect_tasks, return_exceptions=True)
-        self._apis.clear()
-    
+        """Stop traffic and close local sockets on unload, HA stop or failed setup."""
+        async with self._shutdown_lock:
+            self._stopping = True
+            if self._stop_listener is not None:
+                self._stop_listener()
+                self._stop_listener = None
+            tasks = [
+                task
+                for name in ("_ping_task", "_register_task")
+                if (task := getattr(self, name, None)) is not None
+            ]
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            # UDP close releases local ports; it is not a remote unsubscribe.
+            await asyncio.gather(
+                *(self._disconnect_api(api) for api in self._apis.values()),
+                return_exceptions=True,
+            )
+            self._apis.clear()
+
     async def _disconnect_api(self, api: GrentonCluApi) -> None:
         """Disconnect a single API instance."""
         try:

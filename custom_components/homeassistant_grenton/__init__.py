@@ -76,9 +76,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntr
     _cleanup_orphans(hass, config_entry, devices, clu_entities)
 
     # Setup the coordinator
-    await coordinator.async_setup()
-
-    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    try:
+        await coordinator.async_setup()
+        await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    except BaseException:
+        await coordinator.async_shutdown()
+        raise
 
     return True
 
@@ -165,10 +168,9 @@ def _cleanup_orphans(
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     coordinator: GrentonCoordinator = config_entry.runtime_data.coordinator
     
-    # Shutdown coordinator (close UDP sockets)
-    await coordinator.async_shutdown()
-    
-    # Unload platforms
+    # Keep a working coordinator if HA cannot unload one of its platforms.
     unload_ok = await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
+    if unload_ok:
+        await coordinator.async_shutdown()
     
     return unload_ok

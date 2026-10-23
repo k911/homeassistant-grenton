@@ -434,3 +434,14 @@ def test_schedule_service_metadata_and_translations(language):
     assert translations["services"]["set_thermostat_schedule"]["fields"]["schedule"][
         "name"
     ]
+
+
+def test_noncanonical_schedule_identifies_the_pair_slot_and_reported_maximum():
+    with pytest.raises(ValueError) as caught:
+        decode_schedule("Y0Y1" + "Y0" * 670 + "+00:30", 30)
+    message = str(caught.value)
+    assert "pair 'Y1' (code 5401)" in message
+    assert "20 °C requires 'Y0'" in message
+    assert "sunday 00:15" in message
+    assert "maximum 30 °C" in message
+    assert "trailer '+00:30'" in message

@@ -270,6 +270,7 @@ def test_clu_reconfiguration_preserves_identity_and_removes_only_orphans(tmp_pat
 def test_script_action_reports_transport_failures(failure):
     async def run():
         coordinator = GrentonCoordinator.__new__(GrentonCoordinator)
+        coordinator._stopping = False
         api = SimpleNamespace(execute_action=AsyncMock(return_value=failure))
         if isinstance(failure, Exception):
             api.execute_action.side_effect = failure
