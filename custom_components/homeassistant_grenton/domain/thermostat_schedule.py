@@ -2,6 +2,8 @@
 
 Each Sunday-first 15-minute slot is a two-digit base-90 value scaled from zero
 to the maximum temperature (attribute 11), and clamped to 8099 at the maximum.
+Object Manager captures include arbitrary codes; display them at the mobile
+app's half-degree precision and keep unchanged wire codes verbatim.
 The configured minimum (attribute 10) constrains writes without shifting the
 encoding. The final pair approximates 8100 / maximum; the preceding four trailer
 characters have unknown semantics. Preserve them when changing the range.
@@ -45,19 +47,12 @@ def encode_temperature(temperature: Any, maximum: float) -> str:
 
 
 def decode_temperature(pair: str, maximum: float) -> float:
-    """Decode a canonical half-degree value without silently rounding bad data."""
+    """Display any valid base-90 code at the mobile app's half-degree precision."""
     _validate_maximum(maximum)
     if len(pair) != 2 or any(char not in ALPHABET for char in pair):
-        raise ValueError("Invalid encoded schedule temperature")
+        raise ValueError(f"Invalid encoded schedule temperature: pair {pair!r}")
     value = ALPHABET.index(pair[0]) * BASE + ALPHABET.index(pair[1])
-    temperature = math.floor(value / SCALE * maximum * 2 + 0.5) / 2
-    expected = encode_temperature(temperature, maximum)
-    if expected != pair:
-        raise ValueError(
-            f"Schedule contains an unsupported temperature encoding: pair {pair!r} "
-            f"(code {value}), nearest target {temperature:g} °C requires {expected!r}"
-        )
-    return temperature
+    return math.floor(value / SCALE * maximum * 2 + 0.5) / 2
 
 
 @dataclass(frozen=True)
@@ -160,6 +155,7 @@ def encode_schedule(
     existing = decode_schedule(
         existing_data, maximum if existing_maximum is None else existing_maximum
     )
+    same_maximum = existing_maximum is None or existing_maximum == maximum
     _validate_maximum(maximum)
     if isinstance(minimum, bool) or not isinstance(minimum, (int, float)):
         raise TypeError("Minimum temperature must be a number")
@@ -168,11 +164,11 @@ def encode_schedule(
     if not isinstance(schedule, dict) or set(schedule) != set(DAYS):
         raise ValueError("Schedule must contain all seven weekday names in lowercase")
     encoded: list[str] = []
-    for day in DAYS:
+    for day_index, day in enumerate(DAYS):
         periods = schedule[day]
         if not isinstance(periods, list) or not 1 <= len(periods) <= SLOTS_PER_DAY:
             raise ValueError(f"{day} must contain 1–96 temperature periods")
-        changes: list[tuple[int, str]] = []
+        changes: list[tuple[int, str, float]] = []
         for period in periods:
             if not isinstance(period, dict) or set(period) != {"time", "temperature"}:
                 raise ValueError("Each period must contain time and temperature")
@@ -193,10 +189,18 @@ def encode_schedule(
                 raise ValueError("Temperature cannot be represented at this maximum")
             if temperature < minimum:
                 raise ValueError(f"Schedule temperatures must be at least {minimum} °C")
-            changes.append((slot, pair))
-        for index, (start, pair) in enumerate(changes):
+            changes.append((slot, pair, temperature))
+        for index, (start, pair, temperature) in enumerate(changes):
             end = changes[index + 1][0] if index + 1 < len(changes) else SLOTS_PER_DAY
-            encoded.append(pair * (end - start))
+            for slot in range(start, end):
+                position = day_index * SLOTS_PER_DAY + slot
+                # Several raw codes can display as the same target. Retain the
+                # actual CLU value when the user has not changed this slot.
+                encoded.append(
+                    existing_data[position * 2 : position * 2 + 2]
+                    if same_maximum and temperature == existing.temperatures[position]
+                    else pair
+                )
     trailer = existing.trailer
     if existing_maximum is not None and existing_maximum != maximum:
         factor = math.floor(SCALE / maximum + 0.5)

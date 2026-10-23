@@ -378,8 +378,16 @@ Decode: n = 90 * index(pair[0]) + index(pair[1])
         T = floor(n / 8100 * M * 2 + 0.5) / 2
 ```
 
-Decoding rounds to 0.5°C and requires re-encoding to reproduce the original pair.
-The minimum (attribute 10) constrains writes without offsetting the encoding.
+Decoding rounds to **0.5°C**, matching the mobile app. Object Manager can store
+intermediate codes: `+a`, `;M` and `.t` display as **23, 25 and 24°C** in the app,
+although Object Manager shows 23.0, 25.2 and 24.1°C. Both `X~` (a captured default)
+and `Y0` display as 20°C. Such codes are valid even when re-encoding the displayed
+temperature would produce a different pair.
+
+When saving at the same maximum, unchanged slots keep their original pairs;
+only changed targets receive a new encoding. This preserves hidden precision
+without exposing it as editable values. The minimum (attribute 10) constrains
+writes without offsetting the encoding.
 At `M = 600`, `_0` means 560°C, `30` means 20°C and `3r` means 22°C. `00` means
 0°C, not an off command; the maximum encodes as `~~`.
 
@@ -389,7 +397,7 @@ inverting this rounded factor can give the wrong temperature. The preceding four
 characters (observed as `+00:`) remain unexplained. Ordinary schedule edits
 preserve all six characters. When changing the maximum through the popup, preserve
 the first four and regenerate the final pair as rounded `8100 / M`, together with
-all temperature slots. Captures validate the codec; the save path also checks
+all temperature slots from the displayed half-degree targets. Captures validate the codec; the save path also checks
 readback, but limit changes still need confirmation on physical hardware.
 
 ### CLU Controllers and Scripts

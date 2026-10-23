@@ -16,7 +16,7 @@ from custom_components.homeassistant_grenton.domain.state_object import (
 def test_schedule_warning_identifies_device_entity_and_grenton_object(
     caplog, registered
 ):
-    data = "+a" * 672 + "+00:30"
+    data = '"a' * 672 + "+00:30"
     entity, _ = thermostat(values={"9": data})
     if registered:
         entity.device_entry = SimpleNamespace(
@@ -35,7 +35,8 @@ def test_schedule_warning_identifies_device_entity_and_grenton_object(
         assert f"entity={entity.entity_id}" in message
     assert "scheduleData=clu1/THERMOSTAT1.9" in message
     assert "maxTemperature=clu1/THERMOSTAT1.11" in message
-    assert "pair '+a' (code 6220)" in message
+    assert "Invalid encoded schedule temperature" in message
+    assert repr('"a') in message
     assert data not in message
 
 
@@ -46,7 +47,7 @@ def test_schedule_diagnostics_use_each_actual_binding_even_across_clus(caplog):
         "clu2", "OTHER_THERMOSTAT", "11"
     )
     coord.get_value_for_component.side_effect = lambda state: (
-        "+a" * 672 + "+00:30" if state.index == "WeekData" else 30
+        '"a' * 672 + "+00:30" if state.index == "WeekData" else 30
     )
     with caplog.at_level(logging.WARNING):
         entity._analyse_schedule()

@@ -67,6 +67,7 @@ CAPTURED_33 = {
     33: "~~",
 }
 RAMP_29 = "SsVBYL 6" + "YL" * 88 + "~~{[^-?c"
+OBJECT_MANAGER_DAY = "+a" * 24 + ";M" * 16 + ".t" * 48 + "+a" * 8
 CAPTURED_29 = {
     17.5: "Ss",
     18.5: "VB",
@@ -86,6 +87,8 @@ CAPTURES = [
     "!0" * 672,
     ("Y0" + "!0" * 95) * 7,
     RAMP + "!0" * 576,
+    OBJECT_MANAGER_DAY * 7,
+    "X~" * 672,
 ]
 
 
@@ -107,6 +110,61 @@ def test_every_captured_schedule_round_trips_without_changing_any_wire_data(week
     decoded = decode_schedule(data, 30)
     assert len(decoded.temperatures) == 672
     assert encode_schedule(decoded.periods(), data, 0, 30) == data
+
+
+def test_object_manager_codes_decode_to_mobile_app_half_degree_targets():
+    data = OBJECT_MANAGER_DAY * 7 + "+00:30"
+    decoded = decode_schedule(data, 30)
+    assert all(
+        periods
+        == [
+            {"time": "00:00", "temperature": 23},
+            {"time": "06:00", "temperature": 25},
+            {"time": "10:00", "temperature": 24},
+            {"time": "22:00", "temperature": 23},
+        ]
+        for periods in decoded.periods().values()
+    )
+
+
+def test_editing_one_period_preserves_other_object_manager_codes_verbatim():
+    data = OBJECT_MANAGER_DAY * 7 + "+00:30"
+    schedule = decode_schedule(data, 30).periods()
+    schedule["monday"][1]["temperature"] = 25.5
+    written = encode_schedule(schedule, data, 0, 30)
+    start = (96 + 24) * 2
+    end = (96 + 40) * 2
+    assert written == data[:start] + "<J" * 16 + data[end:]
+
+
+@pytest.mark.parametrize("pair", ["X~", "Y0"])
+def test_default_and_explicit_twenty_degree_schedules_are_both_valid(pair):
+    data = pair * 672 + "+00:30"
+    decoded = decode_schedule(data, 30)
+    assert decoded.periods() == constant_week(20)
+    assert encode_schedule(decoded.periods(), data, 0, 30) == data
+    assert encode_schedule(constant_week(20.5), data, 0, 30) == "ZJ" * 672 + "+00:30"
+
+
+@pytest.mark.parametrize("week", [OBJECT_MANAGER_DAY * 7, "X~" * 672, "Y0" * 672])
+def test_added_captures_are_ready_in_ha_and_save_without_changing_wire_values(
+    week, caplog
+):
+    data = week + "+00:30"
+    entity, coord = thermostat(**{"9": data, "10": 0, "11": 30})
+    entity._analyse_schedule()
+    assert entity.schedule_status == "ready"
+    assert not caplog.records
+    schema = entity._get_schema_instance()
+    assert schema.settings["schedule_available"]
+    assert all(
+        period["temperature"] * 2 == round(period["temperature"] * 2)
+        for section in schema.sections
+        for period in section["periods"]
+    )
+    asyncio.run(entity.async_set_thermostat_schedule(entity.decoded_schedule.periods()))
+    assert coord.execute_action.await_count == 1
+    assert coord.execute_action.await_args.args[0].value == data
 
 
 def test_sunday_first_order_and_quarter_hour_boundaries_match_ramp_capture():
@@ -264,10 +322,9 @@ def test_invalid_temperatures_are_rejected(temperature):
         "!0" * 673 + "+00:30",
         "!0" * 672 + "+00:3\n",
         '"0' * 672 + "+00:30",
-        "01" * 672 + "+00:30",
     ],
 )
-def test_unknown_layouts_and_noncanonical_codes_are_rejected(data):
+def test_unknown_layouts_and_invalid_characters_are_rejected(data):
     with pytest.raises(ValueError):
         decode_schedule(data, 30)
 
@@ -436,12 +493,12 @@ def test_schedule_service_metadata_and_translations(language):
     ]
 
 
-def test_noncanonical_schedule_identifies_the_pair_slot_and_reported_maximum():
+def test_invalid_schedule_identifies_the_pair_slot_and_reported_maximum():
     with pytest.raises(ValueError) as caught:
-        decode_schedule("Y0Y1" + "Y0" * 670 + "+00:30", 30)
+        decode_schedule('Y0"1' + "Y0" * 670 + "+00:30", 30)
     message = str(caught.value)
-    assert "pair 'Y1' (code 5401)" in message
-    assert "20 °C requires 'Y0'" in message
+    assert "Invalid encoded schedule temperature" in message
+    assert repr('"1') in message
     assert "sunday 00:15" in message
     assert "maximum 30 °C" in message
     assert "trailer '+00:30'" in message
