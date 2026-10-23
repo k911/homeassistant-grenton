@@ -36,7 +36,7 @@
     "step": {
       "entity_list": {
         "title": "Konfiguruj encje",
-        "description": "Wybierz encję, aby skonfigurować jej właściwości.",
+        "description": "Wybierz typ lub przeszukaj wszystkie encje.",
         "data": {
           "entity": "Encja"
         }
@@ -144,13 +144,13 @@
       },
       "configure_value_v2_type": {
         "title": "Konfiguracja {entity_name} - Typ encji",
-        "description": "Wybierz czujnik lub czujnik binarny. Czujniki binarne umożliwiają odwrócenie stanu.",
+        "description": "Wybierz typ encji i tryb odczytu.",
         "data": {
           "entity_type": "Typ encji",
           "read_mode": "Tryb odczytu"
         },
         "data_description": {
-          "read_mode": "Czujniki temperatury automatycznie używają wolnego odpytywania, również istniejące encje. Dla innych wartości można wybrać tryb. Interwał ustawia się osobno dla CLU; HTTP Gate odpytuje wszystkie wartości."
+          "read_mode": "Temperatury są odczytywane okresowo, zgodnie z interwałem ustawionym dla CLU."
         }
       },
       "configure_value_v2_binary": {
@@ -175,19 +175,19 @@
         "title": "Ustawienia Grenton",
         "menu_options": {
           "entity_list": "Konfiguruj encje",
-          "clu_read_settings": "Ustawienia odczytu CLU"
+          "clu_read_settings": "Konfiguruj CLU"
         }
       },
       "clu_read_settings": {
-        "title": "Ustawienia odczytu CLU",
-        "description": "Wybierz CLU, aby ustawić interwał odpytywania.",
+        "title": "Konfiguruj CLU",
+        "description": "Wybierz CLU do konfiguracji.",
         "data": {
           "clu_id": "CLU"
         }
       },
       "clu_read_interval": {
-        "title": "Ustawienia odczytu — {clu_name}",
-        "description": "Interwał odczytu temperatur i innych odpytywanych wartości tego CLU (domyślnie 60 sekund). HTTP Gate odpytuje wszystkie wartości. Zapis zmienia tylko zegar tego CLU.",
+        "title": "Konfiguracja {clu_name}",
+        "description": "Dotyczy odczytów okresowych tego CLU.",
         "data": {
           "slow_read_interval": "Interwał odpytywania (sekundy)"
         }
@@ -747,7 +747,25 @@
     "value_read_modes": {
       "options": {
         "realtime": "Czas rzeczywisty",
-        "slow": "Wolne odpytywanie"
+        "slow": "Odpytywanie"
+      }
+    },
+    "entity_picker": {
+      "fields": {
+        "entity_type": "Typ encji",
+        "entity": "Encja"
+      },
+      "types": {
+        "all": "Wszystkie encje",
+        "sensor": "Czujniki",
+        "binary_sensor": "Czujniki binarne",
+        "switch": "Przełączniki",
+        "light": "Światła",
+        "button": "Przyciski",
+        "number": "Liczby",
+        "cover": "Osłony",
+        "camera": "Kamery",
+        "climate": "Termostaty"
       }
     }
   }

@@ -476,7 +476,7 @@ def test_integration_entity_editor_uses_same_variable_schema_and_persistence(tmp
         form = await manager.async_configure(
             form["flow_id"], {"next_step_id": "entity_list"}
         )
-        choices = fields(form)["entity"]["selector"]["entity"]["include_entities"]
+        choices = fields(form)["entity"]["selector"]["grenton_entity"]["include_entities"]
         assert set(choices) == {controller.entity_id, counter.entity_id}
         form = await manager.async_configure(
             form["flow_id"], {"entity": counter.entity_id}

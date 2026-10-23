@@ -352,6 +352,62 @@ class GrentonArgumentsEditor extends GrentonEditor {
   }
 }
 
+class GrentonEntityPicker extends GrentonEditor {
+  set hass(value) {
+    super.hass = value;
+    if (this._picker) this._picker.hass = value;
+  }
+  get hass() { return super.hass; }
+
+  _render() {
+    const parent = this._container();
+    const entities = this.selector?.grenton_entity?.include_entities || [];
+    const domains = [...new Set(entities.map((id) => id.split(".")[0]))].sort();
+    if (!domains.includes(this._domainFilter)) this._domainFilter = "all";
+    const options = [
+      { value: "all", label: this._text("entity_picker.types.all", "All entities") },
+      ...domains.map((domain) => ({
+        value: domain,
+        label: this._text(`entity_picker.types.${domain}`,
+          this.hass?.localize?.(`component.${domain}.entity_component._.name`) || domain),
+      })),
+    ];
+    const filter = this._select("entity_type", options, this._domainFilter, (domain) => {
+      this._domainFilter = domain;
+      // A hidden selection must not be submitted accidentally.
+      if (this._value && domain !== "all" && !this._value.startsWith(`${domain}.`)) {
+        this._value = undefined;
+      }
+      this._render();
+    });
+    parent.append(this._field(this._text("entity_picker.fields.entity_type", "Entity type"), filter));
+
+    const visible = entities.filter((id) => this._domainFilter === "all" || id.startsWith(`${this._domainFilter}.`));
+    const picker = document.createElement("ha-selector");
+    this._picker = picker;
+    picker.dataset.field = "entity";
+    picker.hass = this.hass;
+    picker.label = this._text("entity_picker.fields.entity", "Entity");
+    picker.selector = { entity: { include_entities: visible, multiple: false } };
+    picker.value = this._value;
+    picker.disabled = this.disabled;
+    picker.required = true;
+    picker.addEventListener("value-changed", (event) => {
+      event.stopPropagation();
+      if (this.disabled) return;
+      const value = event.detail.value || undefined;
+      if (value !== undefined && !visible.includes(value)) return;
+      this._value = value;
+      this._emit();
+    });
+    parent.append(picker);
+  }
+}
+
+if (!customElements.get("ha-selector-grenton_entity")) {
+  customElements.define("ha-selector-grenton_entity", GrentonEntityPicker);
+}
+
 if (!customElements.get("ha-selector-grenton_scene")) {
   customElements.define("ha-selector-grenton_scene", GrentonSceneEditor);
 }

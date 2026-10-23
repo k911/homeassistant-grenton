@@ -86,7 +86,8 @@ After initial setup, you can customize individual entities:
 
 1. Navigate to **Settings** → **Devices & Services** → **Grenton**
 2. Click **Configure** on the integration
-3. Choose **Configure entities**, then select an entity
+3. Choose **Configure entities**, then select an entity. Use **Entity type** to
+   filter the list; **All entities** is selected by default.
 4. Configure entity properties:
    - **Sensors**: Choose device class and unit of measurement
    - **Sliders (Numbers)**: Set display mode, device class, and unit
@@ -97,7 +98,7 @@ After initial setup, you can customize individual entities:
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
 
-Choose **Configure → CLU read settings**, select a controller, and set its
+Choose **Configure → Configure CLU**, select a controller, and set its
 **Polling interval** (default **60 seconds**, whole seconds from 1 to 86400).
 Each CLU has its own interval: for example, the main CLU can poll temperatures
 every 60 seconds while HTTP Gate polls every 5 seconds. Saving changes only
@@ -150,8 +151,8 @@ channel, and for custom CLU variable sensors.
 VALUE_V2 and VALUE_DOUBLE entities configured with the **Temperature** device
 class automatically use slow polling. This also applies to existing temperature
 entities on reload, including configurations previously saved as realtime.
-Selecting Temperature in the configuration saves **Slow polling** automatically.
-Other values retain their configurable **Realtime** / **Slow polling** choice,
+Selecting Temperature in the configuration saves **Polling** automatically.
+Other values retain their configurable **Realtime** / **Polling** choice,
 independently for each VALUE_DOUBLE channel.
 
 Thermostat current temperature, target temperature, minimum and maximum are
@@ -163,7 +164,7 @@ retain their targeted readback checks.
 **CLU_GATE_HTTP** uses polling for every binding, including controls and
 controller diagnostics, because it does not provide realtime updates. It opens
 no realtime subscription sockets. Its polling interval can be shorter than the
-main CLU's; configure it under **CLU read settings**. User actions still execute
+main CLU's; configure it under **Configure CLU**. User actions still execute
 immediately; displayed feedback follows the next poll or an explicit readback.
 
 Polled values are read at startup and then at their source CLU's configured

@@ -106,16 +106,44 @@ class GrentonEntityThermostatV2(
             return str(error)
         return "ready"
 
+    def _log_context(self, *bindings: str) -> str:
+        """Identify both the HA device and the actual Grenton read targets."""
+        device = self.device_entry
+        device_name = (
+            ((device.name_by_user or device.name) if device is not None else None)
+            or (self.device_info or {}).get("name")
+            or self.label
+        )
+        parts = [f"device={device_name!r}", f"widget={self.unique_id}"]
+        if self.entity_id:
+            parts.append(f"entity={self.entity_id}")
+        for name in bindings:
+            if (state := self.states.get(name)) is None:
+                continue
+            source = state.source_attributes
+            target = (
+                f"variable:{source['variable_name']}"
+                if source["call_type"] == "VARIABLE"
+                else f"{source['object_name']}.{source['index']}"
+            )
+            parts.append(f"{name}={source['clu_id']}/{target}")
+        return ", ".join(parts)
+
     def _analyse_schedule(self) -> None:
         status = self.schedule_status
         if status != self._last_schedule_status:
             self._last_schedule_status = status
             if status == "ready":
                 _LOGGER.debug(
-                    "[%s] CLU weekly schedule decoded successfully", self.unique_id
+                    "[%s] CLU weekly schedule decoded successfully",
+                    self._log_context("scheduleData", "maxTemperature"),
                 )
             else:
-                _LOGGER.warning("[%s] Schedule unavailable: %s", self.unique_id, status)
+                _LOGGER.warning(
+                    "[%s] Schedule unavailable: %s",
+                    self._log_context("scheduleData", "maxTemperature"),
+                    status,
+                )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -514,7 +542,8 @@ class GrentonEntityThermostatV2(
             ):
                 return
         _LOGGER.warning(
-            "[%s] CLU did not confirm thermostat schedule/limit changes", self.unique_id
+            "[%s] CLU did not confirm thermostat schedule/limit changes",
+            self._log_context("scheduleData", "minTemperature", "maxTemperature"),
         )
         raise HomeAssistantError(
             "The CLU did not confirm the saved schedule and temperature limits. Reopen configuration to inspect the current device values."

@@ -222,7 +222,9 @@ def test_schedule_write_retries_readback_when_controller_update_is_delayed():
 
 
 @pytest.mark.parametrize("fresh", [True, False])
-def test_unconfirmed_schedule_is_an_error_even_if_a_write_was_acknowledged(fresh):
+def test_unconfirmed_schedule_is_an_error_even_if_a_write_was_acknowledged(
+    fresh, caplog
+):
     entity, coord = thermostat()
     coord.execute_action.side_effect = None  # ACK, but CLU does not apply it.
     coord.async_refresh_clu_state.side_effect = [True, fresh, fresh, fresh]
@@ -230,6 +232,10 @@ def test_unconfirmed_schedule_is_an_error_even_if_a_write_was_acknowledged(fresh
         asyncio.run(entity.async_set_thermostat_schedule(constant_week(23)))
     assert set(entity.decoded_schedule.temperatures) == {20}
     assert coord.execute_action.await_count == 1
+    assert entity.label in caplog.text
+    assert "scheduleData=clu1/THERMOSTAT1.9" in caplog.text
+    assert "minTemperature=clu1/THERMOSTAT1.10" in caplog.text
+    assert "maxTemperature=clu1/THERMOSTAT1.11" in caplog.text
 
 
 def test_failed_initial_read_never_writes_using_stale_cached_schedule():

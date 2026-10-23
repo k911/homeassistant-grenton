@@ -264,7 +264,7 @@ def test_popup_prefills_groups_and_saves_one_complete_week_without_changing_mode
             listing = await flow.async_step_entity_list()
             assert (
                 entity.entity_id
-                in ui_fields(listing)["entity"]["selector"]["entity"][
+                in ui_fields(listing)["entity"]["selector"]["grenton_entity"][
                     "include_entities"
                 ]
             )

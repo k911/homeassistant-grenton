@@ -15,6 +15,7 @@ from .domain.entities.clu_variables import (
     variable_definitions,
     variable_options,
 )
+from .entity_picker import GrentonEntitySelector
 from .read_policy import (
     CONF_CLU_READ_SETTINGS,
     CONF_SLOW_READ_INTERVAL,
@@ -166,17 +167,14 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                 self.selected_entity_uid = matched.unique_id
                 return await self.async_step_configure_entity()
 
-        # Build entity selection schema using EntitySelector with include_entities
+        # The selector filters locally while retaining HA's native entity search.
         return self.async_show_form(
             step_id="entity_list",
             last_step=False,
             data_schema=vol.Schema(
                 {
-                    vol.Required("entity"): selector.EntitySelector(  # type: ignore[misc]
-                        selector.EntitySelectorConfig(
-                            include_entities=sorted(entity_ids),
-                            multiple=False,
-                        )
+                    vol.Required("entity"): GrentonEntitySelector(
+                        {"include_entities": sorted(entity_ids)}
                     ),
                 }
             ),

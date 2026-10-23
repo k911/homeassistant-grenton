@@ -36,7 +36,7 @@
     "step": {
       "entity_list": {
         "title": "Configure Entities",
-        "description": "Select an entity to configure its properties.",
+        "description": "Filter by type or search all entities.",
         "data": {
           "entity": "Entity"
         }
@@ -144,13 +144,13 @@
       },
       "configure_value_v2_type": {
         "title": "Configure {entity_name} - Entity Type",
-        "description": "Choose a sensor or binary sensor. Binary sensors support configurable state inversion.",
+        "description": "Choose the entity type and read mode.",
         "data": {
           "entity_type": "Entity type",
           "read_mode": "Read mode"
         },
         "data_description": {
-          "read_mode": "Temperature sensors automatically use slow polling, including existing entities. Other values can use either mode. The interval is configured per CLU; HTTP Gate polls all values."
+          "read_mode": "Temperatures use periodic reads at the interval configured for the CLU."
         }
       },
       "configure_value_v2_binary": {
@@ -175,19 +175,19 @@
         "title": "Grenton settings",
         "menu_options": {
           "entity_list": "Configure entities",
-          "clu_read_settings": "CLU read settings"
+          "clu_read_settings": "Configure CLU"
         }
       },
       "clu_read_settings": {
-        "title": "CLU read settings",
-        "description": "Select the CLU to configure its polling interval.",
+        "title": "Configure CLU",
+        "description": "Select a CLU to configure.",
         "data": {
           "clu_id": "CLU"
         }
       },
       "clu_read_interval": {
-        "title": "Read settings — {clu_name}",
-        "description": "Interval for temperature and other polled values on this CLU (default: 60 seconds). HTTP Gate uses polling for all values. Saving changes only this CLU’s timer.",
+        "title": "Configure {clu_name}",
+        "description": "Applies to periodic reads from this CLU.",
         "data": {
           "slow_read_interval": "Polling interval (seconds)"
         }
@@ -747,7 +747,25 @@
     "value_read_modes": {
       "options": {
         "realtime": "Realtime",
-        "slow": "Slow polling"
+        "slow": "Polling"
+      }
+    },
+    "entity_picker": {
+      "fields": {
+        "entity_type": "Entity type",
+        "entity": "Entity"
+      },
+      "types": {
+        "all": "All entities",
+        "sensor": "Sensors",
+        "binary_sensor": "Binary sensors",
+        "switch": "Switches",
+        "light": "Lights",
+        "button": "Buttons",
+        "number": "Numbers",
+        "cover": "Covers",
+        "camera": "Cameras",
+        "climate": "Thermostats"
       }
     }
   }
