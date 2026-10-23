@@ -112,6 +112,37 @@
           "action_off": "Turn off action"
         }
       },
+      "configure_dimmer_state": {
+        "title": "Configure {entity_name} - Brightness source (1/4)",
+        "description": "Choose the brightness source and its native range. Precision is the number of decimal places sent to Grenton.",
+        "data": {
+          "state": "Brightness source",
+          "min": "Minimum value",
+          "max": "Maximum value",
+          "precision": "Decimal places"
+        }
+      },
+      "configure_dimmer_on_action": {
+        "title": "Configure {entity_name} - Turn on (2/4)",
+        "description": "Configure the turn-on command.",
+        "data": {
+          "action_on": "Turn on action"
+        }
+      },
+      "configure_dimmer_off_action": {
+        "title": "Configure {entity_name} - Turn off (3/4)",
+        "description": "Configure the turn-off command.",
+        "data": {
+          "action_off": "Turn off action"
+        }
+      },
+      "configure_dimmer_brightness_action": {
+        "title": "Configure {entity_name} - Set brightness (4/4)",
+        "description": "Use $value$ for the brightness in the native range. For Script/Method, put it in a Lua expression argument. Keep other arguments as needed. Saving reloads the integration.",
+        "data": {
+          "action_set_value": "Brightness action"
+        }
+      },
       "clu_variables": {
         "title": "Configure {clu_name} variables",
         "description": "Add, edit, or remove custom CLU variables exposed in Home Assistant.",

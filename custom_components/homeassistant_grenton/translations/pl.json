@@ -112,6 +112,37 @@
           "action_off": "Akcja wyłączania"
         }
       },
+      "configure_dimmer_state": {
+        "title": "Konfiguracja {entity_name} - Źródło jasności (1/4)",
+        "description": "Wybierz źródło jasności i jego zakres. Precyzja określa liczbę miejsc po przecinku wysyłanych do Grentona.",
+        "data": {
+          "state": "Źródło jasności",
+          "min": "Wartość minimalna",
+          "max": "Wartość maksymalna",
+          "precision": "Miejsca po przecinku"
+        }
+      },
+      "configure_dimmer_on_action": {
+        "title": "Konfiguracja {entity_name} - Włączanie (2/4)",
+        "description": "Skonfiguruj wywołanie włączania.",
+        "data": {
+          "action_on": "Akcja włączania"
+        }
+      },
+      "configure_dimmer_off_action": {
+        "title": "Konfiguracja {entity_name} - Wyłączanie (3/4)",
+        "description": "Skonfiguruj wywołanie wyłączania.",
+        "data": {
+          "action_off": "Akcja wyłączania"
+        }
+      },
+      "configure_dimmer_brightness_action": {
+        "title": "Konfiguracja {entity_name} - Ustawianie jasności (4/4)",
+        "description": "Użyj $value$ jako jasności w zakresie Grentona. Dla skryptu/metody wybierz argument typu wyrażenie Lua. Zachowaj pozostałe potrzebne argumenty. Zapisanie przeładowuje integrację.",
+        "data": {
+          "action_set_value": "Akcja ustawiania jasności"
+        }
+      },
       "clu_variables": {
         "title": "Konfiguracja zmiennych {clu_name}",
         "description": "Dodaj, edytuj lub usuń własne zmienne CLU udostępnione w Home Assistant.",

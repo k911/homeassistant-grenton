@@ -93,6 +93,7 @@ After initial setup, you can customize individual entities:
    - **Sliders (Numbers)**: Set display mode, device class, and unit
    - **Binary Sensors**: Select appropriate device class
    - **On/Off controls**: Choose whether the entity is a switch or a light
+   - **Dimmers**: Configure the brightness source, native range, and ON/OFF/brightness commands
    - **Scenes**: Review or change the action call type, CLU, script/object name, index, and arguments/value
    - **Thermostats**: Enable cooling, select the control direction, and edit weekly schedules
 
@@ -217,6 +218,27 @@ restarts and interface reconfiguration.
 Changing the type changes the entity domain (`switch.…` ↔ `light.…`) and removes
 the previous entity registration. Update dashboards and automations to reference
 the new entity ID. You can change the choice again through the same dialog.
+
+### Dimmer (DIMMER_V2)
+
+`DIMMER_V2` creates a brightness-capable light. Home Assistant brightness (0–255)
+is scaled to the widget's native `min`/`max` range and rounded to `precision`
+decimal places. Zero brightness uses the OFF action; turning on without a
+brightness value uses the separate ON action.
+
+Under **Configure entities**, four forms configure the brightness source and
+range, ON action, OFF action, and brightness action. Sources support Attribute
+and Variable; actions support Attribute, Variable, Method and Script. Settings
+start from the imported interface and persist across reloads and interface
+refreshes. Saving reloads the integration and registers the configured source.
+
+The brightness action uses `$value$` for the scaled level, preserving other
+arguments: `LEDSetValue("livingRoom",$value$)` becomes
+`LEDSetValue("livingRoom",128.0)` at brightness 128 with a 0–255 range and precision 2.
+In the Script/Method argument editor, use **Lua expression** for `$value$` and
+**String** for a fixed room name. Attribute/Variable actions use `$value$` in
+their value field. The entity attributes show `state_source`, `brightness_range`
+and all three actions with their call types, targets, arguments and call templates.
 
 ### Thermostat (THERMOSTAT_V2)
 
