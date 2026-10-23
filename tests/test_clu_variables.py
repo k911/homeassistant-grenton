@@ -56,6 +56,9 @@ def configure_manager(hass, entry):
 async def open_clu_variables(manager, entry):
     """Select the controller through the integration's native entity picker."""
     form = await manager.async_init(entry.entry_id)
+    form = await manager.async_configure(
+        form["flow_id"], {"next_step_id": "entity_list"}
+    )
     assert form["step_id"] == "entity_list"
     return await manager.async_configure(
         form["flow_id"], {"entity": "sensor.main_controller"}
@@ -220,6 +223,9 @@ def test_flow_validates_names_types_scope_and_unit_without_saving(tmp_path):
         manager = configure_manager(hass, entry)
         entry.runtime_data.clu_entities[0].entity_id = "sensor.main_controller"
         form = await manager.async_init(entry.entry_id)
+        form = await manager.async_configure(
+            form["flow_id"], {"next_step_id": "entity_list"}
+        )
         with pytest.raises(InvalidData):
             await manager.async_configure(
                 form["flow_id"], {"entity": "sensor.missing_controller"}
@@ -467,6 +473,9 @@ def test_integration_entity_editor_uses_same_variable_schema_and_persistence(tmp
         manager = configure_manager(hass, entry)
         controller, counter = entities
         form = await manager.async_init(entry.entry_id)
+        form = await manager.async_configure(
+            form["flow_id"], {"next_step_id": "entity_list"}
+        )
         choices = fields(form)["entity"]["selector"]["entity"]["include_entities"]
         assert set(choices) == {controller.entity_id, counter.entity_id}
         form = await manager.async_configure(
@@ -496,6 +505,9 @@ def test_integration_entity_editor_uses_same_variable_schema_and_persistence(tmp
             key.name for key in refreshed.state.clus[clu.id].get_subscription_order()
         ] == ["Enabled"]
         form = await manager.async_init(entry.entry_id)
+        form = await manager.async_configure(
+            form["flow_id"], {"next_step_id": "entity_list"}
+        )
         form = await manager.async_configure(
             form["flow_id"], {"entity": controller.entity_id}
         )

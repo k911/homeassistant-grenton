@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -16,8 +18,10 @@ from .domain.action import GrentonAction
 from .domain.api.clu import GrentonCluApi
 from .domain.api.clu_messages import GrentonCluApiActionRequest
 from .domain.clu import GrentonClu
+from .domain.device_types import CLU_GATE_HTTP
 from .domain.encryption import GrentonEncryption
 from .domain.state_object import GrentonStateObject, GrentonVariableValueObject
+from .read_policy import slow_read_interval, validate_slow_read_interval
 from .state import (
     MISSING_STATE,
     GrentonCluState,
@@ -54,6 +58,19 @@ class GrentonCoordinator(DataUpdateCoordinator):
         self._shutdown_lock = asyncio.Lock()
         self._stopping = False
         self._stop_listener: Callable[[], None] | None = None
+        self._realtime_keys: dict[str, set[StateKey]] = {clu.id: set() for clu in clus}
+        self._slow_keys: dict[str, set[StateKey]] = {clu.id: set() for clu in clus}
+        self._slow_success: dict[str, dict[StateKey, tuple[float, datetime]]] = {
+            clu.id: {} for clu in clus
+        }
+        self._slow_read_intervals = {
+            clu.id: slow_read_interval(config_entry.options, clu.id) for clu in clus
+        }
+        self._poll_only_clus = {
+            clu.id for clu in clus if clu.device_type == CLU_GATE_HTTP
+        }
+        self._slow_tasks: dict[str, asyncio.Task] = {}
+        self._slow_settings_lock = asyncio.Lock()
         
         # Initialize API instances for each CLU
         for clu in clus:
@@ -120,12 +137,19 @@ class GrentonCoordinator(DataUpdateCoordinator):
         clu_state = self.state.clus[clu_id]
 
         # Check if there are any states to register
-        if not clu_state.has_states_to_register():
+        if not self._realtime_keys[clu_id] or (
+            required_keys is not None
+            and required_keys.isdisjoint(self._realtime_keys[clu_id])
+        ):
             _LOGGER.debug("[%s] No component states to register", clu_id)
             return set()
 
         try:
-            keys = clu_state.get_subscription_order()
+            keys = [
+                key
+                for key in clu_state.get_subscription_order()
+                if key in self._realtime_keys[clu_id]
+            ]
             versions = self._report_versions[clu_id].copy()
             values = (
                 await api.register_component_states(keys)
@@ -161,7 +185,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
                 # Only register if there are actual states to register
                 clu_ids_to_register = [
                     clu_id for clu_id, clu_state in self.state.clus.items()
-                    if clu_state.has_states_to_register()
+                    if self._realtime_keys[clu_id]
                 ]
                 
                 if not clu_ids_to_register:
@@ -229,9 +253,25 @@ class GrentonCoordinator(DataUpdateCoordinator):
 
         self.async_set_updated_data(self.state.__dict__)
         _LOGGER.debug("[%s] Processed report with %d values", clu_id, len(values))
-    
-    def register_component_state(self, state: GrentonStateObject, *, large_value: bool = False) -> None:
+
+    def register_component_state(
+        self,
+        state: GrentonStateObject,
+        *,
+        large_value: bool = False,
+        read_mode: str = "realtime",
+    ) -> None:
         self.state.register_state(state)
+        key = self._state_key(state)
+        if state.clu_id not in self._realtime_keys:
+            return
+        if state.clu_id in self._poll_only_clus:
+            self._slow_keys[state.clu_id].add(key)
+        elif read_mode == "slow" and key not in self._realtime_keys[state.clu_id]:
+            self._slow_keys[state.clu_id].add(key)
+        elif read_mode != "slow":
+            self._realtime_keys[state.clu_id].add(key)
+            self._slow_keys[state.clu_id].discard(key)
         if large_value and (api := self._apis.get(state.clu_id)) is not None:
             api.large_value_keys.add(self._state_key(state))
 
@@ -247,7 +287,95 @@ class GrentonCoordinator(DataUpdateCoordinator):
         received = await self._send_register(
             clu_id, required if required_states is not None else None
         )
+        if slow_required := required & self._slow_keys[clu_id]:
+            received |= await self._send_slow_poll(clu_id, slow_required)
         return required <= received
+
+    def state_read_mode(self, state: GrentonStateObject) -> str:
+        return (
+            "slow"
+            if self._state_key(state) in self._slow_keys.get(state.clu_id, set())
+            else "realtime"
+        )
+
+    def last_polled(self, state: GrentonStateObject) -> str | None:
+        stamp = self._slow_success.get(state.clu_id, {}).get(self._state_key(state))
+        return (
+            stamp[1].isoformat()
+            if stamp is not None and self.state_read_mode(state) == "slow"
+            else None
+        )
+
+    def is_state_fresh(self, state: GrentonStateObject) -> bool:
+        if self.state_read_mode(state) != "slow":
+            return True
+        stamp = self._slow_success[state.clu_id].get(self._state_key(state))
+        return (
+            stamp is not None
+            and monotonic() - stamp[0] < self._slow_read_intervals[state.clu_id] * 2
+        )
+
+    async def _send_slow_poll(
+        self, clu_id: str, required_keys: set[StateKey] | None = None
+    ) -> set[StateKey]:
+        async with self._read_locks[clu_id]:
+            if self._stopping or (api := self._apis.get(clu_id)) is None:
+                return set()
+            keys = [
+                key
+                for key in self.state.clus[clu_id].get_subscription_order()
+                if key in self._slow_keys[clu_id]
+                and (required_keys is None or key in required_keys)
+            ]
+            if not keys:
+                return set()
+            received: set[StateKey] = set()
+            try:
+                values = await api.poll_component_states(keys)
+                if len(values) != len(keys):
+                    _LOGGER.warning("[%s] Incomplete slow-read response", clu_id)
+                else:
+                    self.state.clus[clu_id].update_keys(keys, values)
+                    stamp = (monotonic(), datetime.now(UTC))
+                    for key, value in zip(keys, values):
+                        if not isinstance(value, MissingState):
+                            self._slow_success[clu_id][key] = stamp
+                            received.add(key)
+            except Exception as error:  # noqa: BLE001 - keep polling after unexpected read errors
+                _LOGGER.warning("[%s] Slow read failed: %s", clu_id, error)
+            # Failed polls also notify entities so stale readings become unavailable.
+            self.async_set_updated_data(self.state.__dict__)
+            return received
+
+    async def _slow_poll_loop(self, clu_id: str) -> None:
+        while not self._stopping:
+            await asyncio.sleep(self._slow_read_intervals[clu_id])
+            await self._send_slow_poll(clu_id)
+
+    def _start_slow_task(self, clu_id: str) -> None:
+        if not self._stopping and self._slow_keys[clu_id]:
+            self._slow_tasks[clu_id] = asyncio.create_task(self._slow_poll_loop(clu_id))
+            _LOGGER.info(
+                "[%s] Polling %d values every %d seconds on the control socket",
+                clu_id,
+                len(self._slow_keys[clu_id]),
+                self._slow_read_intervals[clu_id],
+            )
+
+    def _start_slow_tasks(self) -> None:
+        for clu_id in self._slow_keys:
+            self._start_slow_task(clu_id)
+
+    async def async_set_slow_read_interval(self, clu_id: str, interval: int) -> None:
+        async with self._slow_settings_lock:
+            if clu_id not in self._slow_read_intervals:
+                raise ValueError("Unknown CLU")
+            self._slow_read_intervals[clu_id] = validate_slow_read_interval(interval)
+            if task := self._slow_tasks.pop(clu_id, None):
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            self._start_slow_task(clu_id)
+            self.async_set_updated_data(self.state.__dict__)
 
     async def async_setup(self) -> None:
         self._stop_listener = self.hass.bus.async_listen_once(
@@ -277,21 +405,31 @@ class GrentonCoordinator(DataUpdateCoordinator):
             retries = [
                 self._send_register(
                     clu_id,
-                    set(self.state.clus[clu_id].get_subscription_order())
+                    self._realtime_keys[clu_id]
                     - (result if isinstance(result, set) else set()),
                 )
                 for clu_id, result in zip(self.state.clus, results)
                 if not isinstance(result, set)
-                or not set(self.state.clus[clu_id].get_subscription_order()) <= result
+                or not self._realtime_keys[clu_id] <= result
             ]
             if retries:
                 await asyncio.gather(*retries, return_exceptions=True)
+
+        # Slow values are read once at startup, then on their independent cadence.
+        await asyncio.gather(
+            *(
+                self._send_slow_poll(clu_id)
+                for clu_id, keys in self._slow_keys.items()
+                if keys
+            )
+        )
 
         # Start background tasks
         if self._stopping:
             raise HomeAssistantError("Grenton setup was interrupted by shutdown")
         self._ping_task = asyncio.create_task(self._ping_loop())
         self._register_task = asyncio.create_task(self._register_loop())
+        self._start_slow_tasks()
 
     async def _connect_api(self, api: GrentonCluApi) -> None:
         """Connect a single API instance."""
@@ -329,10 +467,12 @@ class GrentonCoordinator(DataUpdateCoordinator):
                 for name in ("_ping_task", "_register_task")
                 if (task := getattr(self, name, None)) is not None
             ]
+            tasks.extend(self._slow_tasks.values())
             for task in tasks:
                 task.cancel()
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
+            self._slow_tasks.clear()
             # UDP close releases local ports; it is not a remote unsubscribe.
             await asyncio.gather(
                 *(self._disconnect_api(api) for api in self._apis.values()),
@@ -349,4 +489,6 @@ class GrentonCoordinator(DataUpdateCoordinator):
     
     def get_value_for_component(self, state: GrentonStateObject) -> GrentonValue | None:
         """Get the value for a component from the state."""
+        if not self.is_state_fresh(state):
+            return None
         return self.state.get_value_for_component(state)

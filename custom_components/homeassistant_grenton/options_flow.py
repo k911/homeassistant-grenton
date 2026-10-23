@@ -15,6 +15,14 @@ from .domain.entities.clu_variables import (
     variable_definitions,
     variable_options,
 )
+from .read_policy import (
+    CONF_CLU_READ_SETTINGS,
+    CONF_SLOW_READ_INTERVAL,
+    MAX_SLOW_READ_INTERVAL,
+    MIN_SLOW_READ_INTERVAL,
+    slow_read_interval,
+    validate_slow_read_interval,
+)
 
 
 class GrentonOptionsFlow(OptionsFlowWithReload):
@@ -44,8 +52,93 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage the options - show list of entities to configure."""
-        return await self.async_step_entity_list(user_input)
+        """Separate per-CLU polling settings from individual entities."""
+        return self.async_show_menu(
+            step_id="init", menu_options=["clu_read_settings", "entity_list"]
+        )
+
+    def _configured_clus(self) -> dict[str, str]:
+        """Allow read configuration even while the integration is unloaded."""
+        return {
+            clu["id"]: clu.get("name", clu["id"])
+            for clu in self.config_entry.data.get("interface", {}).get("clus", [])
+        }
+
+    async def async_step_clu_read_settings(self, user_input=None):
+        clus = self._configured_clus()
+        errors = {}
+        if user_input is not None:
+            clu_id = user_input.get("clu_id")
+            if clu_id in clus:
+                self._read_clu_id = clu_id
+                return await self.async_step_clu_read_interval()
+            errors["clu_id"] = "invalid_configuration"
+        return self.async_show_form(
+            step_id="clu_read_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("clu_id"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": clu_id, "label": f"{name} ({clu_id})"}
+                                for clu_id, name in clus.items()
+                            ]
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_clu_read_interval(self, user_input=None):
+        errors = {}
+        interval = slow_read_interval(self.config_entry.options, self._read_clu_id)
+        if user_input is not None:
+            try:
+                interval = validate_slow_read_interval(
+                    user_input.get(CONF_SLOW_READ_INTERVAL)
+                )
+            except vol.Invalid:
+                errors[CONF_SLOW_READ_INTERVAL] = "invalid_configuration"
+            else:
+                options = dict(self.config_entry.options)
+                settings = dict(options.get(CONF_CLU_READ_SETTINGS, {}))
+                settings[self._read_clu_id] = {
+                    **settings.get(self._read_clu_id, {}),
+                    CONF_SLOW_READ_INTERVAL: interval,
+                }
+                options[CONF_CLU_READ_SETTINGS] = settings
+                # Change only this CLU's timer, retaining all existing sockets.
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                if runtime is not None:
+                    await runtime.coordinator.async_set_slow_read_interval(
+                        self._read_clu_id, interval
+                    )
+                self.automatic_reload = False
+                return self.async_create_entry(title="", data=options)
+        return self.async_show_form(
+            step_id="clu_read_interval",
+            last_step=True,
+            errors=errors,
+            description_placeholders={
+                "clu_name": self._configured_clus()[self._read_clu_id]
+            },
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SLOW_READ_INTERVAL, default=interval
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MIN_SLOW_READ_INTERVAL,
+                            max=MAX_SLOW_READ_INTERVAL,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                            unit_of_measurement="s",
+                        )
+                    )
+                }
+            ),
+        )
 
     async def async_step_entity_list(
         self, user_input: dict[str, Any] | None = None

@@ -73,7 +73,7 @@ class GrentonCluApi:
         self.large_value_keys: set[StateKey] = set()
         self._closed = False
 
-        # Main socket — used for pings and actions only.
+        # Main socket — shared by pings, actions and one-off polling reads.
         self.transport: Optional[asyncio.DatagramTransport] = None
         self.protocol: Optional[GrentonCluApiProtocol] = None
         self.keep_alive_id = secrets.token_hex(4)
@@ -319,18 +319,52 @@ class GrentonCluApi:
             return [MISSING_STATE] * len(endpoint.keys)
         if wire is None:
             return [MISSING_STATE] * len(endpoint.keys)
+        return self._parse_state_response(wire, endpoint.keys)
+
+    def _parse_state_response(
+        self, wire: str, keys: list[StateKey]
+    ) -> list[GrentonRegistrationValue]:
         try:
-            values = GrentonCluApiClientRegisterResponse(
-                wire, endpoint.keys, self.clu
-            ).values
-            if len(values) != len(endpoint.keys):
-                raise ValueError(
-                    f"Expected {len(endpoint.keys)} values, received {len(values)}"
-                )
+            values = GrentonCluApiClientRegisterResponse(wire, keys, self.clu).values
+            if len(values) != len(keys):
+                raise ValueError(f"Expected {len(keys)} values, received {len(values)}")
             return list(values)
         except ValueError as e:
             _LOGGER.error("[%s] Failed to parse register response: %s", self.clu.id, e)
-            return [MISSING_STATE] * len(endpoint.keys)
+            return [MISSING_STATE] * len(keys)
+
+    async def poll_component_states(
+        self, keys: list[StateKey]
+    ) -> list[GrentonRegistrationValue]:
+        """Read session 1 on the existing control socket without realtime groups."""
+        async with self._registration_lock:
+            # HTTP Gate polls all values, including potentially large schedules.
+            ordinary = [key for key in keys if key not in self.large_value_keys]
+            chunks = [
+                ordinary[offset : offset + MAX_KEYS_PER_REGISTER]
+                for offset in range(0, len(ordinary), MAX_KEYS_PER_REGISTER)
+            ]
+            chunks.extend([key] for key in keys if key in self.large_value_keys)
+            values_by_key: dict[StateKey, GrentonRegistrationValue] = {}
+            for chunk in chunks:
+                wire = None
+                if not self._closed and self.protocol is not None:
+                    # Batch keys can differ: fresh IDs prevent delayed replies
+                    # from a previous poll being assigned to the wrong keys.
+                    request = GrentonCluApiClientRegisterRequest(chunk, 1)
+                    try:
+                        async with self._action_lock:
+                            if not self._closed:
+                                wire = await self.protocol.send_request(request)
+                    except ConnectionError:
+                        pass
+                values = (
+                    self._parse_state_response(wire, chunk)
+                    if wire is not None
+                    else [MISSING_STATE] * len(chunk)
+                )
+                values_by_key.update(zip(chunk, values))
+            return [values_by_key.get(key, MISSING_STATE) for key in keys]
 
     async def execute_action(self, action: GrentonAction) -> bool:
         """Execute an action on the CLU via the main socket."""
@@ -477,7 +511,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
             async with self._pending_lock:
                 self._pending.pop(msg_id, None)
             if isinstance(request, GrentonCluApiClientRegisterRequest):
-                operation = f"state read ({len(request.keys)} keys)"
+                operation = f"{'slow' if request.session_id == 1 else 'state'} read ({len(request.keys)} keys)"
             elif isinstance(request, GrentonCluApiPingRequest):
                 operation = "ping"
             else:

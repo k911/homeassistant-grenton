@@ -70,6 +70,13 @@ class GrentonEntityThermostatV2(
         for name, state in states.items():
             if name == "scheduleData":
                 coordinator.register_component_state(state, large_value=True)
+            elif name in (
+                "currentTemperature",
+                "targetTemperature",
+                "minTemperature",
+                "maxTemperature",
+            ):
+                coordinator.register_component_state(state, read_mode="slow")
             else:
                 coordinator.register_component_state(state)
 
@@ -320,6 +327,7 @@ class GrentonEntityThermostatV2(
             raise ServiceValidationError(f"Unsupported HVAC mode: {hvac_mode}")
         async with self._command_lock:
             await self._set_hvac_mode(hvac_mode)
+            await self._refresh_target()
 
     async def _set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Change mode and power while the caller holds the command lock."""
@@ -380,6 +388,15 @@ class GrentonEntityThermostatV2(
             await self._execute("setTargetTemperatureAction", str(temperature))
             if requested_mode is not None:
                 await self._set_hvac_mode(requested_mode)
+            await self._refresh_target()
+
+    async def _refresh_target(self) -> None:
+        """Read the authoritative target after a write instead of waiting a minute."""
+        state = self.states.get("targetTemperature")
+        if state is not None:
+            await self.coordinator.async_refresh_clu_state(
+                state.clu_id, required_states=[state]
+            )
 
     async def async_set_thermostat_schedule(self, schedule: Any) -> None:
         """Replace the complete week without changing mode, power or metadata."""
@@ -389,7 +406,12 @@ class GrentonEntityThermostatV2(
     async def _refresh_schedule(self) -> bool:
         states = [
             self.states[name]
-            for name in ("scheduleData", "minTemperature", "maxTemperature")
+            for name in (
+                "scheduleData",
+                "minTemperature",
+                "maxTemperature",
+                "targetTemperature",
+            )
         ]
         # Bindings may refer to different CLUs; each required source must reply.
         results = []

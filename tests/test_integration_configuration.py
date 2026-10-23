@@ -47,7 +47,7 @@ def test_integration_options_lists_all_widgets_and_preserves_sibling_configurati
             return_value=coord.config_entry,
         ):
             global_flow = GrentonOptionsFlow()
-            result = await global_flow.async_step_init()
+            result = await global_flow.async_step_entity_list()
             assert (
                 len(fields(result)["entity"]["selector"]["entity"]["include_entities"])
                 == 3

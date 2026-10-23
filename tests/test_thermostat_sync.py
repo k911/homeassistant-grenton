@@ -51,6 +51,9 @@ def test_schedule_reports_are_isolated_and_subscription_sockets_are_reused(tmp_p
             )
 
         api._open_chunk_socket = AsyncMock(side_effect=open_socket)
+        api.poll_component_states = AsyncMock(
+            side_effect=lambda keys: [30 for key in keys]
+        )
         values = await api.register_component_states(keys)
         endpoints = api._subscription_endpoints.copy()
         assert next(
@@ -58,6 +61,7 @@ def test_schedule_reports_are_isolated_and_subscription_sockets_are_reused(tmp_p
         ).keys == [schedule_key]
         assert values[keys.index(schedule_key)] == week
         await coord._process_report("clu1", keys, values)
+        await coord._send_slow_poll("clu1")
         assert entity.decoded_schedule is not None
         assert await api.register_component_states(keys) == values
         assert api._subscription_endpoints == endpoints
@@ -132,7 +136,10 @@ def test_newer_push_wins_over_registration_snapshot_and_actual_nil_clears_state(
             return [values[key.name] for key in _keys]
 
         coord._apis["clu1"] = SimpleNamespace(
-            register_component_states=AsyncMock(side_effect=initial_read)
+            register_component_states=AsyncMock(side_effect=initial_read),
+            poll_component_states=AsyncMock(
+                side_effect=lambda keys: [values[key.name] for key in keys]
+            ),
         )
         assert await coord.async_refresh_clu_state("clu1")
         assert entity.hvac_mode == "off"  # Old snapshot says on; newer push says off.
@@ -160,7 +167,11 @@ def test_startup_pulls_values_retries_failure_and_decodes_without_writing(tmp_pa
         hass = await make_hass(tmp_path, [entry])
         coord = coordinator(hass, entry, [make_clu("clu1")])
         entity = DeviceMapper.to_domain(widget(), coord).entities[0]
-        keys = coord.state.clus["clu1"].get_subscription_order()
+        keys = [
+            key
+            for key in coord.state.clus["clu1"].get_subscription_order()
+            if key in coord._realtime_keys["clu1"]
+        ]
         values = {
             "6": 1,
             "7": 1,
@@ -177,6 +188,9 @@ def test_startup_pulls_values_retries_failure_and_decodes_without_writing(tmp_pa
             ping=AsyncMock(return_value=True),
             disconnect=AsyncMock(),
             execute_action=AsyncMock(),
+            poll_component_states=AsyncMock(
+                side_effect=lambda keys: [values[key.name] for key in keys]
+            ),
             register_component_states=AsyncMock(
                 side_effect=[
                     [MISSING_STATE] * len(keys),

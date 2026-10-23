@@ -146,7 +146,11 @@
         "title": "Konfiguracja {entity_name} - Typ encji",
         "description": "Wybierz czujnik lub czujnik binarny. Czujniki binarne umożliwiają odwrócenie stanu.",
         "data": {
-          "entity_type": "Typ encji"
+          "entity_type": "Typ encji",
+          "read_mode": "Tryb odczytu"
+        },
+        "data_description": {
+          "read_mode": "Czujniki temperatury automatycznie używają wolnego odpytywania, również istniejące encje. Dla innych wartości można wybrać tryb. Interwał ustawia się osobno dla CLU; HTTP Gate odpytuje wszystkie wartości."
         }
       },
       "configure_value_v2_binary": {
@@ -165,6 +169,27 @@
         "description": "Włącz opcjonalne chłodzenie, wybierz kierunek grzania/chłodzenia niezależnie od trybu ręcznego/harmonogramu i edytuj harmonogram tygodniowy. Zapis harmonogramu zachowuje zasilanie i tryb pracy.",
         "data": {
           "thermostat": "Ustawienia termostatu"
+        }
+      },
+      "init": {
+        "title": "Ustawienia Grenton",
+        "menu_options": {
+          "entity_list": "Konfiguruj encje",
+          "clu_read_settings": "Ustawienia odczytu CLU"
+        }
+      },
+      "clu_read_settings": {
+        "title": "Ustawienia odczytu CLU",
+        "description": "Wybierz CLU, aby ustawić interwał odpytywania.",
+        "data": {
+          "clu_id": "CLU"
+        }
+      },
+      "clu_read_interval": {
+        "title": "Ustawienia odczytu — {clu_name}",
+        "description": "Interwał odczytu temperatur i innych odpytywanych wartości tego CLU (domyślnie 60 sekund). HTTP Gate odpytuje wszystkie wartości. Zapis zmienia tylko zegar tego CLU.",
+        "data": {
+          "slow_read_interval": "Interwał odpytywania (sekundy)"
         }
       }
     },
@@ -717,6 +742,12 @@
         "minute": {
           "name": "Minuta"
         }
+      }
+    },
+    "value_read_modes": {
+      "options": {
+        "realtime": "Czas rzeczywisty",
+        "slow": "Wolne odpytywanie"
       }
     }
   }

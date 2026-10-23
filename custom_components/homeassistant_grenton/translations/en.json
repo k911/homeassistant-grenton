@@ -146,7 +146,11 @@
         "title": "Configure {entity_name} - Entity Type",
         "description": "Choose a sensor or binary sensor. Binary sensors support configurable state inversion.",
         "data": {
-          "entity_type": "Entity type"
+          "entity_type": "Entity type",
+          "read_mode": "Read mode"
+        },
+        "data_description": {
+          "read_mode": "Temperature sensors automatically use slow polling, including existing entities. Other values can use either mode. The interval is configured per CLU; HTTP Gate polls all values."
         }
       },
       "configure_value_v2_binary": {
@@ -165,6 +169,27 @@
         "description": "Enable optional cooling, choose the heating/cooling direction independently of manual/schedule mode, and edit the weekly schedule. Saving a schedule preserves power and operating mode.",
         "data": {
           "thermostat": "Thermostat settings"
+        }
+      },
+      "init": {
+        "title": "Grenton settings",
+        "menu_options": {
+          "entity_list": "Configure entities",
+          "clu_read_settings": "CLU read settings"
+        }
+      },
+      "clu_read_settings": {
+        "title": "CLU read settings",
+        "description": "Select the CLU to configure its polling interval.",
+        "data": {
+          "clu_id": "CLU"
+        }
+      },
+      "clu_read_interval": {
+        "title": "Read settings — {clu_name}",
+        "description": "Interval for temperature and other polled values on this CLU (default: 60 seconds). HTTP Gate uses polling for all values. Saving changes only this CLU’s timer.",
+        "data": {
+          "slow_read_interval": "Polling interval (seconds)"
         }
       }
     },
@@ -717,6 +742,12 @@
         "minute": {
           "name": "Minute"
         }
+      }
+    },
+    "value_read_modes": {
+      "options": {
+        "realtime": "Realtime",
+        "slow": "Slow polling"
       }
     }
   }

@@ -86,7 +86,7 @@ After initial setup, you can customize individual entities:
 
 1. Navigate to **Settings** → **Devices & Services** → **Grenton**
 2. Click **Configure** on the integration
-3. Select an entity from the dropdown menu
+3. Choose **Configure entities**, then select an entity
 4. Configure entity properties:
    - **Sensors**: Choose device class and unit of measurement
    - **Sliders (Numbers)**: Set display mode, device class, and unit
@@ -96,6 +96,14 @@ After initial setup, you can customize individual entities:
    - **Thermostats**: Enable cooling, select the control direction, and edit weekly schedules
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
+
+Choose **Configure → CLU read settings**, select a controller, and set its
+**Polling interval** (default **60 seconds**, whole seconds from 1 to 86400).
+Each CLU has its own interval: for example, the main CLU can poll temperatures
+every 60 seconds while HTTP Gate polls every 5 seconds. Saving changes only
+that CLU’s polling timer, without reconnecting it or restarting other CLUs.
+An earlier global interval is retained as the fallback for CLUs without their
+own setting. Use **Configure entities** for individual entity settings.
 
 Widget devices are automatically named from their entity labels. Two distinct
 labels are joined with `·`; devices with more labels show the first two and
@@ -136,6 +144,44 @@ attributes: call type and CLU ID, plus object name and attribute index for an
 Attribute source, or variable name for a Variable source. This is available for
 sensor and binary sensor presentations, independently for each VALUE_DOUBLE
 channel, and for custom CLU variable sensors.
+
+### Temperature Reads and Polling
+
+VALUE_V2 and VALUE_DOUBLE entities configured with the **Temperature** device
+class automatically use slow polling. This also applies to existing temperature
+entities on reload, including configurations previously saved as realtime.
+Selecting Temperature in the configuration saves **Slow polling** automatically.
+Other values retain their configurable **Realtime** / **Slow polling** choice,
+independently for each VALUE_DOUBLE channel.
+
+Thermostat current temperature, target temperature, minimum and maximum are
+also polled. Power, manual/schedule mode, direction, output activity and schedule
+data retain realtime subscriptions on capable CLUs. Changing the target or
+operating mode reads the target back immediately; schedule and limit changes
+retain their targeted readback checks.
+
+**CLU_GATE_HTTP** uses polling for every binding, including controls and
+controller diagnostics, because it does not provide realtime updates. It opens
+no realtime subscription sockets. Its polling interval can be shorter than the
+main CLU's; configure it under **CLU read settings**. User actions still execute
+immediately; displayed feedback follows the next poll or an explicit readback.
+
+Polled values are read at startup and then at their source CLU's configured
+interval. Reads use session 1 on the existing control socket, in batches of up
+to 30 values, with large schedules isolated in their own batches. They do not
+create subscription sockets or receive the 45-second registration refresh.
+On realtime-capable CLUs, a binding shared with a realtime consumer remains
+realtime; thermostat temperature feedback now requests slow polling too.
+
+Value entities expose `read_mode`, `effective_read_mode` and `last_polled` (UTC)
+when polling is requested or required by the CLU. Failed reads temporarily
+retain the previous value; after two source-CLU intervals without success the
+value becomes unavailable until a read succeeds. A real CLU `nil` response is
+shown as unknown. Other entities show unknown for stale polled fields.
+
+Polling reduces change reports and, when it removes subscription groups, their
+keepalives and refreshes. It adds a request per batch per interval, so the traffic
+reduction depends on the number of values and their previous update frequency.
 
 ### On/Off Controls as Lights
 
@@ -348,8 +394,8 @@ sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
 select the controller on which to run a script. Refresh the interface through
 **Reconfigure** when CLUs are added or removed.
 
-Each CLU has one action socket plus persistent subscription sockets: ordinary
-values are packed in groups of up to 30, and each large thermostat schedule has
+Each CLU has one control/action socket. Realtime-capable CLUs also maintain
+subscription sockets: ordinary values are packed in groups of up to 30, and each large thermostat schedule has
 its own group. Duplicate bindings share a subscription. Every socket receives a
 keepalive every 5 seconds; subscription groups refresh every 45 seconds on the
 same socket with the same message ID. Registration requests run one at a time
@@ -358,6 +404,10 @@ only affected groups, and explicit readbacks reuse the relevant existing groups.
 Startup logs report the value and subscription counts. For `N` groups, nominal
 traffic is `12 × (N + 1)` keepalives and `60 × N / 45` registrations per minute,
 before user actions, readbacks, retries and CLU responses/change reports.
+Slow reads reuse the control socket and add approximately
+`(ceil(S / 30) + L) × 60 / T` requests per minute for `S` ordinary polled
+values and `L` large schedules at an interval of `T` seconds.
+See **Temperature Reads and Polling** above for configuration.
 
 Home Assistant stop, successful integration unload and failed setup close all
 local sockets and stop background traffic. Opening sockets are tracked during

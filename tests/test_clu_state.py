@@ -140,7 +140,13 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
             assert GrentonCluApiClientRegisterRequest(keys, 0).payload == (
                 f"SYSTEM:clientRegister(0,0,1,{{{expected}}})"
             )
-            await coord._process_report(clu.id, keys, values)
+            if clu.device_type == CLU_GATE_HTTP:
+                coord._apis[clu.id].poll_component_states = AsyncMock(
+                    return_value=values
+                )
+                await coord._send_slow_poll(clu.id)
+            else:
+                await coord._process_report(clu.id, keys, values)
         platforms = await register_platforms(hass, entry)
         assert [len(platform.entities) for platform in platforms] == [7, 2, 2]
         registry = er.async_get(hass)
@@ -303,6 +309,12 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
             execute_action=AsyncMock(return_value=True),
             register_component_states=AsyncMock(return_value=[False]),
         )
+        api.poll_component_states = AsyncMock(return_value=[False])
+        read = (
+            api.poll_component_states
+            if prefix == "521"
+            else api.register_component_states
+        )
         coord._apis[clu.id] = api
         await entity.async_turn_on()
         action = api.execute_action.await_args.args[0]
@@ -311,14 +323,14 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
             GrentonCluApiActionRequest.from_action(action).payload
             == f"{clu.id}:set(18,true)"
         )
-        api.register_component_states.assert_awaited_once_with(keys)
+        read.assert_awaited_once_with(keys)
         assert entity.is_on is False, (
             "a successful request must not invent a changed CLU setting"
         )
-        api.register_component_states.return_value = [True]
+        read.return_value = [True]
         await entity.async_turn_on()
         assert entity.is_on is True
-        api.register_component_states.return_value = [False]
+        read.return_value = [False]
         await entity.async_turn_off()
         assert (
             GrentonCluApiActionRequest.from_action(
@@ -328,10 +340,10 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
         )
         assert entity.is_on is False
         api.execute_action.return_value = False
-        api.register_component_states.reset_mock()
+        read.reset_mock()
         with pytest.raises(HomeAssistantError, match="rejected"):
             await entity.async_turn_on()
-        api.register_component_states.assert_not_awaited()
+        read.assert_not_awaited()
         assert entity.is_on is False
 
     asyncio.run(run())
@@ -359,6 +371,9 @@ def test_firmware_strings_survive_initial_response_and_pushed_notifications(
         values = await api._register_chunk(endpoint)
         assert values == ["1.20"]
         await coord._process_report(clu.id, keys, values)
+        if clu.device_type == CLU_GATE_HTTP:
+            coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values)
+            await coord._send_slow_poll(clu.id)
         assert firmware.native_value == "1.20"
         assert firmware.device_info["sw_version"] == "1.20"
         protocol = GrentonCluApiProtocol(api)
@@ -521,6 +536,9 @@ def test_imported_clu_id_addresses_attributes_independently_of_serial(
             f"resp:192.0.2.1:abcd:clientReport:0:{{{report}}}", keys, clu
         ).values
         await coord._process_report(clu.id, keys, values)
+        if clu.device_type == CLU_GATE_HTTP:
+            coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values)
+            await coord._send_slow_poll(clu.id)
         firmware = next(
             entity
             for entity in entities

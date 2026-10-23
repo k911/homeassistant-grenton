@@ -154,7 +154,7 @@ def test_all_settings_and_dynamic_typed_argument_controls_share_one_dialog(
 
     async def run():
         with entry_patch:
-            result = await flow.async_step_init()
+            result = await flow.async_step_entity_list()
             assert (
                 "button.evening"
                 in ui_fields(result)["entity"]["selector"]["entity"]["include_entities"]

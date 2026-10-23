@@ -261,7 +261,7 @@ def test_popup_prefills_groups_and_saves_one_complete_week_without_changing_mode
 
     async def run():
         with entry_patch:
-            listing = await flow.async_step_init()
+            listing = await flow.async_step_entity_list()
             assert (
                 entity.entity_id
                 in ui_fields(listing)["entity"]["selector"]["entity"][
