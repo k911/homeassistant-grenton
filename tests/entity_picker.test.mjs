@@ -82,6 +82,14 @@ test("filter changes update the native searchable picker immediately", () => {
   assert.deepEqual(editor.visible(), ids);
 });
 
+test("the form's explicit empty initial value renders all entities without selecting one", () => {
+  const editor = picker("en", "");
+  assert.equal(editor.field("entity_type").value, "all");
+  assert.deepEqual(editor.visible(), ids);
+  assert.equal(editor.field("entity").value, "");
+  assert.equal(editor.field("entity").required, true);
+});
+
 test("rendering does not depend on HA component translations being loaded", () => {
   const editor = picker("pl");
   editor._hass.localize = () => { throw new Error("Component translation unavailable"); };

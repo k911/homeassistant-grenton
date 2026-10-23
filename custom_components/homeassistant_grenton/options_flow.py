@@ -177,9 +177,10 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
             last_step=False,
             data_schema=vol.Schema(
                 {
-                    vol.Required("entity"): GrentonEntitySelector(
-                        {"include_entities": sorted(entity_ids)}
-                    ),
+                    # HA cannot infer an initial value for a custom selector.
+                    vol.Required(
+                        "entity", description={"suggested_value": ""}
+                    ): GrentonEntitySelector({"include_entities": sorted(entity_ids)}),
                 }
             ),
         )
