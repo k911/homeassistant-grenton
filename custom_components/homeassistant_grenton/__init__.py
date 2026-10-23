@@ -18,7 +18,7 @@ from .domain.entities.clu_variables import (
     GrentonCluVariableSensor,
     GrentonCluVariableSwitch,
 )
-from .domain.entities.on_off import GrentonEntityOnOff, configured_on_off_type
+from .domain.entities.on_off import GrentonEntityOnOff
 from .domain.entities.value_v2 import ValueV2Configuration, configured_value_v2_type
 from .dto.mobile_interface import GrentonMobileInterfaceDto
 from .frontend import async_register_scene_editor
@@ -114,7 +114,7 @@ def _cleanup_orphans(
             valid_device_identifiers.update(info["identifiers"])
 
     configured_entity_domains = {
-        entity.unique_id: configured_on_off_type(entity.coordinator, entity.unique_id)
+        entity.unique_id: entity.default_entity_type
         for device in devices
         for entity in device.entities
         if isinstance(entity, GrentonEntityOnOff)

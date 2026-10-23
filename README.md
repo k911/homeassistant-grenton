@@ -32,7 +32,7 @@ Your support helps maintain features, fix bugs, and improve documentation.
 |-----------------------|-------------|
 | **VALUE_V2** | Single value exposed as a configurable `sensor` or `binary_sensor`. |
 | **VALUE_DOUBLE** | Two values (A/B), each independently configurable as `sensor` or `binary_sensor`. |
-| **ON_OFF** | Single relay exposed as a configurable `switch` or on/off `light` (default: switch). |
+| **ON_OFF** | Single relay exposed as a configurable `switch` or on/off `light` (automatically detected from name/icon). |
 | **ON_OFF_DOUBLE** | Dual relays with each channel configurable as `switch` or on/off `light`. |
 | **DIMMER_V2** | Dimmable light exposed as `light` with brightness (0-100%). |
 | **LED** | LED or RGB/RGBW light exposed as `light` with brightness and color where available. |
@@ -200,8 +200,13 @@ arguments to use defaults. Attribute/variable actions have an editable value to
 set. State sources support Attribute and Variable. The entity's attributes expose
 the effective state source and both actions, including arguments and call payloads.
 
-Existing controls default to Switch. ON_OFF_DOUBLE channels can
-be configured independently.
+Controls are detected as **Light** when their imported name contains `Light`,
+`Światło` or `swiatlo` (case-insensitive), or their icon is `bulb`. Detection is
+independent for each ON_OFF_DOUBLE channel. A channel icon takes precedence
+over a widget icon; the widget icon is used when the channel has none. Other
+controls default to **Switch**. Saved entity-type choices override detection,
+including an explicit **Switch** choice. Existing controls without a saved type
+are detected on reload.
 
 Saving reloads the integration and creates the selected entity type, preserving
 the Grenton state subscription, ON/OFF actions, and device. Light mode provides

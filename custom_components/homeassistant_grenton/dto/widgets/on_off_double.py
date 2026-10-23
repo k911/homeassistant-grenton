@@ -6,4 +6,5 @@ from ..components.button_bistable_v2 import GrentonComponentButtonBistableV2Dto
 
 class GrentonWidgetOnOffDoubleDto(GrentonWidgetDto):
     type: Literal["ON_OFF_DOUBLE"] = "ON_OFF_DOUBLE"
+    icon: str | None = None
     components: List[GrentonComponentButtonBistableV2Dto]

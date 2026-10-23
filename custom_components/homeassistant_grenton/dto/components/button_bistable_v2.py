@@ -7,6 +7,7 @@ from ..action import GrentonActionUnionDto
 
 class GrentonComponentButtonBistableV2Dto(GrentonComponentDto):
     type: Literal["BUTTON_BISTABLE_V2"] = "BUTTON_BISTABLE_V2"
+    icon: str | None = None
     state: GrentonValueUnionDto
     actions: List[GrentonActionUnionDto]
     onIndication: str

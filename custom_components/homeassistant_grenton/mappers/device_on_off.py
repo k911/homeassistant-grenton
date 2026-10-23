@@ -41,7 +41,13 @@ class DeviceOnOffMapper:
                 unique_id = f"{dto.id}_{component.rowId}"
                 entity_class = (
                     GrentonEntityOnOffLight
-                    if configured_on_off_type(coordinator, unique_id) == "light"
+                    if configured_on_off_type(
+                        coordinator,
+                        unique_id,
+                        label=component.label,
+                        icon=component.icon or dto.icon,
+                    )
+                    == "light"
                     else GrentonEntityBistableSwitch
                 )
                 entity = entity_class(
