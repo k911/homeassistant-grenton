@@ -82,6 +82,14 @@ test("filter changes update the native searchable picker immediately", () => {
   assert.deepEqual(editor.visible(), ids);
 });
 
+test("rendering does not depend on HA component translations being loaded", () => {
+  const editor = picker("pl");
+  editor._hass.localize = () => { throw new Error("Component translation unavailable"); };
+  editor._render();
+  assert.equal(editor.field("entity_type").value, "all");
+  assert.deepEqual(editor.visible(), ids);
+});
+
 test("changing filter preserves a visible selection and clears a hidden selection", () => {
   const editor = picker("en", "sensor.temperature");
   editor.filter("sensor");

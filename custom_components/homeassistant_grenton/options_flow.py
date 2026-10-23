@@ -16,6 +16,7 @@ from .domain.entities.clu_variables import (
     variable_options,
 )
 from .entity_picker import GrentonEntitySelector
+from .frontend import async_register_scene_editor
 from .read_policy import (
     CONF_CLU_READ_SETTINGS,
     CONF_SLOW_READ_INTERVAL,
@@ -54,6 +55,9 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Separate per-CLU polling settings from individual entities."""
+        # Startup can precede frontend setup. Ensure selectors exist when a
+        # browser actually opens configuration, including after an update.
+        await async_register_scene_editor(self.hass, notify_clients=True)
         return self.async_show_menu(
             step_id="init", menu_options=["clu_read_settings", "entity_list"]
         )

@@ -368,8 +368,7 @@ class GrentonEntityPicker extends GrentonEditor {
       { value: "all", label: this._text("entity_picker.types.all", "All entities") },
       ...domains.map((domain) => ({
         value: domain,
-        label: this._text(`entity_picker.types.${domain}`,
-          this.hass?.localize?.(`component.${domain}.entity_component._.name`) || domain),
+        label: this._text(`entity_picker.types.${domain}`, domain),
       })),
     ];
     const filter = this._select("entity_type", options, this._domainFilter, (domain) => {
