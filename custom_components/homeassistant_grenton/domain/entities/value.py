@@ -127,7 +127,7 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
         self.value_type = value_type
         
         # Register state with coordinator
-        coordinator.register_component_state(state_object)
+        self._register_state(state_object)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

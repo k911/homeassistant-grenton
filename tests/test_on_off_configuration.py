@@ -74,6 +74,10 @@ def coordinator(options=None):
             SimpleNamespace(id="clu2", name="Garage"),
         ],
         register_component_state=Mock(),
+        is_state_fresh=Mock(return_value=True),
+        state_read_mode=Mock(return_value="realtime"),
+        last_polled=Mock(return_value=None),
+        async_refresh_clu_state=AsyncMock(return_value=True),
         get_value_for_component=Mock(return_value="ON"),
         execute_action=AsyncMock(),
         last_update_success=True,
@@ -123,6 +127,114 @@ def test_default_switch_and_independent_double_channels():
     device = DeviceMapper.to_domain(widget(double=True), coord)
     assert isinstance(device.entities[0], LightEntity)
     assert isinstance(device.entities[1], SwitchEntity)
+
+
+@pytest.mark.parametrize("double", [False, True])
+@pytest.mark.parametrize(
+    "label,icon,expected",
+    [
+        ("Kitchen Light", None, "light"),
+        ("Hall LIGHT", None, "light"),
+        ("Hall spotlight", None, "light"),
+        ("Salon Światło", None, "light"),
+        ("Salon światło", None, "light"),
+        ("Salon SWIATLO", None, "light"),
+        ("Salon s\u0301wiatło", None, "light"),
+        ("Office", "bulb", "light"),
+        ("Office", "BULB", "light"),
+        ("Office", None, "switch"),
+        ("Office", "fan", "switch"),
+    ],
+)
+def test_on_off_light_detection_from_imported_channel_metadata(
+    double, label, icon, expected
+):
+    dto = widget(double)
+    payload = dto.model_dump()
+    payload["components"][0].update(label=label, icon=icon)
+    # Deserialize as a fetched interface, so an ignored icon cannot pass the test.
+    imported = type(dto).model_validate(payload)
+    device = DeviceMapper.to_domain(imported, coordinator())
+    assert isinstance(device.entities[0], LightEntity) == (expected == "light")
+    assert device.entities[0]._config["entity_type"] == expected
+    state_form = (
+        device.entities[0]
+        ._get_schema_instance()
+        ._build_state(device.entities[0]._config, {})
+    )
+    fields = to_field_list(state_form.schema, custom_serializer=cv.custom_serializer)
+    assert fields[0]["default"] == expected
+    if double:
+        assert isinstance(device.entities[1], SwitchEntity)
+
+
+@pytest.mark.parametrize("double", [False, True])
+@pytest.mark.parametrize("saved_type", [None, "switch", "light"])
+def test_cached_grenton_image_field_detects_bulb_and_preserves_saved_type(
+    double, saved_type
+):
+    dto = widget(double)
+    payload = dto.model_dump()
+    payload["components"][0].pop("icon", None)
+    payload["components"][0].update(
+        label="Świa Łazienka Parter - Kinkiet", image="bulb"
+    )
+    imported = type(dto).model_validate_json(json.dumps(payload))
+    assert imported.components[0].icon == "bulb"
+    options = (
+        {"entities": {"office_0": {"entity_type": saved_type}}} if saved_type else {}
+    )
+    device = DeviceMapper.to_domain(imported, coordinator(options))
+    assert isinstance(device.entities[0], LightEntity) == (saved_type != "switch")
+    # The canonical DTO also survives interface serialization/reconfiguration.
+    restored = type(dto).model_validate_json(imported.model_dump_json())
+    assert restored.components[0].icon == "bulb"
+    if double:
+        assert isinstance(device.entities[1], SwitchEntity)
+
+
+@pytest.mark.parametrize("double", [False, True])
+def test_widget_image_field_is_used_when_channel_has_no_icon(double):
+    dto = widget(double)
+    payload = dto.model_dump()
+    payload["image"] = "bulb"
+    entities = DeviceMapper.to_domain(
+        type(dto).model_validate(payload), coordinator()
+    ).entities
+    assert all(isinstance(entity, LightEntity) for entity in entities)
+
+
+@pytest.mark.parametrize("double", [False, True])
+@pytest.mark.parametrize("entity_type", ["switch", "light"])
+def test_saved_entity_type_overrides_automatic_light_detection(double, entity_type):
+    dto = widget(double)
+    payload = dto.model_dump()
+    payload["components"][0].update(label="Salon Światło", icon="bulb")
+    coord = coordinator({"entities": {"office_0": {"entity_type": entity_type}}})
+    entities = DeviceMapper.to_domain(type(dto).model_validate(payload), coord).entities
+    assert isinstance(entities[0], LightEntity) == (entity_type == "light")
+    assert entities[0]._config["entity_type"] == entity_type
+
+
+@pytest.mark.parametrize("double", [False, True])
+def test_widget_icon_is_a_fallback_to_independent_channel_icons(double):
+    dto = widget(double)
+    payload = dto.model_dump()
+    payload["icon"] = "bulb"
+    payload["components"][0]["icon"] = "fan"
+    entities = DeviceMapper.to_domain(
+        type(dto).model_validate(payload), coordinator()
+    ).entities
+    assert isinstance(entities[0], SwitchEntity)
+    if double:
+        assert isinstance(entities[1], LightEntity)
+    payload["components"][0].pop("icon")
+    assert isinstance(
+        DeviceMapper.to_domain(
+            type(dto).model_validate(payload), coordinator()
+        ).entities[0],
+        LightEntity,
+    )
 
 
 def test_options_flow_validates_type_persists_it_and_schedules_reload(tmp_path):
@@ -196,7 +308,10 @@ def test_options_flow_validates_type_persists_it_and_schedules_reload(tmp_path):
     asyncio.run(run())
 
 
-def test_native_ha_domain_change_cleans_old_registration_and_keeps_device(tmp_path):
+@pytest.mark.parametrize("automatic", [False, True])
+def test_native_ha_domain_change_cleans_old_registration_and_keeps_device(
+    tmp_path, automatic
+):
     async def run():
         hass = HomeAssistant(str(tmp_path))
         entry = ConfigEntry(
@@ -221,17 +336,27 @@ def test_native_ha_domain_change_cleans_old_registration_and_keeps_device(tmp_pa
         registry = er.async_get(hass)
         device_id = None
         previous_id = None
-        for domain in ("switch", "light", "switch"):
+        previous_domain = None
+        for domain in ("switch", "light", "light", "switch"):
             # ConfigEntry options are immutable; model the update used by HA.
             object.__setattr__(
                 entry,
                 "options",
-                MappingProxyType({"entities": {"office_0": {"entity_type": domain}}}),
+                MappingProxyType(
+                    {}
+                    if automatic
+                    else {"entities": {"office_0": {"entity_type": domain}}}
+                ),
             )
-            device = DeviceMapper.to_domain(widget(), coord)
+            dto = widget()
+            if automatic and domain == "light":
+                dto.components[0].label = "Office Light"
+            device = DeviceMapper.to_domain(dto, coord)
             _cleanup_orphans(hass, entry, [device], [])
             if previous_id:
-                assert registry.async_get(previous_id) is None
+                assert (registry.async_get(previous_id) is None) == (
+                    domain != previous_domain
+                )
             platform = EntityPlatform(
                 hass=hass,
                 logger=logging.getLogger(__name__),
@@ -255,6 +380,7 @@ def test_native_ha_domain_change_cleans_old_registration_and_keeps_device(tmp_pa
                     "supported_color_modes"
                 ] == ["onoff"]
             previous_id = entity.entity_id
+            previous_domain = domain
             await platform.async_reset()
 
     asyncio.run(run())

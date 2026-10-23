@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
 from .domain.entities.clu import GrentonCluEntity
@@ -13,6 +14,16 @@ from .domain.entities.clu_variables import (
     normalize_variable,
     variable_definitions,
     variable_options,
+)
+from .entity_picker import GrentonEntitySelector
+from .frontend import async_register_scene_editor
+from .read_policy import (
+    CONF_CLU_READ_SETTINGS,
+    CONF_SLOW_READ_INTERVAL,
+    MAX_SLOW_READ_INTERVAL,
+    MIN_SLOW_READ_INTERVAL,
+    slow_read_interval,
+    validate_slow_read_interval,
 )
 
 
@@ -43,8 +54,96 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage the options - show list of entities to configure."""
-        return await self.async_step_entity_list(user_input)
+        """Separate per-CLU polling settings from individual entities."""
+        # Startup can precede frontend setup. Ensure selectors exist when a
+        # browser actually opens configuration, including after an update.
+        await async_register_scene_editor(self.hass, notify_clients=True)
+        return self.async_show_menu(
+            step_id="init", menu_options=["clu_read_settings", "entity_list"]
+        )
+
+    def _configured_clus(self) -> dict[str, str]:
+        """Allow read configuration even while the integration is unloaded."""
+        return {
+            clu["id"]: clu.get("name", clu["id"])
+            for clu in self.config_entry.data.get("interface", {}).get("clus", [])
+        }
+
+    async def async_step_clu_read_settings(self, user_input=None):
+        clus = self._configured_clus()
+        errors = {}
+        if user_input is not None:
+            clu_id = user_input.get("clu_id")
+            if clu_id in clus:
+                self._read_clu_id = clu_id
+                return await self.async_step_clu_read_interval()
+            errors["clu_id"] = "invalid_configuration"
+        return self.async_show_form(
+            step_id="clu_read_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("clu_id"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": clu_id, "label": f"{name} ({clu_id})"}
+                                for clu_id, name in clus.items()
+                            ]
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_clu_read_interval(self, user_input=None):
+        errors = {}
+        interval = slow_read_interval(self.config_entry.options, self._read_clu_id)
+        if user_input is not None:
+            try:
+                interval = validate_slow_read_interval(
+                    user_input.get(CONF_SLOW_READ_INTERVAL)
+                )
+            except vol.Invalid:
+                errors[CONF_SLOW_READ_INTERVAL] = "invalid_configuration"
+            else:
+                options = dict(self.config_entry.options)
+                settings = dict(options.get(CONF_CLU_READ_SETTINGS, {}))
+                settings[self._read_clu_id] = {
+                    **settings.get(self._read_clu_id, {}),
+                    CONF_SLOW_READ_INTERVAL: interval,
+                }
+                options[CONF_CLU_READ_SETTINGS] = settings
+                # Change only this CLU's timer, retaining all existing sockets.
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                if runtime is not None:
+                    await runtime.coordinator.async_set_slow_read_interval(
+                        self._read_clu_id, interval
+                    )
+                self.automatic_reload = False
+                return self.async_create_entry(title="", data=options)
+        return self.async_show_form(
+            step_id="clu_read_interval",
+            last_step=True,
+            errors=errors,
+            description_placeholders={
+                "clu_name": self._configured_clus()[self._read_clu_id]
+            },
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SLOW_READ_INTERVAL, default=interval
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MIN_SLOW_READ_INTERVAL,
+                            max=MAX_SLOW_READ_INTERVAL,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                            unit_of_measurement="s",
+                        )
+                    )
+                }
+            ),
+        )
 
     async def async_step_entity_list(
         self, user_input: dict[str, Any] | None = None
@@ -72,18 +171,16 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                 self.selected_entity_uid = matched.unique_id
                 return await self.async_step_configure_entity()
 
-        # Build entity selection schema using EntitySelector with include_entities
+        # The selector filters locally while retaining HA's native entity search.
         return self.async_show_form(
             step_id="entity_list",
             last_step=False,
             data_schema=vol.Schema(
                 {
-                    vol.Required("entity"): selector.EntitySelector(  # type: ignore[misc]
-                        selector.EntitySelectorConfig(
-                            include_entities=sorted(entity_ids),
-                            multiple=False,
-                        )
-                    ),
+                    # HA cannot infer an initial value for a custom selector.
+                    vol.Required(
+                        "entity", description={"suggested_value": ""}
+                    ): GrentonEntitySelector({"include_entities": sorted(entity_ids)}),
                 }
             ),
         )
@@ -144,10 +241,19 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         # Check if we're done with all steps
         if self.current_step_index >= len(steps):
             self.automatic_reload = getattr(entity, "reload_after_configuration", False)
-            options = await entity.apply_configuration(self.entity_config)
-            self.entity_config = None
-            self.current_step_index = 0
-            return self.async_create_entry(title="", data=options)
+            try:
+                options = await entity.apply_configuration(self.entity_config)
+            except HomeAssistantError:
+                # Keep the popup and draft open when a device write fails.
+                errors["base"] = "cannot_apply_configuration"
+                self.current_step_index = len(steps) - 1
+                if len(steps) == 1:
+                    self.entity_config = {}
+                current_config = {**current_config, **(user_input or {})}
+            else:
+                self.entity_config = None
+                self.current_step_index = 0
+                return self.async_create_entry(title="", data=options)
 
         # Build schema for current step
         step_def = steps[self.current_step_index]

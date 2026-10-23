@@ -123,6 +123,9 @@ def test_temporal_variable_flow_skips_units_and_discards_old_units(
         manager = configure_manager(hass, entry)
         form = await manager.async_init(entry.entry_id)
         form = await manager.async_configure(
+            form["flow_id"], {"next_step_id": "entity_list"}
+        )
+        form = await manager.async_configure(
             form["flow_id"], {"entity": entity.entity_id}
         )
         form = await manager.async_configure(form["flow_id"], config)

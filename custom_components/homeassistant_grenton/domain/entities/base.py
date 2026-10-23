@@ -1,8 +1,9 @@
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.core import callback
 
 from ...coordinator import GrentonCoordinator
+from ..state_object import GrentonStateObject
 
 
 class BaseGrentonEntity(CoordinatorEntity[GrentonCoordinator]):
@@ -23,9 +24,14 @@ class BaseGrentonEntity(CoordinatorEntity[GrentonCoordinator]):
         self._attr_unique_id = id
         self._attr_device_info = device_info
 
+    def _register_state(self, state: GrentonStateObject) -> None:
+        self.coordinator.register_component_state(state)
+
     @property
     def name(self) -> str | None: # pyright: ignore[reportIncompatibleVariableOverride]
         """Return the name of the sensor."""
+        if self.platform_data and self.translation_key and isinstance(translated := super().name, str):
+            return translated
         return None if getattr(self, "_use_device_name", False) else self.label
 
     @callback

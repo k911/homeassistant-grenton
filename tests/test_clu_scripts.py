@@ -270,6 +270,7 @@ def test_clu_reconfiguration_preserves_identity_and_removes_only_orphans(tmp_pat
 def test_script_action_reports_transport_failures(failure):
     async def run():
         coordinator = GrentonCoordinator.__new__(GrentonCoordinator)
+        coordinator._stopping = False
         api = SimpleNamespace(execute_action=AsyncMock(return_value=failure))
         if isinstance(failure, Exception):
             api.execute_action.side_effect = failure
@@ -349,7 +350,7 @@ def test_invalid_script_calls_are_rejected(data):
 def test_script_action_editor_and_translations(language):
     component = Path(__file__).parents[1] / "custom_components/homeassistant_grenton"
     services = yaml.safe_load((component / "services.yaml").read_text())
-    assert set(services) == {"run_script", "run_scene"}
+    assert set(services) == {"run_script", "run_scene", "set_thermostat_schedule"}
     metadata = services["run_script"]
     selector.TargetSelector(metadata["target"])
     arguments_selector = selector.selector(metadata["fields"]["arguments"]["selector"])
@@ -363,7 +364,7 @@ def test_script_action_editor_and_translations(language):
         {"type": "float", "value": 0.75}
     ]
     translations = json.loads((component / f"translations/{language}.json").read_text())
-    assert set(translations["services"]) == {"run_script", "run_scene"}
+    assert set(translations["services"]) == {"run_script", "run_scene", "set_thermostat_schedule"}
     assert set(translations["services"]["run_script"]["fields"]) == {
         "script",
         "arguments",

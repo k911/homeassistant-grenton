@@ -222,6 +222,7 @@ def test_integration_options_flow_switches_domains_and_clears_incompatible_setti
             assert result["type"] == "create_entry"
             assert result["data"]["entities"][entity.unique_id] == {
                 "entity_type": "binary_sensor",
+                "read_mode": "realtime",
                 "device_class": "door",
                 "invert_state": invert_state,
             }
@@ -269,6 +270,7 @@ def test_integration_options_flow_switches_domains_and_clears_incompatible_setti
             )
             assert result["data"]["entities"]["front_door_0"] == {
                 "entity_type": "sensor",
+                "read_mode": "slow",
                 "device_class": "temperature",
                 "unit_of_measurement": "°C",
             }
@@ -571,7 +573,7 @@ def test_native_binary_dialog_loads_localized_field_labels(
         ):
             flow = GrentonOptionsFlow()
             flow.hass = hass
-            await flow.async_step_init({"entity": device.entities[0].entity_id})
+            await flow.async_step_entity_list({"entity": device.entities[0].entity_id})
             form = await flow.async_step_configure_value_v2_type(
                 {"entity_type": "binary_sensor"}
             )
