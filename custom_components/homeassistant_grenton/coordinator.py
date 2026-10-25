@@ -11,17 +11,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 from .domain.action import GrentonAction
 from .domain.api.clu import GrentonCluApi
 from .domain.api.clu_health import (
-    CluConnectionHealth,
     KEEPALIVE_INTERVAL,
-    REGISTRATION_INTERVAL,
     REALTIME_STALE_AFTER,
+    REGISTRATION_INTERVAL,
+    CluConnectionHealth,
 )
 from .domain.api.clu_messages import GrentonCluApiActionRequest
 from .domain.clu import GrentonClu
@@ -91,6 +91,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
         self._slow_tasks: dict[str, asyncio.Task] = {}
         self._slow_settings_lock = asyncio.Lock()
         self.connection_health = {clu.id: CluConnectionHealth() for clu in clus}
+        self._ping_failures = {clu.id: 0 for clu in clus}
         self._realtime_success: dict[str, dict[StateKey, float]] = {
             clu.id: {} for clu in clus
         }
@@ -156,9 +157,33 @@ class GrentonCoordinator(DataUpdateCoordinator):
         try:
             success = await api.ping()
             if not success:
-                _LOGGER.warning("[%s] Ping failed", clu_id)
-        except Exception as e:
-            _LOGGER.error("[%s] Error during ping: %s", clu_id, e)
+                self._ping_failures[clu_id] += 1
+                _LOGGER.warning(
+                    "[%s] Ping failed (consecutive=%d): %s; %s",
+                    api.log_identity,
+                    self._ping_failures[clu_id],
+                    api.last_ping_summary,
+                    api.diagnostic_context(),
+                )
+            elif failures := self._ping_failures[clu_id]:
+                self._ping_failures[clu_id] = 0
+                _LOGGER.info(
+                    "[%s] Ping recovered after %d failed cycle(s): %s; %s",
+                    api.log_identity,
+                    failures,
+                    api.last_ping_summary,
+                    api.diagnostic_context(),
+                )
+        except Exception as e:  # noqa: BLE001 - isolate each CLU's keepalive failures
+            self._ping_failures[clu_id] += 1
+            _LOGGER.error(
+                "[%s] Error during ping (consecutive=%d): %s: %s; %s",
+                api.log_identity,
+                self._ping_failures[clu_id],
+                type(e).__name__,
+                e,
+                api.diagnostic_context(),
+            )
         finally:
             self._publish_clu_update(clu_id)
 
