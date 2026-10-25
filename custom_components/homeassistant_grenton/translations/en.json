@@ -329,9 +329,6 @@
       "clu_controller": {
         "name": "Controller"
       },
-      "clu_last_seen": {
-        "name": "Last seen"
-      },
       "clu_request_timeouts": {
         "name": "Request timeouts"
       },

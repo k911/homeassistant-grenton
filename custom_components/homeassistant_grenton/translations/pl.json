@@ -326,9 +326,6 @@
           "unknown": "nieznany"
         }
       },
-      "clu_last_seen": {
-        "name": "Ostatni kontakt"
-      },
       "clu_request_timeouts": {
         "name": "Przekroczone czasy żądań"
       },

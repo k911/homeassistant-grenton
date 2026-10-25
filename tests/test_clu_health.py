@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import EntityPlatform
 from test_clu_lifecycle import fixture
 from test_clu_protocol_lifecycle import Socket, tick
@@ -14,6 +16,7 @@ from test_clu_scripts import make_entry, make_hass
 from test_clu_state import coordinator, make_clu, register_platforms
 from test_on_off_configuration import widget
 
+from custom_components.homeassistant_grenton import _cleanup_orphans
 from custom_components.homeassistant_grenton.domain.api.clu import (
     GrentonCluApiProtocol,
     _SubscriptionEndpoint,
@@ -162,27 +165,49 @@ def test_diagnostics_add_no_reads_remain_available_offline_and_remove_their_list
             before = coord.state.clus[clu.id].get_subscription_order().copy()
             diagnostics = connection_diagnostics(coord, clu)
             assert coord.state.clus[clu.id].get_subscription_order() == before
+            assert all(
+                entity.translation_key != "clu_last_seen" for entity in diagnostics
+            )
+            registry = er.async_get(hass)
+            obsolete = registry.async_get_or_create(
+                "sensor", "grenton", f"clu_{clu.id}_last_seen", config_entry=entry
+            )
+            _cleanup_orphans(hass, entry, [], diagnostics)
+            assert registry.async_get(obsolete.entity_id) is None
             entry.runtime_data = RuntimeData(coord, [], diagnostics)
             platforms = await register_platforms(hass, entry)
-            connection, last_seen, timeouts, subscriptions = diagnostics
+            connection, timeouts, subscriptions = diagnostics
             try:
-                assert connection.is_on is None and last_seen.native_value is None
+                assert connection.is_on is None and api.health.last_seen is None
                 assert timeouts.native_value == subscriptions.native_value == 0
                 assert api.health is coord.connection_health[clu.id]
                 api.ping = AsyncMock(side_effect=lambda: successful_ping(coord, "clu1"))
                 await coord._send_ping(clu.id)
                 await hass.async_block_till_done()
-                seen = last_seen.native_value
+                seen = api.health.last_seen
                 assert connection.is_on is True and seen.tzinfo is not None
                 assert hass.states.get(connection.entity_id).state == "on"
-                clock[0] = 30
+                changes = []
+                remove_listener = hass.bus.async_listen(
+                    EVENT_STATE_CHANGED, changes.append
+                )
+                try:
+                    clock[0] = 5
+                    await coord._send_ping(clu.id)
+                    await hass.async_block_till_done()
+                    assert api.health.last_seen is not seen
+                    assert not changes, "Keepalives must not create diagnostic activity"
+                finally:
+                    remove_listener()
+                seen = api.health.last_seen
+                clock[0] = 35
                 api.ping.side_effect = None
                 api.ping.return_value = False
                 api.health.request_timeouts = 4
                 await coord._send_ping(clu.id)
                 await hass.async_block_till_done()
                 assert hass.states.get(connection.entity_id).state == "off"
-                assert last_seen.native_value == seen
+                assert api.health.last_seen == seen
                 assert hass.states.get(timeouts.entity_id).state == "4"
                 assert all(entity.available for entity in diagnostics)
                 api._subscription_endpoints = [
@@ -262,5 +287,5 @@ def test_connection_diagnostics_are_translated(language):
         ).read_text()
     )["entity"]
     assert data["binary_sensor"]["clu_connection"]["name"]
-    for key in ("clu_last_seen", "clu_request_timeouts", "clu_subscriptions"):
+    for key in ("clu_request_timeouts", "clu_subscriptions"):
         assert data["sensor"][key]["name"]

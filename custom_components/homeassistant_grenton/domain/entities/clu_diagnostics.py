@@ -1,13 +1,10 @@
 """Connection diagnostics derived from existing traffic, with no CLU bindings."""
 
-from datetime import datetime
-
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
@@ -60,14 +57,6 @@ class CluConnection(CluConnectionDiagnostic, BinarySensorEntity):
         return self.coordinator.connection_health[self.clu.id].connected
 
 
-class CluLastSeen(CluConnectionDiagnostic, SensorEntity):
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
-
-    @property
-    def native_value(self) -> datetime | None:
-        return self.coordinator.connection_health[self.clu.id].last_seen
-
-
 class CluRequestTimeouts(CluConnectionDiagnostic, SensorEntity):
     _attr_icon = "mdi:timer-alert-outline"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
@@ -92,7 +81,6 @@ def connection_diagnostics(
         entity(coordinator, clu, key)
         for entity, key in (
             (CluConnection, "clu_connection"),
-            (CluLastSeen, "clu_last_seen"),
             (CluRequestTimeouts, "clu_request_timeouts"),
             (CluSubscriptions, "clu_subscriptions"),
         )

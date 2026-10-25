@@ -149,7 +149,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
             else:
                 await coord._process_report(clu.id, keys, values)
         platforms = await register_platforms(hass, entry)
-        assert [len(platform.entities) for platform in platforms] == [13, 4, 2]
+        assert [len(platform.entities) for platform in platforms] == [11, 4, 2]
         registry = er.async_get(hass)
         device_registry = dr.async_get(hass)
         assert len(device_registry.devices) == 2
@@ -170,7 +170,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
                 assert voltage.native_unit_of_measurement == "V"
                 assert voltage.state_class.value == "measurement"
             else:
-                assert len(group) == 9
+                assert len(group) == 8
             assert hass.states.get(controller.entity_id).state == clu.serial_number
             assert hass.states.get(uptime.entity_id).state == "123"
             assert uptime.device_class == SensorDeviceClass.DURATION
@@ -415,7 +415,7 @@ def test_serial_detection_and_unknown_type_preserves_controller(
         assert entities[0].unique_id == "clu_clu1"
         assert entities[0].device_info["model"] == (expected or "CLU")
         if expected is None:
-            assert len(entities) == 5
+            assert len(entities) == 4
             assert not coord.state.clus[clu.id].get_subscription_order()
         else:
             assert {int(entity.state_object.index) for entity in entities if isinstance(entity, GrentonCluStateEntity)} == set(
@@ -481,7 +481,7 @@ def test_new_type_uses_its_own_indexes_and_skips_unsupported_entities(
         clu = make_clu("clu1", prefix="621")
         coord = coordinator(hass, entry, [clu])
         entities = clu_entities(coord, clu)
-        assert len(entities) == 7
+        assert len(entities) == 6
         assert isinstance(entities[1], GrentonCluFirmwareVersion)
         assert isinstance(entities[2], GrentonCluBusVoltage)
         keys = coord.state.clus[clu.id].get_subscription_order()

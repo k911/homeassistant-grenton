@@ -218,10 +218,10 @@ unsubscribe command is sent. The 30-key cap does not guarantee a maximum reply
 size for arbitrary string values. Keep large strings out of realtime groups,
 as done for thermostat schedules.
 
-Each CLU device has local **Connection**, **Last seen**, **Request timeouts** and
+Each CLU device has local **Connection**, **Request timeouts** and
 **Realtime subscriptions** diagnostics. They observe existing traffic and add no
-CLU reads or registrations. Last seen is the UTC time of the last matched reply
-or valid subscription report. Timeout counts reset when the integration reloads;
+CLU reads or registrations. Last-seen timestamps stay internal for connection
+checks. Timeout counts reset when the integration reloads;
 subscription counts describe local ready subscription sockets, excluding the
 control socket, rather than a firmware-reported remote session count.
 
@@ -724,7 +724,7 @@ Configure sliders with appropriate device classes for proper representation:
 
 **Device state not synchronized:**
 
-1. Check the CLU device's **Connection**, **Last seen** and **Request timeouts** diagnostics
+1. Check the CLU device's **Connection** and **Request timeouts** diagnostics
 2. Verify network connectivity between Home Assistant and Grenton
 3. For polled values, check the CLU's slow-read interval (default: 60 seconds)
 4. Check Grenton device is responding to queries

@@ -325,7 +325,7 @@ def test_setup_discovers_all_imported_clus_without_any_widgets(tmp_path):
             "clu1",
             "clu2",
         ]
-        assert len(entry.runtime_data.clu_entities) == 19
+        assert len(entry.runtime_data.clu_entities) == 17
         coordinator.async_setup.assert_awaited_once()
         hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 

@@ -314,7 +314,7 @@ def test_native_entities_share_clu_device_and_switch_writes_only_own_variable(tm
         await coord._process_report(
             "clu2", coord.state.clus["clu2"].get_subscription_order(), [True]
         )
-        assert [len(platform.entities) for platform in platforms] == [11, 2, 2]
+        assert [len(platform.entities) for platform in platforms] == [9, 2, 2]
         switches = [
             entity
             for entity in entities
