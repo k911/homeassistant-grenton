@@ -493,18 +493,20 @@ class GrentonCluApi:
             return [MISSING_STATE] * len(endpoint.keys)
         if wire is None:
             return [MISSING_STATE] * len(endpoint.keys)
-        return self._parse_state_response(wire, endpoint.keys, endpoint.session_id)
+        return self._parse_state_response(wire, endpoint.keys)
 
     def _parse_state_response(
         self,
         wire: str,
         keys: list[StateKey],
-        session_id: int | None = None,
     ) -> list[GrentonRegistrationValue]:
+        """Parse a reply already correlated by its socket and request message ID.
+
+        The report's numeric field is not a reliable echo of the requested
+        session. It must not be used to reject an otherwise matched reply.
+        """
         try:
             response = GrentonCluApiClientRegisterResponse(wire, keys, self.clu)
-            if session_id is not None and response.session_id != session_id:
-                raise ValueError("Unexpected read response session")
             values = response.values
             if len(values) != len(keys):
                 raise ValueError(f"Expected {len(keys)} values, received {len(values)}")
@@ -537,7 +539,7 @@ class GrentonCluApi:
                 if self._closed or generation != self._generation:
                     return [MISSING_STATE] * len(keys)
                 values = (
-                    self._parse_state_response(wire, chunk, 1)
+                    self._parse_state_response(wire, chunk)
                     if wire is not None
                     else [MISSING_STATE] * len(chunk)
                 )

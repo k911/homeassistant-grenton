@@ -22,6 +22,8 @@ def _parse_client_report(
 
     Wire payload format: clientReport:{SESSION_ID}:{val1,val2,...}
     Reject malformed headers before their values can affect state or health.
+    The numeric report field is retained as session_id for inspection; it is
+    not guaranteed to echo the requested session and must not route replies.
     """
     if not payload.startswith("clientReport:"):
         raise ValueError("Expected a clientReport payload")

@@ -19,7 +19,6 @@ from custom_components.homeassistant_grenton.domain.state_object import (
     GrentonVariableValueObject,
 )
 from custom_components.homeassistant_grenton.state import (
-    MISSING_STATE,
     GrentonCluStateVariableKey,
 )
 
@@ -380,7 +379,7 @@ def test_poll_age_is_measured_from_read_start_and_shutdown_discards_late_values(
     asyncio.run(run())
 
 
-def test_wrong_peer_and_wrong_read_session_cannot_update_state(tmp_path):
+def test_wrong_peer_cannot_update_state(tmp_path):
     async def run():
         hass, _, coord, api = await fixture(tmp_path)
         api.cipher = Mock()
@@ -388,10 +387,6 @@ def test_wrong_peer_and_wrong_read_session_cannot_update_state(tmp_path):
         protocol.datagram_received(b"unrelated", ("192.0.2.99", api.clu.port))
         protocol.datagram_received(b"unrelated", (api.clu.ip, api.clu.port + 1))
         api.cipher.decrypt.assert_not_called()
-        key = GrentonCluStateVariableKey("value")
-        assert api._parse_state_response(
-            "resp:192.0.2.1:00000001:clientReport:0:{99}", [key], 1
-        ) == [MISSING_STATE]
         await coord.async_shutdown()
         await hass.async_stop()
 

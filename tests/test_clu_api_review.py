@@ -301,3 +301,84 @@ def test_changing_large_value_policy_rebuilds_with_the_value_isolated(tmp_path):
         await hass.async_stop()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("report_session", [0, 1, 7])
+@pytest.mark.parametrize("poll", [False, True])
+def test_matched_read_reply_does_not_require_session_echo(
+    tmp_path, caplog, report_session, poll
+):
+    async def run():
+        hass, _, coord, api = await fixture(tmp_path)
+        sockets = []
+        key = GrentonCluStateVariableKey("temperature")
+        process = GrentonCluApiProtocol._process_response
+
+        def incoming(protocol, wire):
+            if ":clientReport:" in wire:
+                parts = wire.split(":", 5)
+                parts[4] = str(report_session)
+                wire = ":".join(parts)
+            process(protocol, wire)
+
+        with (
+            socket_factory(api, sockets),
+            patch.object(GrentonCluApiProtocol, "_process_response", incoming),
+        ):
+            await api.connect()
+            read = api.poll_component_states if poll else api.register_component_states
+            assert await read([key]) == [1]
+            assert await read([key]) == [1]
+            assert len(sockets) == (1 if poll else 2)
+            requests = [
+                raw
+                for socket in sockets
+                for raw, _ in socket.sent
+                if "clientRegister" in raw
+            ]
+            assert len(requests) == 2
+            # Request semantics stay unchanged, even when the reply differs.
+            assert all(
+                f"clientRegister(0,{1 if poll else 0},1," in raw for raw in requests
+            )
+            assert "Failed to parse register response" not in caplog.text
+        await coord.async_shutdown()
+        await hass.async_stop()
+
+    asyncio.run(run())
+
+
+def test_non_echoing_session_does_not_bypass_peer_socket_or_message_correlation(
+    tmp_path,
+):
+    async def run():
+        hass, _, coord, api = await fixture(tmp_path)
+        sockets = []
+        with socket_factory(api, sockets, reply=False):
+            await api.connect()
+            protocol = api.protocol
+            read = asyncio.create_task(
+                api.poll_component_states([GrentonCluStateVariableKey("a")])
+            )
+            await tick()
+            message_id = next(iter(protocol._pending))
+            wire = f"resp:{api.clu.ip}:{message_id}:clientReport:7:{{42}}".encode()
+            peer = (api.clu.ip, api.clu.port)
+            protocol.datagram_received(wire, ("192.0.2.99", api.clu.port))
+            protocol.datagram_received(wire, (api.clu.ip, api.clu.port + 1))
+            protocol.datagram_received(
+                f"resp:{api.clu.ip}:unmatched:clientReport:7:{{99}}".encode(), peer
+            )
+            protocol.datagram_received(
+                f"resp:{api.clu.ip}:00000000:clientReport:7:{{99}}".encode(), peer
+            )
+            other_socket = GrentonCluApiProtocol(api)
+            other_socket.datagram_received(wire, peer)
+            await tick()
+            assert not read.done() and message_id in protocol._pending
+            protocol.datagram_received(wire, peer)
+            assert await read == [42]
+        await coord.async_shutdown()
+        await hass.async_stop()
+
+    asyncio.run(run())
