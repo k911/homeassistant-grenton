@@ -17,27 +17,29 @@ def _parse_client_report(
     payload: str,
     keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey] | None = None,
     clu: GrentonClu | None = None,
-) -> tuple[int | None, list[GrentonValue]]:
+) -> tuple[int, list[GrentonValue]]:
     """Parse a clientReport payload into (session_id, values).
 
     Wire payload format: clientReport:{SESSION_ID}:{val1,val2,...}
-    Returns (None, []) when the payload does not parse.
+    Reject malformed headers before their values can affect state or health.
     """
     if not payload.startswith("clientReport:"):
-        return None, []
+        raise ValueError("Expected a clientReport payload")
 
     parts = payload.split(":", 2)
     if len(parts) != 3:
-        return None, []
+        raise ValueError("Incomplete clientReport header")
 
     try:
         session_id = int(parts[1])
-    except ValueError:
-        return None, []
+    except ValueError as error:
+        raise ValueError("Invalid clientReport session") from error
+    if session_id < 0:
+        raise ValueError("Invalid clientReport session")
 
     data_payload = parts[2]
     if not (data_payload.startswith("{") and data_payload.endswith("}")):
-        return session_id, []
+        raise ValueError("Expected clientReport values in braces")
 
     content = data_payload[1:-1].strip()
     if not content:
@@ -90,22 +92,24 @@ class GrentonCluApiClientRegisterRequest(GrentonCluApiRequest):
         for key in keys:
             if isinstance(key, GrentonCluStateVariableKey):
                 mapped_keys.append(quote_lua_string(key.name))
-            elif isinstance(key, GrentonCluStateAttributeKey): # pyright: ignore[reportUnnecessaryIsInstance]
-                mapped_keys.append(f'{{{key.object_name},{key.name}}}')
+            elif isinstance(key, GrentonCluStateAttributeKey):  # pyright: ignore[reportUnnecessaryIsInstance]
+                mapped_keys.append(f"{{{key.object_name},{key.name}}}")
 
-        payload = f'SYSTEM:clientRegister(0,{session_id},1,{{{",".join(mapped_keys)}}})'
+        payload = f"SYSTEM:clientRegister(0,{session_id},1,{{{','.join(mapped_keys)}}})"
         super().__init__(payload, msg_id)
 
 
 class GrentonCluApiClientRegisterResponse(GrentonCluApiResponse):
     """Response from client registration with initial values."""
 
-    session_id: int | None
+    session_id: int
     values: list[GrentonValue]
 
     def __init__(
-        self, wire_message: str,
-        keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey] | None = None,
+        self,
+        wire_message: str,
+        keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey]
+        | None = None,
         clu: GrentonClu | None = None,
     ):
         """Initialize from wire format message and parse values."""
@@ -116,12 +120,14 @@ class GrentonCluApiClientRegisterResponse(GrentonCluApiResponse):
 class GrentonCluApiClientReportNotification(GrentonCluApiNotification):
     """Notification with subscription report and updated values."""
 
-    session_id: int | None
+    session_id: int
     values: list[GrentonValue]
 
     def __init__(
-        self, wire_message: str,
-        keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey] | None = None,
+        self,
+        wire_message: str,
+        keys: list[GrentonCluStateVariableKey | GrentonCluStateAttributeKey]
+        | None = None,
         clu: GrentonClu | None = None,
     ):
         """Initialize from wire format message and parse values."""

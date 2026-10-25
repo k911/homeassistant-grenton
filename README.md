@@ -195,6 +195,8 @@ refreshes every 45 seconds, independently per CLU. A slow CLU cannot hold up
 another controller's timers. Operations do not overlap their own previous run;
 timeouts add delay rather than triggering catch-up bursts. Outgoing datagrams
 share a minimum 20 ms spacing per CLU, including after cancellation.
+Duplicate keys are read once, and changing their input order reuses existing
+subscription groups. Large values stay isolated for both subscriptions and polls.
 
 Reload, unload, failed startup and Home Assistant shutdown close owned sockets,
 fail pending reply waiters and cancel notification tasks. A locally lost main
@@ -202,6 +204,13 @@ socket is recreated on the next keepalive; a lost subscription socket is
 recreated on the next registration refresh without replacing healthy groups.
 A network timeout alone does not recreate sockets, add subscribers, or replay
 an action: the CLU may already have executed a write before its reply was lost.
+All transports close before waiting for callbacks, including if shutdown is
+cancelled. Work and replies from an earlier connection cannot resume after a
+reconnect. Malformed response envelopes and report headers are rejected.
+
+Registration refreshes on a subscription socket never overlap. Their required
+stable IDs cannot distinguish a delayed reply to an earlier refresh of the same
+keys; the wire format provides no sequence number for that distinction.
 
 Closing UDP sockets is local cleanup, not a confirmed Grenton unsubscribe.
 Remote registrations must expire according to CLU firmware; no undocumented
@@ -225,6 +234,10 @@ check every realtime source. Existing polling freshness rules remain unchanged.
 Diagnostics remain available during outages so their values can explain them.
 Keepalives update those diagnostics directly, without refreshing all normal
 entities unless availability changes.
+
+Object Manager imports use a 30-second HTTP timeout and close their session on
+exit, failure or cancellation. ZIP/JSON parsing runs outside the event loop;
+invalid archives and non-object JSON produce an import data error.
 
 ### On/Off Controls as Lights
 

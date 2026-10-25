@@ -63,7 +63,11 @@ def split_report_values(content: str, expected_count: int | None) -> list[str]:
             separator = start + len(parts[0])
             while separator < len(content) and content[separator].isspace():
                 separator += 1
-            if separator < len(content) and content[separator] == "," and (tail := split(separator + 1, remaining - 1)):
+            if (
+                separator < len(content)
+                and content[separator] == ","
+                and (tail := split(separator + 1, remaining - 1))
+            ):
                 return (parts[0], *tail)
         return None
 
