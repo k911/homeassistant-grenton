@@ -203,11 +203,16 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
             return self.async_abort(reason="entity_not_found")
 
         current_config: dict[str, Any] = getattr(entity, "_config", {})
+        errors: dict[str, str] = {}
 
         # Initialize accumulated config if not exists
         if self.entity_config is None:
             self.entity_config = {}
             self.current_step_index = 0
+            try:
+                await entity.async_prepare_configuration()
+            except HomeAssistantError:
+                errors["base"] = "cannot_read_configuration"
 
         # Get schema instance
         schema_instance = entity._get_schema_instance()  # type: ignore[reportPrivateUsage]
@@ -219,7 +224,6 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         if not steps:
             return self.async_abort(reason="entity_not_configurable")
 
-        errors: dict[str, str] = {}
         if user_input is not None:
             result = steps[self.current_step_index].builder(
                 current_config,

@@ -231,7 +231,8 @@
     },
     "error": {
       "invalid_configuration": "Select valid options and enter valid values.",
-      "cannot_apply_configuration": "Could not save the configuration to the CLU. Check the connection and current temperature limits, then retry."
+      "cannot_apply_configuration": "Could not save the configuration to the CLU. Check the connection and current temperature limits, then retry.",
+      "cannot_read_configuration": "Could not read the current settings from the CLU. Check the connection and reopen configuration."
     }
   },
   "services": {

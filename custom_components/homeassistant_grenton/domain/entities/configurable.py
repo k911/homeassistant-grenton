@@ -66,6 +66,9 @@ class ConfigurableEntity(Generic[C]):
             return schema.defaults()  # type: ignore[attr-defined]
         return {}
 
+    async def async_prepare_configuration(self) -> None:
+        """Optionally load device settings before showing the first form."""
+
     def build_config_schema(self, current: Dict[str, Any]):
         """Return a voluptuous schema for configuration."""
         schema = self._get_schema_instance()

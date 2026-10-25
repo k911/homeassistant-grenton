@@ -113,7 +113,13 @@ def test_http_gate_polls_all_bindings_without_any_subscription_sockets(tmp_path)
         async def read(request):
             requests.append(request)
             payload = ",".join(
-                '"Y0' + "Y0" * 671 + '+00:30"' if key.name == "9" else "30"
+                '"Y0' + "Y0" * 671 + '+00:30"'
+                if key.name == "9"
+                else "1"
+                if key.name == "6"
+                else "2"
+                if key.name == "8"
+                else "30"
                 for key in request.keys
             )
             return f"resp:192.0.2.1:{request.msg_id}:clientReport:1:{{{payload}}}"

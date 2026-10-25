@@ -21,21 +21,27 @@ from custom_components.homeassistant_grenton.state import (
 )
 
 
-def test_schedule_reports_are_isolated_and_subscription_sockets_are_reused(tmp_path):
+def test_schedule_is_polled_separately_and_realtime_sockets_are_reused(tmp_path):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
         coord = coordinator(hass, entry, [make_clu("clu1")])
         entity = DeviceMapper.to_domain(widget(), coord).entities[0]
         api = coord._apis["clu1"]
-        keys = coord.state.clus["clu1"].get_subscription_order()
+        keys = [
+            key
+            for key in coord.state.clus["clu1"].get_subscription_order()
+            if key in coord._realtime_keys["clu1"]
+        ]
         schedule_key = GrentonCluStateAttributeKey("THERMOSTAT1", "9")
         assert api.large_value_keys == {schedule_key}
+        assert schedule_key not in keys
         week = "Y0" * 672 + "+00:30"
 
         async def open_socket(chunk):
             response = ",".join(
-                f'"{week}"' if key == schedule_key else "30" for key in chunk
+                "1" if key.name == "6" else "2" if key.name == "8" else "30"
+                for key in chunk
             )
             api._subscription_endpoints.append(
                 _SubscriptionEndpoint(
@@ -52,20 +58,20 @@ def test_schedule_reports_are_isolated_and_subscription_sockets_are_reused(tmp_p
 
         api._open_chunk_socket = AsyncMock(side_effect=open_socket)
         api.poll_component_states = AsyncMock(
-            side_effect=lambda keys: [30 for key in keys]
+            side_effect=lambda keys: [
+                week if key == schedule_key else 30 for key in keys
+            ]
         )
         values = await api.register_component_states(keys)
         endpoints = api._subscription_endpoints.copy()
-        assert next(
-            endpoint for endpoint in endpoints if schedule_key in endpoint.keys
-        ).keys == [schedule_key]
-        assert values[keys.index(schedule_key)] == week
+        assert all(schedule_key not in endpoint.keys for endpoint in endpoints)
         await coord._process_report("clu1", keys, values)
         await coord._send_slow_poll("clu1")
         assert entity.decoded_schedule is not None
+        assert api.poll_component_states.await_args.args[0] == [schedule_key]
         assert await api.register_component_states(keys) == values
         assert api._subscription_endpoints == endpoints
-        assert api._open_chunk_socket.await_count == 2
+        assert api._open_chunk_socket.await_count == 1
         await hass.async_stop()
 
     asyncio.run(run())
@@ -143,13 +149,23 @@ def test_newer_push_wins_over_registration_snapshot_and_actual_nil_clears_state(
         )
         assert await coord.async_refresh_clu_state("clu1")
         assert entity.hvac_mode == "off"  # Old snapshot says on; newer push says off.
+        assert entity.decoded_schedule is None  # Off pauses the large read.
+        schedule_state = entity.states["scheduleData"]
+        assert await coord.async_refresh_clu_state(
+            "clu1", required_states=[schedule_state]
+        )
         assert entity.schedule_status == "ready"
-        schedule_key = GrentonCluStateAttributeKey("THERMOSTAT1", "9")
-        await coord._process_report("clu1", [schedule_key], [None])
+        values["9"], week = None, values["9"]
+        assert await coord.async_refresh_clu_state(
+            "clu1", required_states=[schedule_state]
+        )
         assert entity.decoded_schedule is None
         assert coord.get_value_for_component(entity.states["scheduleData"]) is None
         # Failed network reads retain the previous valid value; actual nil does not.
-        await coord._process_report("clu1", [schedule_key], [values["9"]])
+        values["9"] = week
+        assert await coord.async_refresh_clu_state(
+            "clu1", required_states=[schedule_state]
+        )
         coord._apis["clu1"].register_component_states.side_effect = None
         coord._apis["clu1"].register_component_states.return_value = [
             MISSING_STATE
@@ -252,7 +268,7 @@ def test_packets_from_separate_sockets_share_pacing_and_cancellation_cleans_pend
         entered, release = asyncio.Event(), asyncio.Event()
 
         async def spacing(delay):
-            assert delay == 0.02
+            assert 0 < delay <= 0.02
             entered.set()
             await release.wait()
 
@@ -265,10 +281,11 @@ def test_packets_from_separate_sockets_share_pacing_and_cancellation_cleans_pend
             first = asyncio.create_task(
                 protocols[0].send_request(GrentonCluApiPingRequest("00000001"))
             )
-            await entered.wait()
+            await asyncio.get_running_loop().run_in_executor(None, lambda: None)
             second = asyncio.create_task(
                 protocols[1].send_request(GrentonCluApiPingRequest("00000002"))
             )
+            await entered.wait()
             # Both requests are queued, but the spacing gate allows only one send.
             await asyncio.get_running_loop().run_in_executor(None, lambda: None)
             protocols[0].transport.sendto.assert_called_once()
@@ -277,6 +294,7 @@ def test_packets_from_separate_sockets_share_pacing_and_cancellation_cleans_pend
             with pytest.raises(asyncio.CancelledError):
                 await first
             release.set()
+            await asyncio.get_running_loop().run_in_executor(None, lambda: None)
             protocols[1]._process_response("resp:192.0.2.1:00000002:pong")
             assert await second is not None
             assert protocols[0]._pending == protocols[1]._pending == {}

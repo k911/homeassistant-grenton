@@ -157,9 +157,10 @@ Other values retain their configurable **Realtime** / **Polling** choice,
 independently for each VALUE_DOUBLE channel.
 
 Thermostat current temperature, target temperature, minimum and maximum are
-also polled. Power, manual/schedule mode, direction, output activity and schedule
-data retain realtime subscriptions on capable CLUs. Changing the target or
-operating mode reads the target back immediately; schedule and limit changes
+also polled. Schedule data is polled only while the thermostat is on in Auto,
+or read on demand for configuration and save verification. Power, manual/schedule
+mode, direction and output activity retain realtime subscriptions on capable CLUs.
+Changing the target or operating mode reads the target back immediately; schedule and limit changes
 retain their targeted readback checks.
 
 **CLU_GATE_HTTP** uses polling for every binding, including controls and
@@ -184,6 +185,29 @@ shown as unknown. Other entities show unknown for stale polled fields.
 Polling reduces change reports and, when it removes subscription groups, their
 keepalives and refreshes. It adds a request per batch per interval, so the traffic
 reduction depends on the number of values and their previous update frequency.
+
+### CLU connections and cleanup
+
+Each CLU has one control UDP socket for actions and session-1 polling. Realtime
+values use persistent session-0 sockets, up to 30 keys per group, with stable
+registration and keepalive IDs. Keepalives run every 5 seconds and registration
+refreshes every 45 seconds, independently per CLU. A slow CLU cannot hold up
+another controller's timers. Operations do not overlap their own previous run;
+timeouts add delay rather than triggering catch-up bursts. Outgoing datagrams
+share a minimum 20 ms spacing per CLU, including after cancellation.
+
+Reload, unload, failed startup and Home Assistant shutdown close owned sockets,
+fail pending reply waiters and cancel notification tasks. A locally lost main
+socket is recreated on the next keepalive; a lost subscription socket is
+recreated on the next registration refresh without replacing healthy groups.
+A network timeout alone does not recreate sockets, add subscribers, or replay
+an action: the CLU may already have executed a write before its reply was lost.
+
+Closing UDP sockets is local cleanup, not a confirmed Grenton unsubscribe.
+Remote registrations must expire according to CLU firmware; no undocumented
+unsubscribe command is sent. The 30-key cap does not guarantee a maximum reply
+size for arbitrary string values. Keep large strings out of realtime groups,
+as done for thermostat schedules.
 
 ### On/Off Controls as Lights
 
@@ -296,9 +320,11 @@ Its state summarizes the current scheduled target and next temperature change,
 for example **22°C until 20:00**. Open it to see whether the schedule is being
 followed, the heating/cooling direction, the next target and change time, and
 readable periods for all seven days. Constant schedules show **20°C all week**.
-Manual mode and Off retain the saved schedule with **Following schedule: No**.
+Manual mode and Off retain the last read schedule with **Following schedule: No**.
+After starting in either mode, the sensor remains unknown until configuration is
+opened, a schedule is saved, or Auto becomes active.
 
-The sensor uses the existing CLU reports and refreshes at each quarter-hour
+The sensor shares the thermostat's polled schedule and refreshes at each quarter-hour
 without writing to the thermostat. It follows Home Assistant's temperature unit,
 language (English/Polish) and time zone; the time zone should match the CLU clock.
 Before valid schedule data arrives, its state is unknown. The climate entity's
@@ -336,17 +362,22 @@ Schedule editing reads the configured minimum and maximum from thermostat
 attributes **10** and **11** and accepts **0.5°C** increments within those limits.
 The captured encoding supports nonnegative temperatures. The current schedule
 and limits must have been received from the CLU before an update can be sent.
-At startup, the integration pulls the saved week and limits from the CLU and
-checks their encoding together; it never pushes a cached Home Assistant schedule.
-Incomplete startup reads are retried once, then recovered through normal reports
-and the periodic refresh. Each large schedule uses its own subscription, and
-outgoing packets are paced across the CLU's sockets to reduce request bursts.
+Schedule data has **no realtime subscription**. It is read at startup only when
+the thermostat is on in schedule mode (mode 2), then at the source CLU's polling
+interval. Manual mode, Off and unknown modes pause these reads; activating Auto
+resumes them on the next poll. Opening thermostat configuration loads the
+schedule on demand in any mode. Each large schedule is read individually on the
+existing control socket, separate from batches of up to 30 ordinary values.
+The integration never pushes a cached Home Assistant schedule.
+Outgoing packets are paced across the CLU's sockets to reduce request bursts.
 Newer pushed reports take precedence over an older in-flight read. Failed reads
 retain cached values; an actual CLU `nil` clears them.
 
-Every schedule save first reads fresh data, then verifies the reported week and
-limits after writing, with up to three readback attempts. These reads refresh only
-the existing subscription groups containing that thermostat's schedule and limits. An acknowledgement alone
+Every schedule save first reads fresh data, then makes one immediate readback
+to verify the reported week and limits after writing, including in manual mode
+or Off. This one-off read does not enable background polling; only active Auto
+does. These reads request only the thermostat's schedule, limits and target.
+An acknowledgement alone
 does not count as a confirmed save. Missing or inconsistent data keeps the schedule
 sensor unknown and disables editing; the climate's `schedule_status` attribute
 and logs explain the decoding problem, including the first rejected pair, day/time

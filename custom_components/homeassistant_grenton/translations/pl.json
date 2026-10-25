@@ -231,7 +231,8 @@
     },
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości.",
-      "cannot_apply_configuration": "Nie udało się zapisać konfiguracji w CLU. Sprawdź połączenie i aktualne limity temperatur, a następnie spróbuj ponownie."
+      "cannot_apply_configuration": "Nie udało się zapisać konfiguracji w CLU. Sprawdź połączenie i aktualne limity temperatur, a następnie spróbuj ponownie.",
+      "cannot_read_configuration": "Nie udało się odczytać aktualnych ustawień z CLU. Sprawdź połączenie i otwórz konfigurację ponownie."
     }
   },
   "services": {

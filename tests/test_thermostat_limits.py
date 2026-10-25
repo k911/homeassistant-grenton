@@ -203,7 +203,7 @@ def test_schedule_save_preserves_all_operating_modes_and_directions(mode, direct
     assert set(entity.decoded_schedule.temperatures) == {22}
 
 
-def test_schedule_write_retries_readback_when_controller_update_is_delayed():
+def test_schedule_write_checks_once_and_reports_a_delayed_controller_update():
     entity, coord = thermostat()
     refresh = coord.async_refresh_clu_state.side_effect
     attempts = 0
@@ -216,9 +216,10 @@ def test_schedule_write_retries_readback_when_controller_update_is_delayed():
         return await refresh(*args, **kwargs)
 
     coord.async_refresh_clu_state.side_effect = delayed
-    asyncio.run(entity.async_set_thermostat_schedule(constant_week(23)))
-    assert attempts == 3
-    assert set(entity.decoded_schedule.temperatures) == {23}
+    with pytest.raises(HomeAssistantError, match="did not confirm"):
+        asyncio.run(entity.async_set_thermostat_schedule(constant_week(23)))
+    assert attempts == 2  # One preflight read, one verification read, no retries.
+    assert set(entity.decoded_schedule.temperatures) == {20}
 
 
 @pytest.mark.parametrize("fresh", [True, False])

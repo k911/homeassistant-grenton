@@ -69,7 +69,12 @@ class GrentonEntityThermostatV2(
         self._last_schedule_status: str | None = None
         for name, state in states.items():
             if name == "scheduleData":
-                coordinator.register_component_state(state, large_value=True)
+                coordinator.register_component_state(
+                    state,
+                    large_value=True,
+                    read_mode="slow",
+                    poll_condition=lambda: self.following_schedule is True,
+                )
             elif name in (
                 "currentTemperature",
                 "targetTemperature",
@@ -138,6 +143,14 @@ class GrentonEntityThermostatV2(
                     "[%s] CLU weekly schedule decoded successfully",
                     self._log_context("scheduleData", "maxTemperature"),
                 )
+            elif (
+                self._value("scheduleData") is None
+                and self.following_schedule is not True
+            ):
+                _LOGGER.debug(
+                    "[%s] Schedule not loaded; background reads are paused",
+                    self._log_context("scheduleData"),
+                )
             else:
                 _LOGGER.warning(
                     "[%s] Schedule unavailable: %s",
@@ -148,6 +161,13 @@ class GrentonEntityThermostatV2(
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._analyse_schedule()
+
+    async def async_prepare_configuration(self) -> None:
+        """Load the editor on demand, including when background reads are paused."""
+        if not await self._refresh_schedule():
+            raise HomeAssistantError(
+                "Could not load the thermostat schedule and limits"
+            )
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -528,19 +548,16 @@ class GrentonEntityThermostatV2(
             await self._refresh_schedule()
             raise
         expected = decode_schedule(payload, new_maximum)
-        for attempt in range(3):
-            if attempt:
-                await asyncio.sleep(0.2 * attempt)
-            fresh = await self._refresh_schedule()
-            actual = self.decoded_schedule
-            if (
-                fresh
-                and self._number("minTemperature") == new_minimum
-                and self._number("maxTemperature") == new_maximum
-                and actual is not None
-                and actual.temperatures == expected.temperatures
-            ):
-                return
+        fresh = await self._refresh_schedule()
+        actual = self.decoded_schedule
+        if (
+            fresh
+            and self._number("minTemperature") == new_minimum
+            and self._number("maxTemperature") == new_maximum
+            and actual is not None
+            and actual.temperatures == expected.temperatures
+        ):
+            return
         _LOGGER.warning(
             "[%s] CLU did not confirm thermostat schedule/limit changes",
             self._log_context("scheduleData", "minTemperature", "maxTemperature"),

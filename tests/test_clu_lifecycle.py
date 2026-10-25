@@ -98,9 +98,10 @@ def test_pack_ordinary_values_across_schedules_and_only_refresh_required_groups(
         ] == ids
         assert api._open_chunk_socket.await_count == 4
         assert await api.register_component_states(keys) == list(values.values())
+        transports = [endpoint.transport for endpoint in endpoints]
         await coord.async_shutdown()
-        for endpoint in endpoints:
-            endpoint.transport.close.assert_called_once()
+        for transport in transports:
+            transport.close.assert_called_once()
         await hass.async_stop()
 
     asyncio.run(run())

@@ -6,7 +6,6 @@ clientReport parsing separate from the Home Assistant integration API.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import secrets
 
@@ -21,7 +20,6 @@ from ..encryption import GrentonEncryption
 from .clu import GrentonCluApi, GrentonCluApiProtocol
 from .clu_messages import (
     GrentonCluApiClientRegisterRequest,
-    GrentonCluApiMessageParser,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,7 +43,7 @@ def _quote_candidates(content: str, start: int) -> list[int]:
     for index in range(start + 1, len(content)):
         if content[index] != '"' or _is_escaped(content, index):
             continue
-        remainder = content[index + 1:].lstrip()
+        remainder = content[index + 1 :].lstrip()
         if not remainder or remainder.startswith(","):
             candidates.append(index)
     return candidates
@@ -86,7 +84,7 @@ def _split_values(content: str, start: int, remaining: int) -> list[str] | None:
                 continue
             tail = _split_values(content, separator + 1, remaining - 1)
             if tail is not None:
-                return [content[start:end + 1], *tail]
+                return [content[start : end + 1], *tail]
         return None
 
     end = _scan_unquoted_end(content, start)
@@ -135,52 +133,21 @@ def _parse_client_report(wire_message: str, expected_count: int) -> list[Grenton
 class GrentonCluCliApiProtocol(GrentonCluApiProtocol):
     """Protocol that parses CLI subscription reports using the key count."""
 
-    api: "GrentonCluCliApi"
+    api: GrentonCluCliApi
 
-    def _process_response(self, wire_message: str) -> None:
-        parts = wire_message.split(":", 3)
-        if len(parts) != 4:
-            _LOGGER.warning("[%s] Invalid wire message format", self.api.clu.name)
-            return
+    def __init__(self, api: GrentonCluCliApi):
+        super().__init__(api)
+        self.subscription_callback = self._on_report
 
-        message_id = parts[2].lower()
-        _LOGGER.debug("[%s][%s] Received: %s", self.api.clu.name, message_id, wire_message)
+    def _report_values(self, wire_message: str) -> list[GrentonValue]:
+        values = _parse_client_report(wire_message, len(self.api.subscription_keys))
+        if len(values) != len(self.api.subscription_keys):
+            raise ValueError("Incomplete CLI subscription report")
+        return values
 
-        async def complete() -> None:
-            async with self._pending_lock:
-                future = self._pending.pop(message_id, None)
-
-            if future and not future.done():
-                future.set_result(wire_message)
-                return
-
-            if not GrentonCluApiMessageParser.is_client_report(wire_message):
-                _LOGGER.debug(
-                    "[%s][%s] Response received with no pending request",
-                    self.api.clu.name,
-                    message_id,
-                )
-                return
-
-            try:
-                values = _parse_client_report(
-                    wire_message,
-                    len(self.api.subscription_keys),
-                )
-            except ValueError as error:
-                _LOGGER.error("[%s] Failed to parse client report: %s", self.api.clu.name, error)
-                return
-
-            if self.api.on_subscription_report is not None:
-                await self.api.on_subscription_report(self.api.subscription_keys, values)
-            else:
-                _LOGGER.debug(
-                    "[%s][%s] Received report but no callback registered",
-                    self.api.clu.name,
-                    message_id,
-                )
-
-        asyncio.create_task(complete())
+    async def _on_report(self, values: list[GrentonValue]) -> None:
+        if self.api.on_subscription_report is not None:
+            await self.api.on_subscription_report(self.api.subscription_keys, values)
 
 
 class GrentonCluCliApi(GrentonCluApi):
@@ -191,40 +158,8 @@ class GrentonCluCliApi(GrentonCluApi):
         self.subscription_keys: list[StateKey] = []
         self._subscription_message_id = secrets.token_hex(4)
 
-    async def connect(self) -> bool:
-        """Open the single socket used for pings and subscriptions."""
-        if self.transport is not None:
-            return True
-        self._closed = False
-        try:
-            loop = asyncio.get_event_loop()
-            protocol = GrentonCluCliApiProtocol(self)
-            self.protocol = protocol
-            transport, _ = await loop.create_datagram_endpoint(
-                lambda: protocol,
-                local_addr=("0.0.0.0", 0),
-            )
-            if self._closed:
-                transport.close()
-                self.protocol = None
-                return False
-            self.transport = transport
-            _LOGGER.debug(
-                "[%s] Opened CLI UDP socket to %s:%d",
-                self.clu.id,
-                self.clu.ip,
-                self.clu.port,
-            )
-            return True
-        except Exception as error:
-            _LOGGER.error(
-                "[%s] Failed to create CLI UDP socket to %s:%d: %s",
-                self.clu.id,
-                self.clu.ip,
-                self.clu.port,
-                error,
-            )
-            return False
+    def _create_protocol(self) -> GrentonCluCliApiProtocol:
+        return GrentonCluCliApiProtocol(self)
 
     async def register_component_states(
         self,
@@ -233,6 +168,15 @@ class GrentonCluCliApi(GrentonCluApi):
         required_keys: set[StateKey] | None = None,
     ) -> list[GrentonValue] | None:
         """Register the CLI's single group; a required-key hint cannot split it."""
+        generation = self._generation
+        async with self._registration_lock:
+            if self._closed or generation != self._generation:
+                return None
+            return await self._register_single_group(keys)
+
+    async def _register_single_group(
+        self, keys: list[StateKey]
+    ) -> list[GrentonValue] | None:
         if not keys:
             _LOGGER.debug("[%s] No state keys to register", self.clu.id)
             return None
@@ -253,7 +197,9 @@ class GrentonCluCliApi(GrentonCluApi):
         try:
             return _parse_client_report(wire_message, len(keys))
         except ValueError as error:
-            _LOGGER.error("[%s] Failed to parse register response: %s", self.clu.id, error)
+            _LOGGER.error(
+                "[%s] Failed to parse register response: %s", self.clu.id, error
+            )
             return None
 
 
