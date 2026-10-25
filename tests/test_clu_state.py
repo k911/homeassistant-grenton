@@ -44,6 +44,7 @@ from custom_components.homeassistant_grenton.domain.device_types import (
 )
 from custom_components.homeassistant_grenton.domain.encryption import GrentonEncryption
 from custom_components.homeassistant_grenton.domain.entities.clu_state import (
+    GrentonCluStateEntity,
     GrentonCluBusVoltage,
     GrentonCluCloudConnection,
     GrentonCluFirmwareVersion,
@@ -148,7 +149,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
             else:
                 await coord._process_report(clu.id, keys, values)
         platforms = await register_platforms(hass, entry)
-        assert [len(platform.entities) for platform in platforms] == [7, 2, 2]
+        assert [len(platform.entities) for platform in platforms] == [13, 4, 2]
         registry = er.async_get(hass)
         device_registry = dr.async_get(hass)
         assert len(device_registry.devices) == 2
@@ -169,7 +170,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
                 assert voltage.native_unit_of_measurement == "V"
                 assert voltage.state_class.value == "measurement"
             else:
-                assert len(group) == 5
+                assert len(group) == 9
             assert hass.states.get(controller.entity_id).state == clu.serial_number
             assert hass.states.get(uptime.entity_id).state == "123"
             assert uptime.device_class == SensorDeviceClass.DURATION
@@ -190,7 +191,8 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
         assert entities[1].native_value == 0
         assert entities[2].is_on is False
         assert entities[3].is_on is True
-        assert entities[7].native_value == 123
+        second_uptime = next(entity for entity in entities if entity.unique_id == "clu_clu2_uptime")
+        assert second_uptime.native_value == 123
         first_device_id = entities[0].registry_entry.device_id
         assert device_registry.async_get(first_device_id).sw_version == "3.2.0"
 
@@ -209,9 +211,9 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
 
         # Reload/reconfigure preserves all surviving identities and removes
         # diagnostics and configuration entities belonging to a removed CLU.
-        kept = {entity.entity_id for entity in entities[:6]}
-        removed = {entity.entity_id for entity in entities[6:]}
-        removed_device_id = entities[6].registry_entry.device_id
+        kept = {entity.entity_id for entity in entities if entity.clu.id == "clu1"}
+        removed = {entity.entity_id for entity in entities if entity.clu.id == "clu2"}
+        removed_device_id = second_uptime.registry_entry.device_id
         for platform in platforms:
             await platform.async_reset()
         replacement = clu_entities(coord, clus[0])
@@ -413,10 +415,10 @@ def test_serial_detection_and_unknown_type_preserves_controller(
         assert entities[0].unique_id == "clu_clu1"
         assert entities[0].device_info["model"] == (expected or "CLU")
         if expected is None:
-            assert len(entities) == 1
+            assert len(entities) == 5
             assert not coord.state.clus[clu.id].get_subscription_order()
         else:
-            assert {int(entity.state_object.index) for entity in entities[1:]} == set(
+            assert {int(entity.state_object.index) for entity in entities if isinstance(entity, GrentonCluStateEntity)} == set(
                 DEVICE_ATTRIBUTES[expected]
             )
             assert entities[1].unique_id == "clu_clu1_uptime"
@@ -479,7 +481,7 @@ def test_new_type_uses_its_own_indexes_and_skips_unsupported_entities(
         clu = make_clu("clu1", prefix="621")
         coord = coordinator(hass, entry, [clu])
         entities = clu_entities(coord, clu)
-        assert len(entities) == 3
+        assert len(entities) == 7
         assert isinstance(entities[1], GrentonCluFirmwareVersion)
         assert isinstance(entities[2], GrentonCluBusVoltage)
         keys = coord.state.clus[clu.id].get_subscription_order()

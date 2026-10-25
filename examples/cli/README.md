@@ -176,14 +176,16 @@ grenton_tracked_objects:
 
 ## Tests
 
-From this directory, run `python3 -m unittest test_config test_execute`.
+From this directory, run `python3 -m unittest test_config test_execute test_watch`.
 The action tests mock the CLU connection and send no commands to live hardware.
 
 ## Watch implementation
 
-The watch commands use `custom_components/homeassistant_grenton/domain/api/clu_cli.py`.
-This CLI-specific implementation keeps subscriptions on one UDP socket and
-parses comma-containing quoted values using the number of registered keys.
-It is intentionally separate from the upstream `clu.py` and
-`clu_messages/client_register.py` files so upstream rebases do not require
-reapplying CLI-specific changes to those files.
+Watch commands use the same `GrentonCluApi` as Home Assistant: persistent
+session-0 subscriptions in groups of up to 30 keys, stable registration IDs,
+and keepalives on every subscribing socket. Report parsing is shared too,
+including comma-containing and ambiguously quoted strings. Failed reads do not
+overwrite the last displayed values. One-off state reads use session 1 on the
+control socket and create no realtime subscriptions.
+Keepalive and registration timers run independently; stopping a watch cancels
+both tasks before closing its sockets.

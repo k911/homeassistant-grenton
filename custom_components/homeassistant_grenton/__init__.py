@@ -6,15 +6,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.entity import Entity
 
 from .coordinator import GrentonCoordinator
 from .domain.clu import GrentonClu
 from .domain.encryption import GrentonEncryption
 from .domain.entities.clu import GrentonCluEntity
-from .domain.entities.clu_state import GrentonCluStateEntity
 from .domain.entities.clu_state import clu_entities as create_clu_entities
 from .domain.entities.clu_variables import (
-    GrentonCluCustomVariable,
     GrentonCluVariableSensor,
     GrentonCluVariableSwitch,
 )
@@ -90,7 +89,7 @@ def _cleanup_orphans(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     devices: list,
-    clu_entities: list[GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable],
+    clu_entities: list[Entity],
 ) -> None:
     """Remove entity/device registry entries that no longer back a widget or CLU.
 

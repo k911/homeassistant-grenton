@@ -329,6 +329,15 @@
       "clu_controller": {
         "name": "Controller"
       },
+      "clu_last_seen": {
+        "name": "Last seen"
+      },
+      "clu_request_timeouts": {
+        "name": "Request timeouts"
+      },
+      "clu_subscriptions": {
+        "name": "Realtime subscriptions"
+      },
       "clu_uptime": {
         "name": "Uptime"
       },
@@ -391,6 +400,9 @@
       }
     },
     "binary_sensor": {
+      "clu_connection": {
+        "name": "Connection"
+      },
       "clu_cloud_connection": {
         "name": "Cloud connection"
       }

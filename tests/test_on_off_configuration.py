@@ -75,6 +75,7 @@ def coordinator(options=None):
         ],
         register_component_state=Mock(),
         is_state_fresh=Mock(return_value=True),
+        states_available=Mock(return_value=True),
         state_read_mode=Mock(return_value="realtime"),
         last_polled=Mock(return_value=None),
         async_refresh_clu_state=AsyncMock(return_value=True),

@@ -18,6 +18,7 @@ from ..action import GrentonAction
 from ..cipher import GrentonCipher
 from ..clu import GrentonClu
 from ..encryption import GrentonEncryption
+from .clu_health import CluConnectionHealth
 from .clu_messages import (
     GrentonCluApiActionRequest,
     GrentonCluApiClientRegisterRequest,
@@ -58,10 +59,17 @@ class _SubscriptionEndpoint:
 class GrentonCluApi:
     """Handles all communication with Grenton CLUs via UDP."""
 
-    def __init__(self, clu: GrentonClu, encryption: GrentonEncryption):
+    def __init__(
+        self,
+        clu: GrentonClu,
+        encryption: GrentonEncryption,
+        *,
+        health: CluConnectionHealth | None = None,
+    ):
         self.clu = clu
         self.encryption = encryption
         self.cipher = GrentonCipher(encryption)
+        self.health = health if health is not None else CluConnectionHealth()
 
         # Serialize outgoing actions per-CLU so grouped commands don't burst
         # the shared UDP socket (CLU drops datagrams under a burst).
@@ -93,6 +101,16 @@ class GrentonCluApi:
             Callable[[list[StateKey], list[GrentonValue]], Awaitable[None]] | None
         ) = None
 
+    @property
+    def subscription_count(self) -> int:
+        """Count usable realtime groups, excluding the control socket."""
+        return sum(
+            endpoint.ready
+            and endpoint.protocol is not None
+            and getattr(endpoint.protocol, "closed", False) is not True
+            for endpoint in self._subscription_endpoints
+        )
+
     async def connect(self) -> bool:
         """Open the main UDP socket used for pings and actions."""
         generation = self._generation
@@ -109,7 +127,7 @@ class GrentonCluApi:
                 return False
             self.transport = None
             self._closed = False
-            protocol = self._create_protocol()
+            protocol = GrentonCluApiProtocol(self)
             self.protocol = protocol
             self._opening_protocols.add(protocol)
             try:
@@ -154,9 +172,6 @@ class GrentonCluApi:
                 return False
             finally:
                 self._opening_protocols.discard(protocol)
-
-    def _create_protocol(self) -> GrentonCluApiProtocol:
-        return GrentonCluApiProtocol(self)
 
     @staticmethod
     async def _close_socket(transport, protocol) -> None:
@@ -605,6 +620,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
         )
         future = self._pending.pop(message_id, None)
         if future is not None and not future.done():
+            self.api.health.record_response()
             future.set_result(wire_message)
             return
         if (
@@ -620,6 +636,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
             )
             return
         task = asyncio.create_task(self._deliver_report(values))
+        self.api.health.record_response()
         self._report_tasks.add(task)
         task.add_done_callback(self._report_tasks.discard)
 
@@ -656,6 +673,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
             _LOGGER.debug("[%s][%s] Sent: %s", self.api.clu.name, msg_id, request.raw)
             return await asyncio.wait_for(future, timeout=self._response_timeout)
         except TimeoutError:
+            self.api.health.request_timeouts += 1
             if isinstance(request, GrentonCluApiClientRegisterRequest):
                 operation = f"{'slow' if request.session_id == 1 else 'state'} read ({len(request.keys)} keys)"
             elif isinstance(request, GrentonCluApiPingRequest):

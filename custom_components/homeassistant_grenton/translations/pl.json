@@ -326,6 +326,15 @@
           "unknown": "nieznany"
         }
       },
+      "clu_last_seen": {
+        "name": "Ostatni kontakt"
+      },
+      "clu_request_timeouts": {
+        "name": "Przekroczone czasy żądań"
+      },
+      "clu_subscriptions": {
+        "name": "Subskrypcje w czasie rzeczywistym"
+      },
       "clu_controller": {
         "name": "Sterownik"
       },
@@ -391,6 +400,9 @@
       }
     },
     "binary_sensor": {
+      "clu_connection": {
+        "name": "Połączenie"
+      },
       "clu_cloud_connection": {
         "name": "Połączenie z chmurą"
       }

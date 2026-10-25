@@ -86,6 +86,10 @@ class GrentonEntityThermostatV2(
                 coordinator.register_component_state(state)
 
     @property
+    def state_sources(self) -> list[GrentonStateObject]:
+        return list(self.states.values())
+
+    @property
     def name(self) -> None:
         # This remains the main entity when the read-only schedule is added.
         return None

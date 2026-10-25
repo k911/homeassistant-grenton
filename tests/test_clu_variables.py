@@ -314,7 +314,7 @@ def test_native_entities_share_clu_device_and_switch_writes_only_own_variable(tm
         await coord._process_report(
             "clu2", coord.state.clus["clu2"].get_subscription_order(), [True]
         )
-        assert [len(platform.entities) for platform in platforms] == [5, 0, 2]
+        assert [len(platform.entities) for platform in platforms] == [11, 2, 2]
         switches = [
             entity
             for entity in entities
@@ -471,7 +471,7 @@ def test_integration_entity_editor_uses_same_variable_schema_and_persistence(tmp
         entry.runtime_data = RuntimeData(coord, [], entities)
         platforms = await register_platforms(hass, entry)
         manager = configure_manager(hass, entry)
-        controller, counter = entities
+        controller, counter = entities[0], entities[-1]
         form = await manager.async_init(entry.entry_id)
         form = await manager.async_configure(
             form["flow_id"], {"next_step_id": "entity_list"}
@@ -499,8 +499,8 @@ def test_integration_entity_editor_uses_same_variable_schema_and_persistence(tmp
         )
         refreshed = coordinator(hass, entry, [clu])
         replacement = clu_entities(refreshed, clu)
-        assert replacement[1].unique_id == counter.unique_id
-        assert isinstance(replacement[1], GrentonCluVariableSwitch)
+        assert replacement[-1].unique_id == counter.unique_id
+        assert isinstance(replacement[-1], GrentonCluVariableSwitch)
         assert [
             key.name for key in refreshed.state.clus[clu.id].get_subscription_order()
         ] == ["Enabled"]

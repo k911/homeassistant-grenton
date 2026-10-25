@@ -15,9 +15,6 @@ from test_clu_scripts import make_entry, make_hass
 from test_thermostat_v2 import payloads, thermostat
 
 from custom_components.homeassistant_grenton import async_setup
-from custom_components.homeassistant_grenton.domain.api.clu_cli import (
-    _parse_client_report as parse_cli_report,
-)
 from custom_components.homeassistant_grenton.domain.api.clu_messages.client_register import (
     GrentonCluApiClientRegisterResponse,
     GrentonCluApiClientReportNotification,
@@ -251,13 +248,14 @@ def test_ten_to_twenty_nine_capture_decodes_and_round_trips_exactly():
     assert encode_schedule(decoded.periods(), data, 10, 29) == data
 
 
-@pytest.mark.parametrize("kind", ["register", "notification", "cli"])
+@pytest.mark.parametrize("kind", ["register", "notification", "with_keys"])
 @pytest.mark.parametrize("trailer", ["+00:2$", "+00:2 "])
 def test_quoted_reports_preserve_encoding_spaces_at_both_ends(kind, trailer):
     data = " $" * 672 + trailer
     wire = f'resp:192.0.2.1:00000000:clientReport:0:{{2,"{data}"," 21.5 ",1}}'
-    if kind == "cli":
-        values = parse_cli_report(wire, 4)
+    if kind == "with_keys":
+        from custom_components.homeassistant_grenton.state import GrentonCluStateVariableKey
+        values = GrentonCluApiClientRegisterResponse(wire, [GrentonCluStateVariableKey(str(i)) for i in range(4)]).values
     else:
         cls = (
             GrentonCluApiClientRegisterResponse

@@ -209,6 +209,23 @@ unsubscribe command is sent. The 30-key cap does not guarantee a maximum reply
 size for arbitrary string values. Keep large strings out of realtime groups,
 as done for thermostat schedules.
 
+Each CLU device has local **Connection**, **Last seen**, **Request timeouts** and
+**Realtime subscriptions** diagnostics. They observe existing traffic and add no
+CLU reads or registrations. Last seen is the UTC time of the last matched reply
+or valid subscription report. Timeout counts reset when the integration reloads;
+subscription counts describe local ready subscription sockets, excluding the
+control socket, rather than a firmware-reported remote session count.
+
+A CLU is disconnected after **30 seconds** without a valid reply or report.
+Realtime entities using that CLU become unavailable and recover when communication
+returns. Independently, a realtime source expires after **90 seconds** without a
+successful registration snapshot or pushed value, even if keepalives still work.
+Only entities using affected sources are marked unavailable; multi-source widgets
+check every realtime source. Existing polling freshness rules remain unchanged.
+Diagnostics remain available during outages so their values can explain them.
+Keepalives update those diagnostics directly, without refreshing all normal
+entities unless availability changes.
+
 ### On/Off Controls as Lights
 
 Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
@@ -694,9 +711,9 @@ Configure sliders with appropriate device classes for proper representation:
 
 **Device state not synchronized:**
 
-1. Check Grenton Object Manager is running and accessible
+1. Check the CLU device's **Connection**, **Last seen** and **Request timeouts** diagnostics
 2. Verify network connectivity between Home Assistant and Grenton
-3. Review coordinator update interval (default: 30 seconds)
+3. For polled values, check the CLU's slow-read interval (default: 60 seconds)
 4. Check Grenton device is responding to queries
 
 ## 📝 License

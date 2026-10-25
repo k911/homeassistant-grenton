@@ -8,9 +8,9 @@ from ....state import (
 )
 from ...clu import GrentonClu
 from ...device_types import attribute_index
-from ...lua_arguments import split_lua_arguments
 from ...scene_arguments import quote_lua_string
 from .base import GrentonCluApiNotification, GrentonCluApiRequest, GrentonCluApiResponse
+from .report_values import split_report_values
 
 
 def _parse_client_report(
@@ -44,7 +44,7 @@ def _parse_client_report(
         return session_id, []
 
     # Schedule strings contain commas; only split between Lua values.
-    raw_values = split_lua_arguments(content)
+    raw_values = split_report_values(content, len(keys) if keys is not None else None)
     values: list[GrentonValue] = []
     for position, raw_value in enumerate(raw_values):
         token = raw_value.strip()

@@ -67,6 +67,7 @@ def make_coordinator(entry, clus):
         execute_action=AsyncMock(),
         register_component_state=Mock(),
         get_value_for_component=Mock(return_value=None),
+        states_available=Mock(return_value=True),
     )
 
 
@@ -271,6 +272,7 @@ def test_script_action_reports_transport_failures(failure):
     async def run():
         coordinator = GrentonCoordinator.__new__(GrentonCoordinator)
         coordinator._stopping = False
+        coordinator._publish_clu_update = Mock()
         api = SimpleNamespace(execute_action=AsyncMock(return_value=failure))
         if isinstance(failure, Exception):
             api.execute_action.side_effect = failure
@@ -323,7 +325,7 @@ def test_setup_discovers_all_imported_clus_without_any_widgets(tmp_path):
             "clu1",
             "clu2",
         ]
-        assert len(entry.runtime_data.clu_entities) == 11
+        assert len(entry.runtime_data.clu_entities) == 19
         coordinator.async_setup.assert_awaited_once()
         hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 

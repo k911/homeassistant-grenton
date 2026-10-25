@@ -12,10 +12,17 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DOMAIN
 from .domain.action import GrentonAction
 from .domain.api.clu import GrentonCluApi
+from .domain.api.clu_health import (
+    CluConnectionHealth,
+    KEEPALIVE_INTERVAL,
+    REGISTRATION_INTERVAL,
+    REALTIME_STALE_AFTER,
+)
 from .domain.api.clu_messages import GrentonCluApiActionRequest
 from .domain.clu import GrentonClu
 from .domain.device_types import CLU_GATE_HTTP
@@ -37,24 +44,33 @@ StateKey = GrentonCluStateVariableKey | GrentonCluStateAttributeKey
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class GrentonCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, clus: list[GrentonClu], encryption: GrentonEncryption):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        clus: list[GrentonClu],
+        encryption: GrentonEncryption,
+    ):
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             config_entry=config_entry,
         )
-        
+
         self.config_entry = config_entry
         self.clus = clus
         self.encryption = encryption
         self.state = GrentonState(clus={clu.id: GrentonCluState() for clu in clus})
-        
+
         # Map CLU IDs to their API instances
         self._apis: dict[str, GrentonCluApi] = {}
         self._read_locks = {clu.id: asyncio.Lock() for clu in clus}
-        self._report_versions: dict[str, dict[StateKey, int]] = {clu.id: {} for clu in clus}
+        self._report_versions: dict[str, dict[StateKey, int]] = {
+            clu.id: {} for clu in clus
+        }
         self._shutdown_lock = asyncio.Lock()
         self._stopping = False
         self._stop_listener: Callable[[], None] | None = None
@@ -74,14 +90,61 @@ class GrentonCoordinator(DataUpdateCoordinator):
         }
         self._slow_tasks: dict[str, asyncio.Task] = {}
         self._slow_settings_lock = asyncio.Lock()
-        
+        self.connection_health = {clu.id: CluConnectionHealth() for clu in clus}
+        self._realtime_success: dict[str, dict[StateKey, float]] = {
+            clu.id: {} for clu in clus
+        }
+        self._availability_signatures: dict[str, tuple[bool, frozenset[StateKey]]] = {}
+        self._health_signal_prefix = f"grenton_health_{config_entry.entry_id}_"
+
         # Initialize API instances for each CLU
         for clu in clus:
-            self._apis[clu.id] = GrentonCluApi(clu, encryption)
+            self._apis[clu.id] = GrentonCluApi(
+                clu, encryption, health=self.connection_health[clu.id]
+            )
 
-    async def _async_update_data(self): # type: ignore
+    def health_update_signal(self, clu_id: str) -> str:
+        """Scope local diagnostic updates to this integration entry and CLU."""
+        return f"{self._health_signal_prefix}{clu_id}"
+
+    def subscription_count(self, clu_id: str) -> int:
+        api = self._apis.get(clu_id)
+        return api.subscription_count if api is not None else 0
+
+    def _realtime_key_fresh(self, clu_id: str, key: StateKey) -> bool:
+        stamp = self._realtime_success[clu_id].get(
+            key, self.connection_health[clu_id].started_at
+        )
+        return monotonic() - stamp < REALTIME_STALE_AFTER
+
+    def states_available(self, states: list[GrentonStateObject]) -> bool:
+        """Expire realtime sources; polled entities retain their existing policy."""
+        return all(
+            self.state_read_mode(state) != "realtime" or self.is_state_fresh(state)
+            for state in states
+        )
+
+    def _publish_clu_update(self, clu_id: str, *, values_changed: bool = False) -> None:
+        """Refresh diagnostics locally; wake all entities only for state/availability changes."""
+        if self._stopping:
+            return
+        signature = (
+            self.connection_health[clu_id].connected is not False,
+            frozenset(
+                key
+                for key in self._realtime_keys[clu_id]
+                if not self._realtime_key_fresh(clu_id, key)
+            ),
+        )
+        changed = self._availability_signatures.get(clu_id) != signature
+        self._availability_signatures[clu_id] = signature
+        async_dispatcher_send(self.hass, self.health_update_signal(clu_id))
+        if values_changed or changed:
+            self.async_set_updated_data(self.state.__dict__)
+
+    async def _async_update_data(self):  # type: ignore
         return self.state
-    
+
     async def _send_ping(self, clu_id: str) -> None:
         if self._stopping:
             return
@@ -89,14 +152,16 @@ class GrentonCoordinator(DataUpdateCoordinator):
         if not api:
             _LOGGER.warning("[%s] No API found for CLU during ping", clu_id)
             return
-        
+
         try:
             success = await api.ping()
             if not success:
                 _LOGGER.warning("[%s] Ping failed", clu_id)
         except Exception as e:
             _LOGGER.error("[%s] Error during ping: %s", clu_id, e)
-    
+        finally:
+            self._publish_clu_update(clu_id)
+
     async def _periodic_clu_loop(
         self, clu_id: str, interval: int, *, register: bool
     ) -> None:
@@ -113,17 +178,24 @@ class GrentonCoordinator(DataUpdateCoordinator):
                     await self._send_ping(clu_id)
             except Exception as error:  # noqa: BLE001 - keep this CLU's timer alive after failures
                 _LOGGER.error(
-                    "[%s] Periodic %s failed: %s", clu_id,
-                    "registration" if register else "keepalive", error,
+                    "[%s] Periodic %s failed: %s",
+                    clu_id,
+                    "registration" if register else "keepalive",
+                    error,
                 )
 
     async def _ping_loop(self) -> None:
         await asyncio.gather(
-            *(self._periodic_clu_loop(clu_id, 5, register=False) for clu_id in self._apis)
+            *(
+                self._periodic_clu_loop(clu_id, KEEPALIVE_INTERVAL, register=False)
+                for clu_id in self._apis
+            )
         )
 
     @staticmethod
-    def _state_key(state: GrentonStateObject) -> GrentonCluStateVariableKey | GrentonCluStateAttributeKey:
+    def _state_key(
+        state: GrentonStateObject,
+    ) -> GrentonCluStateVariableKey | GrentonCluStateAttributeKey:
         if isinstance(state, GrentonVariableValueObject):
             return GrentonCluStateVariableKey(state.index)
         return GrentonCluStateAttributeKey(state.object_name, state.index)
@@ -163,6 +235,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
                 if key in self._realtime_keys[clu_id]
             ]
             versions = self._report_versions[clu_id].copy()
+            started_at = monotonic()
             values = (
                 await api.register_component_states(keys)
                 if required_keys is None
@@ -182,7 +255,10 @@ class GrentonCoordinator(DataUpdateCoordinator):
                 for key, value in zip(keys, values)
             ]
             clu_state.update_keys(keys, merged)
-            self.async_set_updated_data(self.state.__dict__)
+            for key, value in zip(keys, merged):
+                if not isinstance(value, MissingState):
+                    self._realtime_success[clu_id][key] = started_at
+            self._publish_clu_update(clu_id, values_changed=True)
             return {
                 key
                 for key, value in zip(keys, values)
@@ -196,8 +272,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
     async def _register_loop(self) -> None:
         await asyncio.gather(
             *(
-                self._periodic_clu_loop(clu_id, 45, register=True)
-                for clu_id in self._apis if self._realtime_keys[clu_id]
+                self._periodic_clu_loop(clu_id, REGISTRATION_INTERVAL, register=True)
+                for clu_id in self._apis
+                if self._realtime_keys[clu_id]
             )
         )
 
@@ -212,22 +289,30 @@ class GrentonCoordinator(DataUpdateCoordinator):
         if not api:
             if raise_on_error:
                 raise HomeAssistantError(f"CLU {action.clu_id} is not loaded")
-            _LOGGER.warning("[%s] No API found for CLU during action execution", action.clu_id)
+            _LOGGER.warning(
+                "[%s] No API found for CLU during action execution", action.clu_id
+            )
             return
-        
+
         try:
             success = await api.execute_action(action)
             if not success:
                 if raise_on_error:
                     raise HomeAssistantError(f"CLU {action.clu_id} rejected the action")
-                _LOGGER.warning("[%s] Action execution failed for payload: %s", action.clu_id, GrentonCluApiActionRequest.from_action(action).payload)
+                _LOGGER.warning(
+                    "[%s] Action execution failed for payload: %s",
+                    action.clu_id,
+                    GrentonCluApiActionRequest.from_action(action).payload,
+                )
         except Exception as e:
             if raise_on_error:
                 raise HomeAssistantError(
                     f"Could not execute action on CLU {action.clu_id}: {e}"
                 ) from e
             _LOGGER.error("[%s] Error executing action: %s", action.clu_id, e)
-    
+        finally:
+            self._publish_clu_update(action.clu_id)
+
     async def _process_report(
         self,
         clu_id: str,
@@ -245,8 +330,10 @@ class GrentonCoordinator(DataUpdateCoordinator):
             versions = self._report_versions[clu_id]
             versions[key] = versions.get(key, 0) + 1
         clu_state.update_keys(keys, values)
-
-        self.async_set_updated_data(self.state.__dict__)
+        for key in keys:
+            if key in self._realtime_keys[clu_id]:
+                self._realtime_success[clu_id][key] = monotonic()
+        self._publish_clu_update(clu_id, values_changed=True)
         _LOGGER.debug("[%s] Processed report with %d values", clu_id, len(values))
 
     def register_component_state(
@@ -269,7 +356,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
             self._realtime_keys[state.clu_id].add(key)
             self._slow_keys[state.clu_id].discard(key)
         if key in self._slow_keys[state.clu_id]:
-            self._slow_conditions[state.clu_id].setdefault(key, []).append(poll_condition)
+            self._slow_conditions[state.clu_id].setdefault(key, []).append(
+                poll_condition
+            )
         if large_value and (api := self._apis.get(state.clu_id)) is not None:
             api.large_value_keys.add(self._state_key(state))
 
@@ -281,7 +370,8 @@ class GrentonCoordinator(DataUpdateCoordinator):
             received = await self._send_register(clu_id)
             received |= await self._send_slow_poll(clu_id)
             required = self._realtime_keys[clu_id] | {
-                key for key in self._slow_keys[clu_id]
+                key
+                for key in self._slow_keys[clu_id]
                 if self._slow_poll_enabled(clu_id, key)
             }
             return required <= received
@@ -307,8 +397,14 @@ class GrentonCoordinator(DataUpdateCoordinator):
         )
 
     def is_state_fresh(self, state: GrentonStateObject) -> bool:
+        if state.clu_id not in self.connection_health:
+            return False
         if self.state_read_mode(state) != "slow":
-            return True
+            return self.connection_health[
+                state.clu_id
+            ].connected is not False and self._realtime_key_fresh(
+                state.clu_id, self._state_key(state)
+            )
         stamp = self._slow_success[state.clu_id].get(self._state_key(state))
         # Keep the last confirmed schedule visible while periodic reads are paused.
         if not self._slow_poll_enabled(state.clu_id, self._state_key(state)):
@@ -320,15 +416,22 @@ class GrentonCoordinator(DataUpdateCoordinator):
 
     def _slow_poll_enabled(self, clu_id: str, key: StateKey) -> bool:
         conditions = self._slow_conditions[clu_id].get(key, [])
-        return not conditions or any(condition is None or condition() for condition in conditions)
+        return not conditions or any(
+            condition is None or condition() for condition in conditions
+        )
 
     def _conditional_slow_key(self, clu_id: str, key: StateKey) -> bool:
         conditions = self._slow_conditions[clu_id].get(key, [])
-        return bool(conditions) and all(condition is not None for condition in conditions)
+        return bool(conditions) and all(
+            condition is not None for condition in conditions
+        )
 
     async def _send_slow_poll(
-        self, clu_id: str, required_keys: set[StateKey] | None = None,
-        *, conditional_only: bool | None = None,
+        self,
+        clu_id: str,
+        required_keys: set[StateKey] | None = None,
+        *,
+        conditional_only: bool | None = None,
     ) -> set[StateKey]:
         async with self._read_locks[clu_id]:
             if self._stopping or (api := self._apis.get(clu_id)) is None:
@@ -345,7 +448,10 @@ class GrentonCoordinator(DataUpdateCoordinator):
                     if key in self._slow_keys[clu_id]
                     and self._conditional_slow_key(clu_id, key) == conditional
                     and (required_keys is None or key in required_keys)
-                    and (required_keys is not None or self._slow_poll_enabled(clu_id, key))
+                    and (
+                        required_keys is not None
+                        or self._slow_poll_enabled(clu_id, key)
+                    )
                 ]
                 if not keys:
                     continue
@@ -369,7 +475,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
                     _LOGGER.warning("[%s] Slow read failed: %s", clu_id, error)
             # Failed polls also notify entities so stale readings become unavailable.
             if attempted and not self._stopping:
-                self.async_set_updated_data(self.state.__dict__)
+                self._publish_clu_update(clu_id, values_changed=True)
             return received
 
     async def _slow_poll_loop(self, clu_id: str) -> None:
@@ -468,7 +574,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
             if not success:
                 _LOGGER.error("Failed to connect API for CLU %s", api.clu.id)
                 return
-            
+
             # Each chunk's subscription socket reports through this single hook;
             # the API layer fans out per-chunk callbacks internally.
             async def handle_subscription(
@@ -476,10 +582,11 @@ class GrentonCoordinator(DataUpdateCoordinator):
                 values: list[GrentonValue],
             ) -> None:
                 await self._process_report(api.clu.id, keys, values)
+
             api.on_subscription_report = handle_subscription
         except Exception as e:
             _LOGGER.error("Error connecting API for CLU %s: %s", api.clu.id, e)
-    
+
     async def _async_handle_stop(self, event: Event) -> None:
         # async_listen_once already removed this listener before dispatch.
         self._stop_listener = None
@@ -516,7 +623,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
             await api.disconnect()
         except Exception as e:
             _LOGGER.error("Error disconnecting API for CLU %s: %s", api.clu.id, e)
-    
+
     def get_value_for_component(self, state: GrentonStateObject) -> GrentonValue | None:
         """Get the value for a component from the state."""
         if not self.is_state_fresh(state):

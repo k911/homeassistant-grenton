@@ -6,7 +6,23 @@ from ...coordinator import GrentonCoordinator
 from ..state_object import GrentonStateObject
 
 
-class BaseGrentonEntity(CoordinatorEntity[GrentonCoordinator]):
+class GrentonStateEntity(CoordinatorEntity[GrentonCoordinator]):
+    """Share realtime availability policy across widgets and built-in CLU values."""
+
+    @property
+    def state_sources(self) -> list[GrentonStateObject]:
+        """Most entities read one source; multi-source entities override this."""
+        state = getattr(self, "state_object", None)
+        return [state] if isinstance(state, GrentonStateObject) else []
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.coordinator.states_available(
+            self.state_sources
+        )
+
+
+class BaseGrentonEntity(GrentonStateEntity):
     """Base entity class that inherits CoordinatorEntity for automatic updates."""
 
     _attr_has_entity_name = True
@@ -28,16 +44,20 @@ class BaseGrentonEntity(CoordinatorEntity[GrentonCoordinator]):
         self.coordinator.register_component_state(state)
 
     @property
-    def name(self) -> str | None: # pyright: ignore[reportIncompatibleVariableOverride]
+    def name(self) -> str | None:  # pyright: ignore[reportIncompatibleVariableOverride]
         """Return the name of the sensor."""
-        if self.platform_data and self.translation_key and isinstance(translated := super().name, str):
+        if (
+            self.platform_data
+            and self.translation_key
+            and isinstance(translated := super().name, str)
+        ):
             return translated
         return None if getattr(self, "_use_device_name", False) else self.label
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator.
-        
+
         This is called automatically by CoordinatorEntity when the coordinator
         data is updated (either on schedule or when async_refresh is called).
         """
