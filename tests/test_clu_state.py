@@ -158,8 +158,8 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
                 api.register_component_states.assert_not_awaited()
                 api.poll_component_states.assert_awaited_once_with(keys)
             else:
-                api.register_component_states.assert_awaited_once_with(keys[1:])
-                api.poll_component_states.assert_awaited_once_with(keys[:1])
+                api.register_component_states.assert_awaited_once_with(keys[1:4])
+                api.poll_component_states.assert_awaited_once_with([keys[0], keys[4]])
         platforms = await register_platforms(hass, entry)
         assert [len(platform.entities) for platform in platforms] == [11, 4, 2]
         registry = er.async_get(hass)
@@ -200,7 +200,7 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
         # A report changes only its own CLU, including a reboot and new firmware.
         keys = coord.state.clus["clu1"].get_subscription_order()
         await coord._process_report("clu1", keys[1:4], [False, True, "3.2.0"])
-        coord._apis["clu1"].poll_component_states = AsyncMock(return_value=[0])
+        coord._apis["clu1"].poll_component_states = AsyncMock(return_value=[0, 24.5])
         await coord._send_slow_poll("clu1")
         assert entities[1].native_value == 0
         assert entities[2].is_on is False
@@ -465,8 +465,8 @@ def test_bus_voltage_is_a_finite_measurement(tmp_path, value, expected):
         clu = make_clu("clu1")
         coord = coordinator(hass, entry, [clu])
         voltage = GrentonCluBusVoltage(coord, clu)
-        keys = coord.state.clus[clu.id].get_subscription_order()
-        coord.state.clus[clu.id].update_keys(keys, [value])
+        coord._apis[clu.id].poll_component_states = AsyncMock(return_value=[value])
+        await coord._send_slow_poll(clu.id)
         assert voltage.native_value == expected
         assert voltage.entity_category == EntityCategory.DIAGNOSTIC
 
@@ -507,7 +507,9 @@ def test_new_type_uses_its_own_indexes_and_skips_unsupported_entities(
         values = GrentonCluApiClientRegisterResponse(
             'resp:192.0.2.1:abcd:clientReport:0:{"1.20",24.5}', keys, clu
         ).values
-        await coord._process_report(clu.id, keys, values)
+        await coord._process_report(clu.id, keys[:1], values[:1])
+        coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values[1:])
+        await coord._send_slow_poll(clu.id)
         assert entities[1].native_value == "1.20"
         assert entities[2].native_value == 24.5
 

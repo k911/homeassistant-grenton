@@ -195,7 +195,9 @@ class GrentonCluBusVoltage(GrentonCluStateEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "BusVoltage", "clu_bus_voltage")
+        super().__init__(
+            coordinator, clu, "BusVoltage", "clu_bus_voltage", read_mode="slow"
+        )
 
     @property
     def native_value(self) -> float | None:
