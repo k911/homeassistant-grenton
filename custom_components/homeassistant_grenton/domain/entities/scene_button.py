@@ -5,14 +5,13 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ...coordinator import GrentonCoordinator
-from ..action import GrentonAction, GrentonActionMethod, GrentonActionScript
+from ..action import GrentonAction, GrentonActionMethod
 from ..action_configuration import (
     action_configuration,
     configured_action,
     normalize_action_configuration,
 )
-from ..api.clu_messages.action import GrentonCluApiActionRequest
-from ..scene_arguments import imported_arguments
+from ..entity_references import action_reference
 from .base import BaseGrentonEntity
 from .configurable import ConfigurableEntity
 from .scene_configuration import GrentonEntitySceneConfigurationSchema
@@ -69,21 +68,8 @@ class GrentonEntitySceneButton(  # pyright: ignore[reportIncompatibleVariableOve
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose call details in Home Assistant's entity attributes."""
-        action = self.script_action
-        attributes = {
-            **self._config,
-            "event": action.event.value,
-            "call": GrentonCluApiActionRequest.from_action(action).payload,
-        }
-        if isinstance(action, (GrentonActionScript, GrentonActionMethod)):
-            attributes["arguments"] = self._config.get(
-                "arguments",
-                imported_arguments(self._config["call_type"], self._config["value"]),
-            )
-        if isinstance(action, GrentonActionScript):
-            attributes.pop("index", None)
-        return attributes
+        """Expose only the effective action reference and its argument values."""
+        return action_reference(self.script_action)
 
     async def apply_configuration(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Apply immediately and return options to persist without a reload."""

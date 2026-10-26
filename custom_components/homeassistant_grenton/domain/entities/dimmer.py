@@ -15,11 +15,10 @@ from ...coordinator import GrentonCoordinator
 from ..action import GrentonAction, GrentonActionMethod
 from ..action_configuration import (
     action_configuration,
-    action_editor_draft,
     configured_action,
     normalize_action_configuration,
 )
-from ..api.clu_messages.action import GrentonCluApiActionRequest
+from ..entity_references import action_reference
 from ..state_object import (
     GrentonAttributeValueObject,
     GrentonStateObject,
@@ -195,7 +194,7 @@ class GrentonEntityDimmer(  # type: ignore[misc]  # HA's nullable unique_id vs C
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attributes = {
-            "state_source": deepcopy(self._config["state"]),
+            **(super().extra_state_attributes or {}),
             "brightness_range": {
                 "min": self.min,
                 "max": self.max,
@@ -203,12 +202,7 @@ class GrentonEntityDimmer(  # type: ignore[misc]  # HA's nullable unique_id vs C
             },
         }
         for key in self._widget_actions:
-            attributes[key] = {
-                **action_editor_draft(self._config[key]),
-                "call": GrentonCluApiActionRequest.from_action(
-                    self._action(key)
-                ).payload,
-            }
+            attributes.update(action_reference(self._action(key), prefix=f"{key}_"))
         return attributes
 
     async def apply_configuration(self, user_input: dict[str, Any]) -> dict[str, Any]:

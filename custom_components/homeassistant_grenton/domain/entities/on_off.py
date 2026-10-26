@@ -18,7 +18,7 @@ from ..action_configuration import (
     configured_action,
     normalize_action_configuration,
 )
-from ..api.clu_messages.action import GrentonCluApiActionRequest
+from ..entity_references import action_reference
 from ..enums import GrentonUnit
 from ..state_object import (
     GrentonAttributeValueObject,
@@ -197,15 +197,12 @@ class GrentonEntityOnOff(
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        attributes = {"state_source": deepcopy(self._config["state"])}
+        attributes = dict(super().extra_state_attributes or {})
         for key, action in (
             ("action_on", self.action_on),
             ("action_off", self.action_off),
         ):
-            attributes[key] = {
-                **action_editor_draft(self._config[key]),
-                "call": GrentonCluApiActionRequest.from_action(action).payload,
-            }
+            attributes.update(action_reference(action, prefix=f"{key}_"))
         return attributes
 
     async def apply_configuration(self, user_input: dict[str, Any]) -> dict[str, Any]:

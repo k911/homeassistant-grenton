@@ -478,11 +478,33 @@ def test_saved_actions_execute_on_the_selected_clu_and_remain_inspectable(
             GrentonCluApiActionRequest.from_action(calls[1].args[0]).payload
             == imported_off
         )
-        assert configured.extra_state_attributes["action_on"]["call"] == payload
+        attributes = configured.extra_state_attributes
+        expected_target = {
+            "SCRIPT": "Actions",
+            "METHOD": "DOUT_2.3",
+            "ATTRIBUTE": "DOUT_2.0",
+            "VARIABLE": "OfficeEnabled",
+        }[call_type]
+        assert attributes["action_on_object"] == expected_target
+        assert attributes["action_on_clu_id"] == "clu2"
+        assert attributes["action_on_call_type"] == call_type
+        assert attributes["object"] == "OfficeState"
         assert (
-            configured.extra_state_attributes["state_source"]["variable_name"]
-            == "OfficeState"
+            not {
+                "state_source",
+                "action_on",
+                "action_off",
+                "action_on_value",
+                "action_off_value",
+            }
+            & attributes.keys()
         )
+        if call_type in ("SCRIPT", "METHOD"):
+            assert attributes["action_on_args"] == [
+                row["value"] for row in action["arguments"]
+            ]
+        else:
+            assert "action_on_args" not in attributes
         assert untouched.state_object.object_name == "DOUT_1"
         assert (
             GrentonCluApiActionRequest.from_action(untouched.action_on).payload
@@ -696,13 +718,7 @@ def test_on_off_imports_separate_method_arguments_in_both_action_forms(entity_ty
             GrentonCluApiActionRequest.from_action(call.args[0]).payload
             for call in coord.execute_action.await_args_list
         ] == ["DOUT_0:execute(2, 800, 0)", "DOUT_0:execute(2, 0, 800)"]
-        assert (
-            restored.extra_state_attributes["action_on"]["arguments"]
-            == on_draft["arguments"]
-        )
-        assert (
-            restored.extra_state_attributes["action_off"]["arguments"]
-            == off_draft["arguments"]
-        )
+        assert restored.extra_state_attributes["action_on_args"] == [800, 0]
+        assert restored.extra_state_attributes["action_off_args"] == [0, 800]
 
     asyncio.run(run())

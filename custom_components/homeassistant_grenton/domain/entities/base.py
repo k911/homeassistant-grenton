@@ -1,8 +1,11 @@
+from typing import Any
+
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ...coordinator import GrentonCoordinator
+from ..entity_references import state_reference
 from ..state_object import GrentonStateObject
 
 
@@ -42,6 +45,15 @@ class BaseGrentonEntity(GrentonStateEntity):
 
     def _register_state(self, state: GrentonStateObject) -> None:
         self.coordinator.register_component_state(state)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose a compact source without copying editor configuration."""
+        attributes = dict(super().extra_state_attributes or {})
+        state = getattr(self, "state_object", None)
+        if isinstance(state, GrentonStateObject):
+            attributes.update(state_reference(state))
+        return attributes
 
     @property
     def name(self) -> str | None:  # pyright: ignore[reportIncompatibleVariableOverride]

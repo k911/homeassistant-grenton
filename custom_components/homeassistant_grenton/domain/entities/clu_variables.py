@@ -185,7 +185,6 @@ class GrentonCluVariableSensor(CluVariableConfiguration, GrentonEntityValue):
             device_info=clu_device_info(clu),
         )
         self._attr_extra_state_attributes = {
-            "variable_name": config["variable_name"],
             "grenton_type": config["grenton_type"],
         }
 
@@ -233,7 +232,6 @@ class GrentonCluVariableSwitch(
             clu.id, "", config["variable_name"]
         )
         self._attr_extra_state_attributes = {
-            "variable_name": config["variable_name"],
             "grenton_type": config["grenton_type"],
         }
         coordinator.register_component_state(self.state_object)

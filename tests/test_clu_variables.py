@@ -338,11 +338,15 @@ def test_native_entities_share_clu_device_and_switch_writes_only_own_variable(tm
         assert sensors[2].state_class is None
         for sensor in sensors:
             attributes = hass.states.get(sensor.entity_id).attributes
-            assert attributes["state_source"] == {
+            assert {
+                key: attributes[key] for key in ("call_type", "clu_id", "object")
+            } == {
                 "call_type": "VARIABLE",
                 "clu_id": "clu1",
-                "variable_name": attributes["variable_name"],
+                "object": sensor.state_object.index,
             }
+            assert "state_source" not in attributes
+            assert "variable_name" not in attributes
             assert attributes["grenton_type"] == sensor.value_type.value
         await coord._process_report(
             "clu1", keys, [False, "not a number", "invalid", "Working"]
@@ -351,7 +355,7 @@ def test_native_entities_share_clu_device_and_switch_writes_only_own_variable(tm
         assert hass.states.get(sensors[1].entity_id).state == "unknown"
         await coord._process_report("clu1", keys, [False, 21.5, 42, "Working"])
         assert (
-            hass.states.get(switches[0].entity_id).attributes["variable_name"]
+            hass.states.get(switches[0].entity_id).attributes["object"]
             == "Enabled"
         )
         for clu in clus:
@@ -476,7 +480,9 @@ def test_integration_entity_editor_uses_same_variable_schema_and_persistence(tmp
         form = await manager.async_configure(
             form["flow_id"], {"next_step_id": "entity_list"}
         )
-        choices = fields(form)["entity"]["selector"]["grenton_entity"]["include_entities"]
+        choices = fields(form)["entity"]["selector"]["grenton_entity"][
+            "include_entities"
+        ]
         assert set(choices) == {controller.entity_id, counter.entity_id}
         form = await manager.async_configure(
             form["flow_id"], {"entity": counter.entity_id}

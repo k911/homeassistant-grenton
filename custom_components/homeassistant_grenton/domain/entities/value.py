@@ -130,14 +130,6 @@ class GrentonEntityValue( # pyright: ignore[reportIncompatibleVariableOverride]
         self._register_state(state_object)
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose the source alongside any existing variable metadata."""
-        return {
-            **(super().extra_state_attributes or {}),
-            "state_source": self.state_object.source_attributes,
-        }
-
-    @property
     def native_value(self): # pyright: ignore[reportIncompatibleVariableOverride]
         value = self.coordinator.get_value_for_component(self.state_object)
         if value is None:

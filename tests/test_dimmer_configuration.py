@@ -88,10 +88,22 @@ def test_imported_brightness_uses_template_for_all_call_types(call_type, expecte
         assert isinstance(entity, LightEntity)
         assert entity.supported_color_modes == {ColorMode.BRIGHTNESS}
         attributes = entity.extra_state_attributes
-        assert attributes["action_set_value"]["call"] == template
-        assert attributes["action_set_value"]["call_type"] == call_type
+        assert (
+            attributes["action_set_value_object"]
+            == {
+                "SCRIPT": "LEDSetValue",
+                "METHOD": "LED1.5",
+                "ATTRIBUTE": "LED1.5",
+                "VARIABLE": "5",
+            }[call_type]
+        )
+        assert attributes["action_set_value_call_type"] == call_type
         for name in ("action_on", "action_off", "action_set_value"):
-            assert attributes[name]["clu_id"] == "clu1"
+            assert attributes[f"{name}_clu_id"] == "clu1"
+            assert name not in attributes
+            assert f"{name}_value" not in attributes
+        assert attributes["object"] == "LED1.5"
+        assert "state_source" not in attributes
         assert attributes["brightness_range"] == {"min": 0, "max": 255, "precision": 2}
 
     asyncio.run(run())
@@ -194,7 +206,19 @@ def test_saved_bindings_preserve_fixed_arguments_and_follow_selected_clu(call_ty
             'Enable("bedroom")',
             "Disable:execute(2)",
         ]
-        assert "$value$" in restored.extra_state_attributes["action_set_value"]["call"]
+        # Templates stay in executable configuration, independent of compact metadata.
+        assert "$value$" in payload(restored.action_set_value)
+        if call_type in ("SCRIPT", "METHOD"):
+            assert restored.extra_state_attributes["action_set_value_args"] == [
+                "bedroom",
+                "$value$",
+                False,
+            ]
+            assert restored.extra_state_attributes["action_set_value_object"] == (
+                "LED2" if call_type == "SCRIPT" else "LED2.9"
+            )
+        else:
+            assert "action_set_value_args" not in restored.extra_state_attributes
 
     asyncio.run(run())
 
