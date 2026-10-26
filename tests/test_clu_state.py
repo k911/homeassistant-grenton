@@ -141,13 +141,25 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
             assert GrentonCluApiClientRegisterRequest(keys, 0).payload == (
                 f"SYSTEM:clientRegister(0,0,1,{{{expected}}})"
             )
+            values_by_key = dict(zip(keys, values))
+            api = coord._apis[clu.id]
+            api.register_component_states = AsyncMock(
+                side_effect=lambda requested, values=values_by_key: [
+                    values[key] for key in requested
+                ]
+            )
+            api.poll_component_states = AsyncMock(
+                side_effect=lambda requested, values=values_by_key: [
+                    values[key] for key in requested
+                ]
+            )
+            assert await coord.async_refresh_clu_state(clu.id)
             if clu.device_type == CLU_GATE_HTTP:
-                coord._apis[clu.id].poll_component_states = AsyncMock(
-                    return_value=values
-                )
-                await coord._send_slow_poll(clu.id)
+                api.register_component_states.assert_not_awaited()
+                api.poll_component_states.assert_awaited_once_with(keys)
             else:
-                await coord._process_report(clu.id, keys, values)
+                api.register_component_states.assert_awaited_once_with(keys[1:])
+                api.poll_component_states.assert_awaited_once_with(keys[:1])
         platforms = await register_platforms(hass, entry)
         assert [len(platform.entities) for platform in platforms] == [11, 4, 2]
         registry = er.async_get(hass)
@@ -187,11 +199,15 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
 
         # A report changes only its own CLU, including a reboot and new firmware.
         keys = coord.state.clus["clu1"].get_subscription_order()
-        await coord._process_report("clu1", keys[:4], [0, False, True, "3.2.0"])
+        await coord._process_report("clu1", keys[1:4], [False, True, "3.2.0"])
+        coord._apis["clu1"].poll_component_states = AsyncMock(return_value=[0])
+        await coord._send_slow_poll("clu1")
         assert entities[1].native_value == 0
         assert entities[2].is_on is False
         assert entities[3].is_on is True
-        second_uptime = next(entity for entity in entities if entity.unique_id == "clu_clu2_uptime")
+        second_uptime = next(
+            entity for entity in entities if entity.unique_id == "clu_clu2_uptime"
+        )
         assert second_uptime.native_value == 123
         first_device_id = entities[0].registry_entry.device_id
         assert device_registry.async_get(first_device_id).sw_version == "3.2.0"
@@ -287,8 +303,8 @@ def test_uptime_is_a_nonnegative_integer_or_unknown(tmp_path, value, expected):
         clu = make_clu("clu1")
         coord = coordinator(hass, entry, [clu])
         entity = GrentonCluUptime(coord, clu)
-        keys = coord.state.clus[clu.id].get_subscription_order()
-        coord.state.clus[clu.id].update_keys(keys, [value])
+        coord._apis[clu.id].poll_component_states = AsyncMock(return_value=[value])
+        await coord._send_slow_poll(clu.id)
         assert entity.native_value == expected
 
     asyncio.run(run())
@@ -418,9 +434,11 @@ def test_serial_detection_and_unknown_type_preserves_controller(
             assert len(entities) == 4
             assert not coord.state.clus[clu.id].get_subscription_order()
         else:
-            assert {int(entity.state_object.index) for entity in entities if isinstance(entity, GrentonCluStateEntity)} == set(
-                DEVICE_ATTRIBUTES[expected]
-            )
+            assert {
+                int(entity.state_object.index)
+                for entity in entities
+                if isinstance(entity, GrentonCluStateEntity)
+            } == set(DEVICE_ATTRIBUTES[expected])
             assert entities[1].unique_id == "clu_clu1_uptime"
 
     asyncio.run(run())

@@ -828,6 +828,9 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
         loop = asyncio.get_running_loop()
         queued_at = loop.time()
         sent_at: float | None = None
+        reports_at_send = self._received_reports
+        replies_at_send = self._received_replies
+        other_requests_at_send = 0
         try:
             async with self.api._send_lock:
                 delay = self.api._next_send_at - loop.time()
@@ -844,6 +847,11 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
                     )
                     return None
                 # Do not accept stale replies while waiting for the send gate.
+                reports_at_send = self._received_reports
+                replies_at_send = self._received_replies
+                other_requests_at_send = sum(
+                    not pending.done() for pending in self._pending.values()
+                )
                 future = loop.create_future()
                 self._pending[msg_id] = future
                 self.transport.sendto(encrypted, (self.api.clu.ip, self.api.clu.port))
@@ -863,13 +871,17 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
                 operation = "action write"
             _LOGGER.warning(
                 "[%s][%s] Request timeout during %s after %.2fs "
-                "(limit=%.2fs, queued=%.3fs); %s",
+                "(limit=%.2fs, queued=%.3fs); reports_during_wait=%d, "
+                "other_replies_during_wait=%d, other_requests_in_flight_at_send=%d; %s",
                 self.api.log_identity,
                 msg_id,
                 operation,
                 loop.time() - sent_at if sent_at is not None else 0,
                 self._response_timeout,
                 sent_at - queued_at if sent_at is not None else loop.time() - queued_at,
+                self._received_reports - reports_at_send,
+                self._received_replies - replies_at_send,
+                other_requests_at_send,
                 self.diagnostic_context(),
             )
             return None

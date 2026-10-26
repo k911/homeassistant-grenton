@@ -48,13 +48,19 @@ def _boolean(value: GrentonValue) -> bool | None:
 
 
 class GrentonCluStateEntity(GrentonStateEntity):
-    """A subscribed built-in attribute belonging to the existing CLU device."""
+    """A built-in attribute belonging to the existing CLU device."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
-        self, coordinator: GrentonCoordinator, clu: GrentonClu, attribute: str, key: str
+        self,
+        coordinator: GrentonCoordinator,
+        clu: GrentonClu,
+        attribute: str,
+        key: str,
+        *,
+        read_mode: str = "realtime",
     ) -> None:
         super().__init__(coordinator)
         self.clu = clu
@@ -64,7 +70,7 @@ class GrentonCluStateEntity(GrentonStateEntity):
         self._attr_unique_id = f"clu_{clu.id}_{key.removeprefix('clu_')}"
         self._attr_translation_key = key
         self._attr_device_info = clu_device_info(clu)
-        coordinator.register_component_state(self.state_object)
+        coordinator.register_component_state(self.state_object, read_mode=read_mode)
 
     @property
     def _value(self) -> GrentonValue:
@@ -79,7 +85,9 @@ class GrentonCluUptime(GrentonCluStateEntity, SensorEntity):
     _attr_suggested_display_precision = 0
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "Uptime", "clu_uptime")
+        # Uptime changes continuously. Subscribing to it makes the CLU send
+        # the entire realtime group on every tick, even if other values stay put.
+        super().__init__(coordinator, clu, "Uptime", "clu_uptime", read_mode="slow")
 
     @property
     def native_value(self) -> int | None:
