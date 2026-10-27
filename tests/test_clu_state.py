@@ -26,7 +26,6 @@ from custom_components.homeassistant_grenton.binary_sensor import (
 from custom_components.homeassistant_grenton.coordinator import GrentonCoordinator
 from custom_components.homeassistant_grenton.domain.api.clu import (
     GrentonCluApiProtocol,
-    _SubscriptionEndpoint,
 )
 from custom_components.homeassistant_grenton.domain.api.clu_messages.action import (
     GrentonCluApiActionRequest,
@@ -44,10 +43,10 @@ from custom_components.homeassistant_grenton.domain.device_types import (
 )
 from custom_components.homeassistant_grenton.domain.encryption import GrentonEncryption
 from custom_components.homeassistant_grenton.domain.entities.clu_state import (
-    GrentonCluStateEntity,
     GrentonCluBusVoltage,
     GrentonCluCloudConnection,
     GrentonCluFirmwareVersion,
+    GrentonCluStateEntity,
     GrentonCluUptime,
     GrentonCluUseCloud,
     clu_entities,
@@ -119,7 +118,7 @@ async def register_platforms(hass, entry):
     return platforms
 
 
-def test_supported_attributes_register_on_each_clu_and_update_native_entities(tmp_path):
+def test_supported_attributes_poll_on_each_clu_and_update_native_entities(tmp_path):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
@@ -154,12 +153,8 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
                 ]
             )
             assert await coord.async_refresh_clu_state(clu.id)
-            if clu.device_type == CLU_GATE_HTTP:
-                api.register_component_states.assert_not_awaited()
-                api.poll_component_states.assert_awaited_once_with(keys)
-            else:
-                api.register_component_states.assert_awaited_once_with(keys[1:4])
-                api.poll_component_states.assert_awaited_once_with([keys[0], keys[4]])
+            api.register_component_states.assert_not_awaited()
+            api.poll_component_states.assert_awaited_once_with(keys)
         platforms = await register_platforms(hass, entry)
         assert [len(platform.entities) for platform in platforms] == [11, 4, 2]
         registry = er.async_get(hass)
@@ -197,10 +192,10 @@ def test_supported_attributes_register_on_each_clu_and_update_native_entities(tm
             )
             assert hass.states.get(firmware.entity_id).state == "3.1.0"
 
-        # A report changes only its own CLU, including a reboot and new firmware.
-        keys = coord.state.clus["clu1"].get_subscription_order()
-        await coord._process_report("clu1", keys[1:4], [False, True, "3.2.0"])
-        coord._apis["clu1"].poll_component_states = AsyncMock(return_value=[0, 24.5])
+        # A poll changes only its own CLU, including a reboot and new firmware.
+        coord._apis["clu1"].poll_component_states = AsyncMock(
+            return_value=[0, False, True, "3.2.0", 24.5]
+        )
         await coord._send_slow_poll("clu1")
         assert entities[1].native_value == 0
         assert entities[2].is_on is False
@@ -275,7 +270,10 @@ def test_boolean_attributes_preserve_false_and_unknown_values(
             entity = cls(coord, clu)
             assert entity.is_on is None
             keys = coord.state.clus[clu.id].get_subscription_order()
-            coord.state.clus[clu.id].update_keys(keys, [value] * len(keys))
+            coord._apis[clu.id].poll_component_states = AsyncMock(
+                return_value=[value] * len(keys)
+            )
+            await coord._send_slow_poll(clu.id)
             assert entity.is_on is expected
 
     asyncio.run(run())
@@ -328,11 +326,7 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
             register_component_states=AsyncMock(return_value=[False]),
         )
         api.poll_component_states = AsyncMock(return_value=[False])
-        read = (
-            api.poll_component_states
-            if prefix == "521"
-            else api.register_component_states
-        )
+        read = api.poll_component_states
         coord._apis[clu.id] = api
         await entity.async_turn_on()
         action = api.execute_action.await_args.args[0]
@@ -362,13 +356,14 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
         with pytest.raises(HomeAssistantError, match="rejected"):
             await entity.async_turn_on()
         read.assert_not_awaited()
+        api.register_component_states.assert_not_awaited()
         assert entity.is_on is False
 
     asyncio.run(run())
 
 
 @pytest.mark.parametrize("prefix", ["221", "521"])
-def test_firmware_strings_survive_initial_response_and_pushed_notifications(
+def test_firmware_strings_survive_polled_responses_and_notification_parsing(
     tmp_path, prefix
 ):
     async def run():
@@ -380,18 +375,12 @@ def test_firmware_strings_survive_initial_response_and_pushed_notifications(
         keys = coord.state.clus[clu.id].get_subscription_order()
         api = coord._apis[clu.id]
         response = 'resp:192.0.2.1:abcd:clientReport:0:{"1.20"}'
-        endpoint = _SubscriptionEndpoint(
-            None,
-            SimpleNamespace(send_request=AsyncMock(return_value=response)),
-            keys,
-            0,
+        api.protocol = SimpleNamespace(
+            send_request=AsyncMock(return_value=response)
         )
-        values = await api._register_chunk(endpoint)
-        assert values == ["1.20"]
-        await coord._process_report(clu.id, keys, values)
-        if clu.device_type == CLU_GATE_HTTP:
-            coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values)
-            await coord._send_slow_poll(clu.id)
+        await coord._send_slow_poll(clu.id)
+        api.protocol.send_request.assert_awaited_once()
+        assert api.protocol.send_request.await_args.args[0].session_id == 1
         assert firmware.native_value == "1.20"
         assert firmware.device_info["sw_version"] == "1.20"
         protocol = GrentonCluApiProtocol(api)
@@ -507,8 +496,7 @@ def test_new_type_uses_its_own_indexes_and_skips_unsupported_entities(
         values = GrentonCluApiClientRegisterResponse(
             'resp:192.0.2.1:abcd:clientReport:0:{"1.20",24.5}', keys, clu
         ).values
-        await coord._process_report(clu.id, keys[:1], values[:1])
-        coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values[1:])
+        coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values)
         await coord._send_slow_poll(clu.id)
         assert entities[1].native_value == "1.20"
         assert entities[2].native_value == 24.5
@@ -557,10 +545,8 @@ def test_imported_clu_id_addresses_attributes_independently_of_serial(
         values = GrentonCluApiClientRegisterResponse(
             f"resp:192.0.2.1:abcd:clientReport:0:{{{report}}}", keys, clu
         ).values
-        await coord._process_report(clu.id, keys, values)
-        if clu.device_type == CLU_GATE_HTTP:
-            coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values)
-            await coord._send_slow_poll(clu.id)
+        coord._apis[clu.id].poll_component_states = AsyncMock(return_value=values)
+        await coord._send_slow_poll(clu.id)
         firmware = next(
             entity
             for entity in entities

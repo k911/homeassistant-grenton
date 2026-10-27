@@ -109,7 +109,9 @@ class GrentonCluCloudConnection(GrentonCluStateEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "CloudConnection", "clu_cloud_connection")
+        super().__init__(
+            coordinator, clu, "CloudConnection", "clu_cloud_connection", read_mode="slow"
+        )
 
     @property
     def is_on(self) -> bool | None:
@@ -122,7 +124,9 @@ class GrentonCluFirmwareVersion(GrentonCluStateEntity, SensorEntity):
     _attr_icon = "mdi:chip"
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "FirmwareVersion", "clu_firmware_version")
+        super().__init__(
+            coordinator, clu, "FirmwareVersion", "clu_firmware_version", read_mode="slow"
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -161,7 +165,9 @@ class GrentonCluUseCloud(GrentonCluStateEntity, SwitchEntity):
     _attr_icon = "mdi:cloud-outline"
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "UseCloud", "clu_use_cloud")
+        super().__init__(
+            coordinator, clu, "UseCloud", "clu_use_cloud", read_mode="slow"
+        )
 
     @property
     def is_on(self) -> bool | None:
