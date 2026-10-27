@@ -19,6 +19,9 @@ from test_value_v2_configuration import double_widget, widget
 from custom_components.homeassistant_grenton.domain.api.clu import (
     GrentonCluApiProtocol,
 )
+from custom_components.homeassistant_grenton.domain.api.clu_messages import (
+    GrentonCluApiFetchValuesRequest,
+)
 from custom_components.homeassistant_grenton.domain.entities.clu_state import (
     clu_entities,
 )
@@ -107,7 +110,7 @@ def test_http_gate_polls_all_bindings_without_any_subscription_sockets(tmp_path)
         api = coord._apis["clu1"]
         api.connect = AsyncMock(return_value=True)
         api.ping = AsyncMock(return_value=True)
-        api._open_chunk_socket = AsyncMock()
+        api._ensure_report_listener = AsyncMock()
         requests = []
 
         async def read(request):
@@ -122,7 +125,7 @@ def test_http_gate_polls_all_bindings_without_any_subscription_sockets(tmp_path)
                 else "30"
                 for key in request.keys
             )
-            return f"resp:192.0.2.1:{request.msg_id}:clientReport:1:{{{payload}}}"
+            return f"resp:192.0.2.1:{request.msg_id}:values:{{{payload}}}"
 
         api.protocol = SimpleNamespace(send_request=AsyncMock(side_effect=read))
         await coord.async_setup()
@@ -133,10 +136,15 @@ def test_http_gate_polls_all_bindings_without_any_subscription_sockets(tmp_path)
         )
         assert coord._slow_read_intervals[clu.id] == 5
         assert len(requests) == 2  # Ordinary values plus the isolated schedule.
-        assert all(request.session_id == 1 for request in requests)
+        assert all(
+            isinstance(request, GrentonCluApiFetchValuesRequest) for request in requests
+        )
+        assert all(
+            request.payload.startswith("SYSTEM:fetchValues({") for request in requests
+        )
         assert [key.name for key in requests[-1].keys] == ["9"]
-        api._open_chunk_socket.assert_not_awaited()
-        assert not api._subscription_endpoints
+        api._ensure_report_listener.assert_not_awaited()
+        assert not api._groups
         await coord._send_register(clu.id)
         assert len(requests) == 2  # No 45-second registration for this CLU.
         await coord.async_shutdown()
@@ -204,17 +212,19 @@ def test_poll_batches_use_existing_socket_and_distinct_request_ids(tmp_path):
         async def read(request):
             requests.append(request)
             values = ",".join(key.name for key in request.keys)
-            return f"resp:192.0.2.1:{request.msg_id}:clientReport:1:{{{values}}}"
+            return f"resp:192.0.2.1:{request.msg_id}:values:{{{values}}}"
 
         api.protocol = SimpleNamespace(send_request=AsyncMock(side_effect=read))
-        api._open_chunk_socket = AsyncMock()
+        api._ensure_report_listener = AsyncMock()
         assert await api.poll_component_states(keys) == list(range(65))
         assert await api.poll_component_states(keys[:1]) == [0]
         assert [len(request.keys) for request in requests] == [30, 30, 5, 1]
-        assert all(request.session_id == 1 for request in requests)
+        assert all(
+            isinstance(request, GrentonCluApiFetchValuesRequest) for request in requests
+        )
         assert len({request.msg_id for request in requests}) == 4
-        assert not api._subscription_endpoints
-        api._open_chunk_socket.assert_not_awaited()
+        assert not api._groups
+        api._ensure_report_listener.assert_not_awaited()
         await coord.async_shutdown()
         await hass.async_stop()
 
@@ -229,8 +239,8 @@ def test_failed_poll_batch_does_not_shift_values_or_confuse_nil(tmp_path):
             send_request=AsyncMock(
                 side_effect=[
                     None,
-                    "resp:192.0.2.1:12345678:clientReport:1:{nil}",
-                    "resp:192.0.2.1:12345678:clientReport:1:{1,2}",
+                    "resp:192.0.2.1:12345678:values:{nil}",
+                    "resp:192.0.2.1:12345678:values:{1,2}",
                     ConnectionError("closed"),
                 ]
             )
@@ -389,13 +399,31 @@ def test_loop_waits_for_clu_interval_without_fast_failure_retries(tmp_path):
     async def run():
         hass, _, coord, _ = await fixture(tmp_path)
         coord._slow_read_intervals["clu1"] = 120
-        coord._send_slow_poll = AsyncMock(return_value=set())
-        with patch(
-            "asyncio.sleep", AsyncMock(side_effect=[None, asyncio.CancelledError()])
-        ) as sleep:
+        clock, waits = 0, []
+
+        async def read(clu_id):
+            nonlocal clock
+            clock += 5
+            raise RuntimeError("temporary failure")
+
+        async def sleep(delay):
+            nonlocal clock
+            waits.append(delay)
+            clock += delay
+            if len(waits) == 2:
+                raise asyncio.CancelledError
+
+        coord._send_slow_poll = AsyncMock(side_effect=read)
+        with (
+            patch(
+                "custom_components.homeassistant_grenton.coordinator.monotonic",
+                side_effect=lambda: clock,
+            ),
+            patch("asyncio.sleep", side_effect=sleep),
+        ):
             with pytest.raises(asyncio.CancelledError):
                 await coord._slow_poll_loop("clu1")
-            assert [call.args[0] for call in sleep.await_args_list] == [120, 120]
+            assert waits == [120, 115]
         coord._send_slow_poll.assert_awaited_once_with("clu1")
         await coord.async_shutdown()
         await hass.async_stop()
@@ -457,7 +485,7 @@ def test_clu_flow_preserves_options_and_changes_only_selected_clu_timer(tmp_path
             **original,
             "clu_read_settings": {
                 **original["clu_read_settings"],
-                "clu1": {"slow_read_interval": 120},
+                "clu1": {"slow_read_interval": 120, "subscription_id": 1},
             },
         }
         assert coord._slow_read_intervals == {"clu1": 120, "clu2": 5}

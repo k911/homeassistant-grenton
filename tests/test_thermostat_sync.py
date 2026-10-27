@@ -11,7 +11,6 @@ from test_thermostat_v2 import widget
 
 from custom_components.homeassistant_grenton.domain.api.clu import (
     GrentonCluApiProtocol,
-    _SubscriptionEndpoint,
 )
 from custom_components.homeassistant_grenton.mappers.device_mapper import DeviceMapper
 from custom_components.homeassistant_grenton.state import (
@@ -21,8 +20,10 @@ from custom_components.homeassistant_grenton.state import (
 )
 
 
-def test_schedule_is_polled_separately_and_realtime_sockets_are_reused(tmp_path):
+def test_schedule_is_polled_separately_and_shared_report_socket_is_reused(tmp_path):
     async def run():
+        from test_clu_lifecycle import synthetic_subscription
+
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
         coord = coordinator(hass, entry, [make_clu("clu1")])
@@ -34,44 +35,30 @@ def test_schedule_is_polled_separately_and_realtime_sockets_are_reused(tmp_path)
             if key in coord._realtime_keys["clu1"]
         ]
         schedule_key = GrentonCluStateAttributeKey("THERMOSTAT1", "9")
-        assert api.large_value_keys == {schedule_key}
-        assert schedule_key not in keys
+        assert api.large_value_keys == {schedule_key} and schedule_key not in keys
         week = "Y0" * 672 + "+00:30"
-
-        async def open_socket(chunk):
-            response = ",".join(
-                "1" if key.name == "6" else "2" if key.name == "8" else "30"
-                for key in chunk
-            )
-            api._subscription_endpoints.append(
-                _SubscriptionEndpoint(
-                    None,
-                    SimpleNamespace(
-                        send_request=AsyncMock(
-                            return_value=f"resp:192.0.2.1:abcd:clientReport:0:{{{response}}}"
-                        )
-                    ),
-                    chunk,
-                    0,
-                )
-            )
-
-        api._open_chunk_socket = AsyncMock(side_effect=open_socket)
+        synthetic_subscription(
+            api,
+            {
+                key: 1 if key.name == "6" else 2 if key.name == "8" else 30
+                for key in keys
+            },
+        )
         api.poll_component_states = AsyncMock(
-            side_effect=lambda keys: [
-                week if key == schedule_key else 30 for key in keys
+            side_effect=lambda selected: [
+                week if key == schedule_key else 30 for key in selected
             ]
         )
         values = await api.register_component_states(keys)
-        endpoints = api._subscription_endpoints.copy()
-        assert all(schedule_key not in endpoint.keys for endpoint in endpoints)
+        groups, listener = api._groups.copy(), api.report_transport
+        assert all(schedule_key not in group.keys for group in groups)
         await coord._process_report("clu1", keys, values)
         await coord._send_slow_poll("clu1")
         assert entity.decoded_schedule is not None
         assert api.poll_component_states.await_args.args[0] == [schedule_key]
         assert await api.register_component_states(keys) == values
-        assert api._subscription_endpoints == endpoints
-        assert api._open_chunk_socket.await_count == 1
+        assert api._groups == groups and api.report_transport is listener
+        await coord.async_shutdown()
         await hass.async_stop()
 
     asyncio.run(run())
@@ -81,36 +68,38 @@ def test_schedule_is_polled_separately_and_realtime_sockets_are_reused(tmp_path)
     "wire",
     [
         None,
-        "resp:192.0.2.1:abcd:clientReport:0:{1}",
-        "resp:192.0.2.1:abcd:clientReport:0:{1,2,3}",
+        "resp:192.0.2.1:abcd:clientReport:1:{1}",
+        "resp:192.0.2.1:abcd:clientReport:1:{1,2,3}",
         "resp:192.0.2.1:abcd:error",
     ],
 )
 def test_bad_chunk_preserves_alignment_of_later_values(tmp_path, wire):
     async def run():
+        from test_clu_lifecycle import synthetic_subscription
+
+        from custom_components.homeassistant_grenton.domain.api.clu_messages import (
+            GrentonCluApiClientRegisterRequest,
+        )
+
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
         coord = coordinator(hass, entry, [make_clu("clu1")])
         api = coord._apis["clu1"]
         keys = [GrentonCluStateVariableKey(str(index)) for index in range(31)]
-        first = _SubscriptionEndpoint(
-            None,
-            SimpleNamespace(send_request=AsyncMock(return_value=wire)),
-            keys[:30],
-            0,
-        )
-        last = _SubscriptionEndpoint(
-            None,
-            SimpleNamespace(
-                send_request=AsyncMock(
-                    return_value="resp:192.0.2.1:abcd:clientReport:0:{999}"
-                )
-            ),
-            keys[30:],
-            0,
-        )
-        api._subscription_endpoints = [first, last]
+        synthetic_subscription(api, {key: 999 for key in keys})
+        original = api.protocol.send_request.side_effect
+
+        async def read(request):
+            if (
+                isinstance(request, GrentonCluApiClientRegisterRequest)
+                and len(request.keys) == 30
+            ):
+                return wire
+            return await original(request)
+
+        api.protocol.send_request.side_effect = read
         assert await api.register_component_states(keys) == [MISSING_STATE] * 30 + [999]
+        await coord.async_shutdown()
         await hass.async_stop()
 
     asyncio.run(run())
@@ -142,6 +131,7 @@ def test_newer_push_wins_over_registration_snapshot_and_actual_nil_clears_state(
             return [values[key.name] for key in _keys]
 
         coord._apis["clu1"] = SimpleNamespace(
+            state_read_batches=coord._apis["clu1"].state_read_batches,
             register_component_states=AsyncMock(side_effect=initial_read),
             poll_component_states=AsyncMock(
                 side_effect=lambda keys: [values[key.name] for key in keys]
@@ -200,6 +190,7 @@ def test_startup_pulls_values_retries_failure_and_decodes_without_writing(tmp_pa
             "14": 21,
         }
         api = SimpleNamespace(
+            state_read_batches=coord._apis["clu1"].state_read_batches,
             connect=AsyncMock(return_value=True),
             ping=AsyncMock(return_value=True),
             disconnect=AsyncMock(),
@@ -307,7 +298,9 @@ def test_timeout_diagnostics_identify_the_operation(tmp_path, caplog):
     from unittest.mock import Mock
 
     from custom_components.homeassistant_grenton.domain.api.clu_messages import (
+        GrentonCluApiClientDestroyRequest,
         GrentonCluApiClientRegisterRequest,
+        GrentonCluApiFetchValuesRequest,
         GrentonCluApiPingRequest,
     )
     from custom_components.homeassistant_grenton.domain.api.clu_messages.base import (
@@ -329,11 +322,17 @@ def test_timeout_diagnostics_identify_the_operation(tmp_path, caplog):
                 [GrentonCluStateVariableKey("a")], 0, "00000002"
             ),
             GrentonCluApiRequest('THERMOSTAT1:set(9,"data")', "00000003"),
+            GrentonCluApiFetchValuesRequest(
+                [GrentonCluStateVariableKey("a")], "00000004"
+            ),
+            GrentonCluApiClientDestroyRequest(1234, "00000005"),
         ):
             assert await protocol.send_request(request) is None
         assert "timeout during ping" in caplog.text
-        assert "timeout during state read (1 keys)" in caplog.text
+        assert "timeout during subscription registration (1 keys)" in caplog.text
+        assert "timeout during subscription destruction" in caplog.text
         assert "timeout during action write" in caplog.text
+        assert "timeout during slow read (1 keys)" in caplog.text
         assert protocol._pending == {}
         await hass.async_stop()
 

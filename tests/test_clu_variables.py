@@ -367,6 +367,8 @@ def test_native_entities_share_clu_device_and_switch_writes_only_own_variable(tm
             register_component_states=AsyncMock(
                 return_value=[False, 21.5, 42, "Working"]
             ),
+            state_read_batches=coord._apis["clu1"].state_read_batches,
+            subscription_count=0,
         )
         coord._apis["clu1"] = api
         await switches[0].async_turn_on()

@@ -107,6 +107,12 @@ that CLU’s polling timer, without reconnecting it or restarting other CLUs.
 An earlier global interval is retained as the fallback for CLUs without their
 own setting. Use **Configure entities** for individual entity settings.
 
+**Initial subscription ID** defaults to **1** (whole numbers from 1 to 65535).
+The first group uses this ID; new groups receive successive IDs on the same
+report listener. Allocation wraps after 65535 and never reuses an ID during
+that listener's lifetime.
+Changing this setting removes the old groups before applying the new range.
+
 Widget devices are automatically named from their entity labels. Two distinct
 labels are joined with `·`; devices with more labels show the first two and
 `(+N)` for the remaining ones. The widget type remains in the Model field.
@@ -165,14 +171,14 @@ retain their targeted readback checks.
 
 **CLU_GATE_HTTP** uses polling for every binding, including controls and
 controller diagnostics, because it does not provide realtime updates. It opens
-no realtime subscription sockets. Its polling interval can be shorter than the
+no report listener. Its polling interval can be shorter than the
 main CLU's; configure it under **Configure CLU**. User actions still execute
 immediately; displayed feedback follows the next poll or an explicit readback.
 
 Polled values are read at startup and then at their source CLU's configured
-interval. Reads use session 1 on the existing control socket, in batches of up
-to 30 values, with large schedules isolated in their own batches. They do not
-create subscription sockets or receive the 45-second registration refresh.
+interval. Reads use `SYSTEM:fetchValues` on the existing control socket, in batches
+of up to 30 values, with large schedules isolated in their own batches. They do not
+create subscriptions or receive the 45-second registration refresh.
 On realtime-capable CLUs, a binding shared with a realtime consumer remains
 realtime; thermostat temperature feedback now requests slow polling too.
 
@@ -183,47 +189,40 @@ value becomes unavailable until a read succeeds. A real CLU `nil` response is
 shown as unknown. Other entities show unknown for stale polled fields.
 
 Polling reduces change reports and, when it removes subscription groups, their
-keepalives and refreshes. It adds a request per batch per interval, so the traffic
+refreshes. It adds a request per batch per interval, so the traffic
 reduction depends on the number of values and their previous update frequency.
 
 ### CLU connections and cleanup
 
-Each CLU has one control UDP socket for actions and session-1 polling. Realtime
-values use persistent session-0 sockets, up to 30 keys per group, with stable
-registration and keepalive IDs. Keepalives run every 5 seconds and registration
-refreshes every 45 seconds, independently per CLU. A slow CLU cannot hold up
-another controller's timers. Operations do not overlap their own previous run;
-timeouts add delay rather than triggering catch-up bursts. Outgoing datagrams
-share a minimum 20 ms spacing per CLU, including after cancellation.
-Duplicate keys are read once, and changing their input order reuses existing
-subscription groups. Large values stay isolated for both subscriptions and polls.
+Each CLU has one control UDP socket for actions, health pings and `fetchValues`
+reads. Realtime-capable CLUs also have one report listener shared by all groups.
+Registrations specify that listener's local address and port; reports are routed
+by subscription ID. Groups contain up to 30 ordinary keys. Large values stay
+isolated, and duplicate bindings share one source.
 
-Reload, unload, failed startup and Home Assistant shutdown close owned sockets,
-fail pending reply waiters and cancel notification tasks. A locally lost main
-socket is recreated on the next keepalive; a lost subscription socket is
-recreated on the next registration refresh without replacing healthy groups.
-A network timeout alone does not recreate sockets, add subscribers, or replay
-an action: the CLU may already have executed a write before its reply was lost.
-All transports close before waiting for callbacks, including if shutdown is
-cancelled. Work and replies from an earlier connection cannot resume after a
-reconnect. Malformed response envelopes and report headers are rejected.
+One health ping runs every **10 seconds** per CLU. Groups renew every
+**45 seconds**, using fresh request message IDs. Timers follow monotonic
+deadlines, skip missed ticks and avoid catch-up bursts. Slow reads yield between
+batches so renewals can proceed. Controllers run independently, and outgoing
+datagrams retain at least 20 ms spacing per CLU.
 
-Registration refreshes on a subscription socket never overlap. Their required
-stable IDs cannot distinguish a delayed reply to an earlier refresh of the same
-keys; the wire format provides no sequence number for that distinction.
+Group replacement, integration reload/unload, failed startup and Home Assistant
+shutdown send bounded `clientDestroy` requests for owned subscriptions, then
+close local sockets and pending work. Missing acknowledgements cannot prevent
+local cleanup. A hard process kill cannot run this remote cleanup.
 
-Closing UDP sockets is local cleanup, not a confirmed Grenton unsubscribe.
-Remote registrations must expire according to CLU firmware; no undocumented
-unsubscribe command is sent. The 30-key cap does not guarantee a maximum reply
-size for arbitrary string values. Keep large strings out of realtime groups,
-as done for thermostat schedules.
+Lost sockets are recovered on the next health check or registration refresh.
+Timeouts alone do not recreate sockets or replay actions. Old-generation,
+unknown-ID and malformed reports cannot update entities. Thirty keys is a
+conservative batching budget; arbitrary large strings can still produce large
+replies, so thermostat schedules remain isolated and polled.
 
 Each CLU device has local **Connection**, **Request timeouts** and
 **Realtime subscriptions** diagnostics. They observe existing traffic and add no
 CLU reads or registrations. Last-seen timestamps stay internal for connection
 checks. Timeout counts reset when the integration reloads;
-subscription counts describe local ready subscription sockets, excluding the
-control socket, rather than a firmware-reported remote session count.
+subscription counts describe local active groups sharing the report listener,
+rather than a firmware-reported remote session count.
 
 A CLU is disconnected after **30 seconds** without a valid reply or report.
 Realtime entities using that CLU become unavailable and recover when communication
@@ -492,27 +491,16 @@ sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
 select the controller on which to run a script. Refresh the interface through
 **Reconfigure** when CLUs are added or removed.
 
-Each CLU has one control/action socket. Realtime-capable CLUs also maintain
-subscription sockets: ordinary values are packed in groups of up to 30, and each large thermostat schedule has
-its own group. Duplicate bindings share a subscription. Every socket receives a
-keepalive every 5 seconds; subscription groups refresh every 45 seconds on the
-same socket with the same message ID. Registration requests run one at a time
-per CLU; outgoing packets are spaced by at least 20 ms. Failed initial reads retry
-only affected groups, and explicit readbacks reuse the relevant existing groups.
-Startup logs report the value and subscription counts. For `N` groups, nominal
-traffic is `12 × (N + 1)` keepalives and `60 × N / 45` registrations per minute,
+For `N` realtime groups, nominal traffic is **6 health pings** and
+`60 × N / 45` registrations per minute,
 before user actions, readbacks, retries and CLU responses/change reports.
 Slow reads reuse the control socket and add approximately
 `(ceil(S / 30) + L) × 60 / T` requests per minute for `S` ordinary polled
 values and `L` large schedules at an interval of `T` seconds.
 See **Temperature Reads and Polling** above for configuration.
 
-Home Assistant stop, successful integration unload and failed setup close all
-local sockets and stop background traffic. Opening sockets are tracked during
-shutdown too. UDP closure does **not** send a remote session-close handshake.
-The integration does not issue an unverified unsubscribe command; the CLU's
-remote client cleanup and expiry behavior remain firmware-dependent and unverified.
-A hard process kill cannot run integration cleanup, although the OS closes its sockets.
+See **CLU connections and cleanup** above for socket ownership and remote
+subscription removal.
 A ping timeout alone does not prove a reboot; a drop in the CLU Uptime sensor does
 provide evidence of a restart. Neither identifies its cause.
 

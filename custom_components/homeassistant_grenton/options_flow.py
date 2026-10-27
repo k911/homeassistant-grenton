@@ -8,6 +8,13 @@ from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
+from .clu_settings import (
+    CONF_SUBSCRIPTION_ID,
+    MAX_SUBSCRIPTION_ID,
+    MIN_SUBSCRIPTION_ID,
+    subscription_id,
+    validate_subscription_id,
+)
 from .domain.entities.clu import GrentonCluEntity
 from .domain.entities.clu_variables import (
     CluVariableConfigurationSchema,
@@ -54,7 +61,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Separate per-CLU polling settings from individual entities."""
+        """Separate per-CLU connection settings from individual entities."""
         # Startup can precede frontend setup. Ensure selectors exist when a
         # browser actually opens configuration, including after an update.
         await async_register_scene_editor(self.hass, notify_clients=True)
@@ -63,7 +70,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         )
 
     def _configured_clus(self) -> dict[str, str]:
-        """Allow read configuration even while the integration is unloaded."""
+        """Allow CLU configuration even while the integration is unloaded."""
         return {
             clu["id"]: clu.get("name", clu["id"])
             for clu in self.config_entry.data.get("interface", {}).get("clus", [])
@@ -98,6 +105,10 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
     async def async_step_clu_read_interval(self, user_input=None):
         errors = {}
         interval = slow_read_interval(self.config_entry.options, self._read_clu_id)
+        saved_subscription_id = subscription_id(
+            self.config_entry.options, self._read_clu_id
+        )
+        selected_subscription_id = saved_subscription_id
         if user_input is not None:
             try:
                 interval = validate_slow_read_interval(
@@ -105,22 +116,38 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                 )
             except vol.Invalid:
                 errors[CONF_SLOW_READ_INTERVAL] = "invalid_configuration"
-            else:
+            try:
+                selected_subscription_id = validate_subscription_id(
+                    user_input.get(CONF_SUBSCRIPTION_ID, saved_subscription_id)
+                )
+            except vol.Invalid:
+                errors[CONF_SUBSCRIPTION_ID] = "invalid_configuration"
+            if not errors:
                 options = dict(self.config_entry.options)
                 settings = dict(options.get(CONF_CLU_READ_SETTINGS, {}))
                 settings[self._read_clu_id] = {
                     **settings.get(self._read_clu_id, {}),
                     CONF_SLOW_READ_INTERVAL: interval,
+                    CONF_SUBSCRIPTION_ID: selected_subscription_id,
                 }
                 options[CONF_CLU_READ_SETTINGS] = settings
-                # Change only this CLU's timer, retaining all existing sockets.
                 runtime = getattr(self.config_entry, "runtime_data", None)
-                if runtime is not None:
-                    await runtime.coordinator.async_set_slow_read_interval(
-                        self._read_clu_id, interval
-                    )
-                self.automatic_reload = False
-                return self.async_create_entry(title="", data=options)
+                try:
+                    if runtime is not None:
+                        await runtime.coordinator.async_set_subscription_id(
+                            self._read_clu_id, selected_subscription_id
+                        )
+                        if interval != slow_read_interval(
+                            self.config_entry.options, self._read_clu_id
+                        ):
+                            await runtime.coordinator.async_set_slow_read_interval(
+                                self._read_clu_id, interval
+                            )
+                except HomeAssistantError:
+                    errors["base"] = "cannot_apply_configuration"
+                else:
+                    self.automatic_reload = False
+                    return self.async_create_entry(title="", data=options)
         return self.async_show_form(
             step_id="clu_read_interval",
             last_step=True,
@@ -140,7 +167,17 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                             mode=selector.NumberSelectorMode.BOX,
                             unit_of_measurement="s",
                         )
-                    )
+                    ),
+                    vol.Required(
+                        CONF_SUBSCRIPTION_ID, default=selected_subscription_id
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MIN_SUBSCRIPTION_ID,
+                            max=MAX_SUBSCRIPTION_ID,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
                 }
             ),
         )

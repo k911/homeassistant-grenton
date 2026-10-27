@@ -218,9 +218,10 @@
       },
       "clu_read_interval": {
         "title": "Configure {clu_name}",
-        "description": "Applies to periodic reads from this CLU.",
+        "description": "Connection and polling settings.",
         "data": {
-          "slow_read_interval": "Polling interval (seconds)"
+          "slow_read_interval": "Polling interval (seconds)",
+          "subscription_id": "Initial subscription ID"
         }
       }
     },

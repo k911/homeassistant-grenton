@@ -103,6 +103,59 @@ python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
   --attribute DIN5697.1
 ```
 
+### Fetch selected values once
+
+`fetch-values` reads attributes and variables through `SYSTEM:fetchValues` on
+one control socket. It creates no realtime subscriptions and sends no writes.
+
+```bash
+python3 main.py fetch-values --clu CLU_Z_WAVE_1 \
+  --attribute CLU828599.0 --attribute THERMOSTAT1.14 --variable Counter
+```
+
+Repeat `--attribute OBJECT.INDEX` or `--variable NAME` as needed. For a safe
+diagnostic capture, `--summary` prints only types and string lengths, and also
+suppresses raw packet DEBUG logging even when `--debug` is enabled:
+
+```bash
+python3 main.py fetch-values --clu CLU_Z_WAVE_1 \
+  --attribute THERMOSTAT1.9 --summary --format json
+```
+
+Use object IDs from your configuration. Output defaults to text; `--format json`
+(`--output json` is an alias) produces a single result document. A real `nil`
+is distinct from a failed read. Failed or incomplete reads exit with code 1;
+an empty selection exits with code 2. The socket closes after the read, including
+on failure or cancellation.
+
+### Test subscription cleanup
+
+```bash
+python3 main.py test-client-destroy --clu CLU_Z_WAVE_1
+```
+
+Creates one temporary subscription to CLU uptime with its own ID and socket,
+then sends `SYSTEM:clientDestroy(0,0,id)` on that socket. It observes reports
+for 10 seconds before and after destruction, checks that the CLU still answers,
+and closes the socket. No object values are changed. Output contains counts and
+verification flags, without raw values. `--observe-seconds 5–15` changes each
+observation window. Only `passed` exits with code 0; `failed` and `inconclusive`
+exit with code 1. Acknowledgement alone does not establish successful cleanup.
+
+### Test the shared report listener
+
+```bash
+python3 main.py test-subscriptions --clu CLU_Z_WAVE_1
+```
+
+Creates two small, temporary subscriptions to changing CLU counters. The test
+checks ID routing through one listener, 10-second health pings, two 45-second
+renewals, changing the initial ID, and explicit cleanup. It then keeps the
+listener open for 10 seconds to verify that incoming reports actually stop.
+The default run takes about two minutes and changes no object values. Output
+contains counts and verification flags. `--duration 100` controls the first
+observation window (100–300 seconds).
+
 ### Help:
 
 ```bash
@@ -176,16 +229,17 @@ grenton_tracked_objects:
 
 ## Tests
 
-From this directory, run `python3 -m unittest test_config test_execute test_watch`.
+From this directory, run `python3 -m unittest test_config test_execute test_watch test_fetch_values test_client_destroy`.
 The action tests mock the CLU connection and send no commands to live hardware.
 
 ## Watch implementation
 
-Watch commands use the same `GrentonCluApi` as Home Assistant: persistent
-session-0 subscriptions in groups of up to 30 keys, stable registration IDs,
-and keepalives on every subscribing socket. Report parsing is shared too,
+Watch commands use the same `GrentonCluApi` as Home Assistant: one shared report
+listener, unique IDs for groups of up to 30 keys, and one control-socket health
+ping every 10 seconds. Groups renew every 45 seconds with fresh request IDs.
+Report parsing is shared too,
 including comma-containing and ambiguously quoted strings. Failed reads do not
-overwrite the last displayed values. One-off state reads use session 1 on the
-control socket and create no realtime subscriptions.
+overwrite the last displayed values. One-off state reads use `SYSTEM:fetchValues`
+on the control socket and create no realtime subscriptions.
 Keepalive and registration timers run independently; stopping a watch cancels
 both tasks before closing its sockets.

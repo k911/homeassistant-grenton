@@ -1,12 +1,15 @@
 """CLI commands package."""
 import argparse
 
+from .client_destroy import client_destroy_command, observation_seconds
 from .configure import configure_command
+from .execute import execute_command
+from .fetch_values import fetch_values_command
+from .shared_subscriptions import observation_duration, shared_subscription_command
 from .test import test_command
 from .view_state import view_state_command
-from .execute import execute_command
-from .watch_variable import watch_variable_command
 from .watch_attribute import watch_attribute_command
+from .watch_variable import watch_variable_command
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -20,6 +23,7 @@ Examples:
   %(prog)s configure --url http://192.168.1.100:9998 --pin 5678
   %(prog)s test
   %(prog)s test --config ~/.grenton/config.yaml
+  %(prog)s fetch-values --attribute CLU828599.0 --attribute THERMOSTAT1.9 --summary
   %(prog)s watch-variable --variable myVariable
   %(prog)s watch-variable --clu CLU_Z_WAVE_1 --variable myVariable --variable otherVariable
   %(prog)s watch-attribute --attribute DIN5696.0
@@ -64,6 +68,28 @@ Examples:
         help="Configuration file path (default: ~/.grenton/config.yaml)",
     )
     test_parser.set_defaults(handler=test_command)
+
+    destroy_parser = subparsers.add_parser(
+        "test-client-destroy", help="Verify cleanup of a temporary uptime subscription",
+    )
+    destroy_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    destroy_parser.add_argument("--config", default=None, help="Saved configuration file")
+    destroy_parser.add_argument(
+        "--observe-seconds", type=observation_seconds, default=10,
+        help="Seconds to observe before and after destruction, 5–15 (default: 10)",
+    )
+    destroy_parser.set_defaults(handler=client_destroy_command)
+
+    shared_parser = subparsers.add_parser(
+        "test-subscriptions", help="Verify shared-listener routing, renewals and cleanup",
+    )
+    shared_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    shared_parser.add_argument("--config", default=None, help="Saved configuration file")
+    shared_parser.add_argument(
+        "--duration", type=observation_duration, default=100,
+        help="Initial observation seconds, 100–300 (default: 100)",
+    )
+    shared_parser.set_defaults(handler=shared_subscription_command)
 
     # View state command
     view_state_parser = subparsers.add_parser("view-state", help="Display CLU state and attributes")
@@ -191,4 +217,31 @@ Examples:
         help="Seconds between subscription refreshes (default: 45)",
     )
     watch_attribute_parser.set_defaults(handler=watch_attribute_command)
+
+    fetch_parser = subparsers.add_parser(
+        "fetch-values", help="Read selected values once using SYSTEM:fetchValues",
+    )
+    fetch_parser.add_argument(
+        "--clu", default="CLU_Z_WAVE_1", help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    fetch_parser.add_argument(
+        "--attribute", action="append", default=[], metavar="OBJECT.INDEX",
+        help="Attribute to read as OBJECT.INDEX (repeat for multiple attributes)",
+    )
+    fetch_parser.add_argument(
+        "--variable", action="append", default=[], metavar="NAME",
+        help="Variable name to read (repeat for multiple variables)",
+    )
+    fetch_parser.add_argument(
+        "--config", default=None, help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    fetch_parser.add_argument(
+        "--format", "--output", dest="output", choices=["text", "json"], default="text",
+        help="Output format: text or json (default: text)",
+    )
+    fetch_parser.add_argument(
+        "--summary", action="store_true",
+        help="Show only types and string lengths; suppress raw packet DEBUG logs",
+    )
+    fetch_parser.set_defaults(handler=fetch_values_command)
     return parser

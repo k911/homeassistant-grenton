@@ -94,7 +94,7 @@ def test_startup_reads_schedule_only_when_auto_is_active(
                 key not in call.args[0]
                 for call in api.register_component_states.await_args_list
             )
-            assert not api._subscription_endpoints
+            assert not api._groups
         finally:
             await coord.async_shutdown()
             await hass.async_stop()

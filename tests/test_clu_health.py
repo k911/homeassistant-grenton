@@ -19,7 +19,7 @@ from test_on_off_configuration import widget
 from custom_components.homeassistant_grenton import _cleanup_orphans
 from custom_components.homeassistant_grenton.domain.api.clu import (
     GrentonCluApiProtocol,
-    _SubscriptionEndpoint,
+    _SubscriptionGroup,
 )
 from custom_components.homeassistant_grenton.domain.api.clu_messages import (
     GrentonCluApiPingRequest,
@@ -210,26 +210,13 @@ def test_diagnostics_add_no_reads_remain_available_offline_and_remove_their_list
                 assert api.health.last_seen == seen
                 assert hass.states.get(timeouts.entity_id).state == "4"
                 assert all(entity.available for entity in diagnostics)
-                api._subscription_endpoints = [
-                    _SubscriptionEndpoint(
-                        None,
-                        SimpleNamespace(closed=False),
-                        [GrentonCluStateVariableKey("a")],
-                        0,
+                api.report_protocol = SimpleNamespace(active=True, closed=False)
+                api._groups = [
+                    _SubscriptionGroup(
+                        [GrentonCluStateVariableKey("a")], 1, confirmed=True
                     ),
-                    _SubscriptionEndpoint(
-                        None,
-                        SimpleNamespace(closed=True),
-                        [GrentonCluStateVariableKey("b")],
-                        0,
-                    ),
-                    _SubscriptionEndpoint(
-                        None,
-                        SimpleNamespace(closed=False),
-                        [GrentonCluStateVariableKey("c")],
-                        0,
-                        ready=False,
-                    ),
+                    _SubscriptionGroup([GrentonCluStateVariableKey("b")], 2),
+                    _SubscriptionGroup([GrentonCluStateVariableKey("c")], 3),
                 ]
                 assert subscriptions.native_value == 1
             finally:

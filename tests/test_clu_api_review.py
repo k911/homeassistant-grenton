@@ -24,32 +24,30 @@ def test_disconnect_detaches_old_sockets_before_waiting_for_callbacks(tmp_path):
         with socket_factory(api, sockets):
             await api.connect()
             await api.register_component_states([GrentonCluStateVariableKey("a")])
-            old_main, subscription = sockets
+            old_main, listener = api.transport, api.report_protocol
             started, release = asyncio.Event(), asyncio.Event()
 
-            async def report(values):
+            async def report(keys, values):
                 started.set()
                 try:
                     await asyncio.Future()
                 finally:
                     await release.wait()
 
-            subscription.protocol.subscription_callback = report
-            subscription.protocol._process_response(
-                "resp:192.0.2.1:00000000:clientReport:0:{1}"
-            )
+            api.on_subscription_report = report
+            listener._process_response("resp:192.0.2.1:00000000:clientReport:1:{1}")
             await started.wait()
             shutdown = asyncio.create_task(api.disconnect())
             await tick()
             try:
-                assert await api.connect()
-                new_main = api.transport
-                assert new_main is not old_main
+                assert not await api.connect()
             finally:
                 release.set()
                 await shutdown
-            assert api.transport is new_main and not new_main.closed
-            assert await api.ping()
+            assert await api.connect()
+            new_main = api.transport
+            assert new_main is not old_main and old_main.closed
+            assert not new_main.closed and await api.ping()
         await coord.async_shutdown()
         await hass.async_stop()
 
@@ -80,11 +78,12 @@ def test_old_registration_cannot_open_more_sockets_after_reconnect(tmp_path):
                 registration = asyncio.create_task(api.register_component_states(keys))
                 await started.wait()
                 await api.disconnect()
-                assert await api.connect()
                 release.set()
-                assert await registration is None
+                result = await asyncio.wait_for(registration, 0.5)
+                assert result is None or result == [MISSING_STATE] * len(keys)
+                assert await api.connect()
                 assert len(sockets) == 2
-                assert not api._subscription_endpoints
+                assert not api._groups
         await coord.async_shutdown()
         await hass.async_stop()
 
@@ -102,7 +101,7 @@ def test_poll_discards_a_reply_from_before_disconnect_and_reconnect(tmp_path):
             async def read(request):
                 started.set()
                 await release.wait()
-                return f"resp:192.0.2.1:{request.msg_id}:clientReport:1:{{99}}"
+                return f"resp:192.0.2.1:{request.msg_id}:values:{{99}}"
 
             with patch.object(api.protocol, "send_request", side_effect=read):
                 task = asyncio.create_task(
@@ -127,13 +126,13 @@ def test_reordered_and_duplicate_keys_reuse_existing_subscription_groups(tmp_pat
         with socket_factory(api, sockets):
             await api.connect()
             assert await api.register_component_states(keys) == [1] * 31
-            endpoints = api._subscription_endpoints.copy()
+            endpoints = api._groups.copy()
             assert (
                 await api.register_component_states([*reversed(keys), keys[0]])
                 == [1] * 32
             )
-            assert api._subscription_endpoints == endpoints
-            assert len(sockets) == 3
+            assert api._groups == endpoints
+            assert len(sockets) == 2
         await coord.async_shutdown()
         await hass.async_stop()
 
@@ -180,13 +179,13 @@ def test_non_response_with_matching_id_cannot_finish_request(tmp_path):
     asyncio.run(run())
 
 
-def test_cancelled_disconnect_still_closes_every_transport(tmp_path):
+def test_cancelled_disconnect_still_closes_control_and_shared_listener(tmp_path):
     async def run():
         hass, _, coord, api = await fixture(tmp_path)
         sockets = []
         started, cancelling, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
-        async def report(values):
+        async def report(keys, values):
             started.set()
             try:
                 await asyncio.Future()
@@ -199,9 +198,9 @@ def test_cancelled_disconnect_still_closes_every_transport(tmp_path):
             await api.register_component_states(
                 [GrentonCluStateVariableKey(str(i)) for i in range(31)]
             )
-            sockets[1].protocol.subscription_callback = report
-            sockets[1].protocol._process_response(
-                "resp:192.0.2.1:00000000:clientReport:0:{" + ",".join(["1"] * 30) + "}"
+            api.on_subscription_report = report
+            api.report_protocol._process_response(
+                "resp:192.0.2.1:00000000:clientReport:1:{" + ",".join(["1"] * 30) + "}"
             )
             await started.wait()
             shutdown = asyncio.create_task(api.disconnect())
@@ -211,8 +210,14 @@ def test_cancelled_disconnect_still_closes_every_transport(tmp_path):
             release.set()
             with pytest.raises(asyncio.CancelledError):
                 await shutdown
-            assert not api._subscription_endpoints
-            assert api.transport is api.protocol is None
+            assert not api._groups
+            assert (
+                api.transport
+                is api.protocol
+                is api.report_transport
+                is api.report_protocol
+                is None
+            )
             await tick()
             assert all(not socket.protocol._report_tasks for socket in sockets)
         await coord.async_shutdown()
@@ -235,7 +240,7 @@ def test_report_consumer_can_initiate_disconnect_without_deadlocking(tmp_path):
             await api.register_component_states([GrentonCluStateVariableKey("a")])
             api.on_subscription_report = report
             sockets[1].protocol._process_response(
-                "resp:192.0.2.1:00000000:clientReport:0:{1}"
+                "resp:192.0.2.1:00000000:clientReport:1:{1}"
             )
             await asyncio.wait_for(finished.wait(), 0.5)
             assert all(socket.closed for socket in sockets)
@@ -245,32 +250,41 @@ def test_report_consumer_can_initiate_disconnect_without_deadlocking(tmp_path):
     asyncio.run(run())
 
 
-def test_initial_keepalive_connection_loss_does_not_abort_healthy_groups(tmp_path):
+def test_failed_registration_does_not_abort_healthy_groups_or_create_sockets(tmp_path):
     async def run():
+        from custom_components.homeassistant_grenton.domain.api.clu_messages import (
+            GrentonCluApiClientRegisterRequest,
+        )
+
         hass, _, coord, api = await fixture(tmp_path)
         keys = [GrentonCluStateVariableKey(str(i)) for i in range(31)]
         sockets = []
         with socket_factory(api, sockets):
             await api.connect()
-            send = GrentonCluApiProtocol.send_request
-            first_subscription = True
+            send = api.protocol.send_request
+            failed = False
 
-            async def send_with_failure(protocol, request):
-                nonlocal first_subscription
-                if protocol.subscription_keys is not None and first_subscription:
-                    first_subscription = False
-                    raise ConnectionError("Lost initial subscription socket")
-                return await send(protocol, request)
+            async def send_with_failure(request):
+                nonlocal failed
+                if (
+                    isinstance(request, GrentonCluApiClientRegisterRequest)
+                    and not failed
+                ):
+                    failed = True
+                    return None
+                return await send(request)
 
-            with patch.object(GrentonCluApiProtocol, "send_request", send_with_failure):
+            with patch.object(
+                api.protocol, "send_request", side_effect=send_with_failure
+            ):
                 assert await api.register_component_states(keys) == [
                     MISSING_STATE
                 ] * 30 + [1]
-            first, healthy = api._subscription_endpoints
-            assert first.protocol is None and healthy.protocol is not None
+            first, healthy = api._groups
+            assert not first.confirmed and healthy.confirmed
             assert await api.register_component_states(keys) == [1] * 31
-            assert api._subscription_endpoints[1] is healthy
-            assert len(sockets) == 4
+            assert api._groups[1] is healthy
+            assert len(sockets) == 2
         await coord.async_shutdown()
         await hass.async_stop()
 
@@ -287,13 +301,13 @@ def test_changing_large_value_policy_rebuilds_with_the_value_isolated(tmp_path):
             assert await api.register_component_states(keys) == [1, 1]
             api.large_value_keys.add(keys[1])
             assert await api.register_component_states(keys) == [1, 1]
-            assert [endpoint.keys for endpoint in api._subscription_endpoints] == [
+            assert [endpoint.keys for endpoint in api._groups] == [
                 [keys[0]],
                 [keys[1]],
             ]
-            assert sockets[1].closed
+            assert not sockets[1].closed
             api.protocol.send_request = AsyncMock(
-                return_value="resp:192.0.2.1:abcd:clientReport:1:{7}"
+                return_value="resp:192.0.2.1:abcd:values:{7}"
             )
             assert await api.poll_component_states([keys[0], keys[0]]) == [7, 7]
             api.protocol.send_request.assert_awaited_once()
@@ -303,10 +317,9 @@ def test_changing_large_value_policy_rebuilds_with_the_value_isolated(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("report_session", [0, 1, 7])
-@pytest.mark.parametrize("poll", [False, True])
-def test_matched_read_reply_does_not_require_session_echo(
-    tmp_path, caplog, report_session, poll
+@pytest.mark.parametrize("report_subscription_id", [0, 1, 7])
+def test_matched_read_reply_must_echo_subscription_id_independently_of_report_port(
+    tmp_path, caplog, report_subscription_id
 ):
     async def run():
         hass, _, coord, api = await fixture(tmp_path)
@@ -317,7 +330,7 @@ def test_matched_read_reply_does_not_require_session_echo(
         def incoming(protocol, wire):
             if ":clientReport:" in wire:
                 parts = wire.split(":", 5)
-                parts[4] = str(report_session)
+                parts[4] = str(report_subscription_id)
                 wire = ":".join(parts)
             process(protocol, wire)
 
@@ -326,10 +339,10 @@ def test_matched_read_reply_does_not_require_session_echo(
             patch.object(GrentonCluApiProtocol, "_process_response", incoming),
         ):
             await api.connect()
-            read = api.poll_component_states if poll else api.register_component_states
-            assert await read([key]) == [1]
-            assert await read([key]) == [1]
-            assert len(sockets) == (1 if poll else 2)
+            expected = [1] if report_subscription_id == 1 else [MISSING_STATE]
+            assert await api.register_component_states([key]) == expected
+            assert await api.register_component_states([key]) == expected
+            assert len(sockets) == 2
             requests = [
                 raw
                 for socket in sockets
@@ -337,18 +350,22 @@ def test_matched_read_reply_does_not_require_session_echo(
                 if "clientRegister" in raw
             ]
             assert len(requests) == 2
-            # Request semantics stay unchanged, even when the reply differs.
+            # The report echoes the third argument, not the destination port.
             assert all(
-                f"clientRegister(0,{1 if poll else 0},1," in raw for raw in requests
+                ",1,{" in raw and 'clientRegister("127.0.0.1",' in raw
+                for raw in requests
             )
-            assert "Failed to parse register response" not in caplog.text
+            if report_subscription_id == 1:
+                assert "Invalid subscription registration reply" not in caplog.text
+            else:
+                assert "Invalid subscription registration reply for ID 1" in caplog.text
         await coord.async_shutdown()
         await hass.async_stop()
 
     asyncio.run(run())
 
 
-def test_non_echoing_session_does_not_bypass_peer_socket_or_message_correlation(
+def test_fetch_reply_does_not_bypass_peer_socket_or_message_correlation(
     tmp_path,
 ):
     async def run():
@@ -362,12 +379,12 @@ def test_non_echoing_session_does_not_bypass_peer_socket_or_message_correlation(
             )
             await tick()
             message_id = next(iter(protocol._pending))
-            wire = f"resp:{api.clu.ip}:{message_id}:clientReport:7:{{42}}".encode()
+            wire = f"resp:{api.clu.ip}:{message_id}:values:{{42}}".encode()
             peer = (api.clu.ip, api.clu.port)
             protocol.datagram_received(wire, ("192.0.2.99", api.clu.port))
             protocol.datagram_received(wire, (api.clu.ip, api.clu.port + 1))
             protocol.datagram_received(
-                f"resp:{api.clu.ip}:unmatched:clientReport:7:{{99}}".encode(), peer
+                f"resp:{api.clu.ip}:unmatched:values:{{99}}".encode(), peer
             )
             protocol.datagram_received(
                 f"resp:{api.clu.ip}:00000000:clientReport:7:{{99}}".encode(), peer

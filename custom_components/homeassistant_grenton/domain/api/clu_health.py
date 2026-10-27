@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from time import monotonic
 
-KEEPALIVE_INTERVAL = 5
+KEEPALIVE_INTERVAL = 10
 REGISTRATION_INTERVAL = 45
 CONNECTION_STALE_AFTER = 30
 REALTIME_STALE_AFTER = 2 * REGISTRATION_INTERVAL

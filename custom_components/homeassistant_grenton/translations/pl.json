@@ -218,9 +218,10 @@
       },
       "clu_read_interval": {
         "title": "Konfiguracja {clu_name}",
-        "description": "Dotyczy odczytów okresowych tego CLU.",
+        "description": "Ustawienia połączenia i odpytywania.",
         "data": {
-          "slow_read_interval": "Interwał odpytywania (sekundy)"
+          "slow_read_interval": "Interwał odpytywania (sekundy)",
+          "subscription_id": "Początkowy identyfikator subskrypcji"
         }
       }
     },

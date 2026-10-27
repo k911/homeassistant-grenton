@@ -15,6 +15,9 @@ from custom_components.homeassistant_grenton.domain.api.clu_messages import (
     GrentonCluApiPingRequest,
 )
 from custom_components.homeassistant_grenton.domain.enums import GrentonActionEventType
+from custom_components.homeassistant_grenton.domain.lua_arguments import (
+    split_lua_arguments,
+)
 from custom_components.homeassistant_grenton.domain.state_object import (
     GrentonVariableValueObject,
 )
@@ -32,12 +35,13 @@ async def tick():
 class Socket:
     """A local fake transport with asynchronous close/reply callbacks."""
 
-    def __init__(self, protocol, *, reply=True):
+    def __init__(self, protocol, *, reply=True, port=12345):
         self.protocol = protocol
         self.reply = reply
         self.sent = []
         self.closed = False
         self.close_calls = 0
+        self.port = port
         protocol.connection_made(self)
 
     def is_closing(self):
@@ -50,7 +54,7 @@ class Socket:
             asyncio.get_running_loop().call_soon(self.protocol.connection_lost, None)
 
     def get_extra_info(self, name):
-        return ("127.0.0.1", 12345)
+        return ("127.0.0.1", self.port)
 
     def sendto(self, data, addr):
         assert not self.closed
@@ -59,10 +63,21 @@ class Socket:
         if not self.reply:
             return
         _, _, message_id, payload = raw.split(":", 3)
-        if payload.startswith("SYSTEM:clientRegister"):
-            session = payload.split(",", 2)[1]
-            count = len(self.protocol.subscription_keys or [None])
-            payload = f"clientReport:{session}:{{{','.join(['1'] * count)}}}"
+        if payload.startswith("SYSTEM:fetchValues("):
+            keys = payload.removeprefix("SYSTEM:fetchValues(").removesuffix(")")
+            count = len(split_lua_arguments(keys[1:-1]))
+            payload = f"values:{{{','.join(['1'] * count)}}}"
+        elif payload.startswith("SYSTEM:clientRegister"):
+            arguments = split_lua_arguments(
+                payload.removeprefix("SYSTEM:clientRegister(").removesuffix(")")
+            )
+            subscription_id = arguments[2]
+            count = len(split_lua_arguments(arguments[3][1:-1]))
+            payload = f"clientReport:{subscription_id}:{{{','.join(['1'] * count)}}}"
+        elif payload.startswith("SYSTEM:clientDestroy"):
+            payload = split_lua_arguments(
+                payload.removeprefix("SYSTEM:clientDestroy(").removesuffix(")")
+            )[2]
         else:
             payload = "pong"
         asyncio.get_running_loop().call_soon(
@@ -78,7 +93,7 @@ def socket_factory(api, sockets, *, reply=True):
 
     async def create(factory, **kwargs):
         protocol = factory()
-        transport = Socket(protocol, reply=reply)
+        transport = Socket(protocol, reply=reply, port=12345 + len(sockets))
         sockets.append(transport)
         await tick()
         return transport, protocol
@@ -105,18 +120,14 @@ def test_cancelling_socket_creation_closes_a_transport_bound_before_return(
         with patch.object(
             asyncio.get_running_loop(), "create_datagram_endpoint", side_effect=create
         ):
-            operation = (
-                api._open_chunk_socket([GrentonCluStateVariableKey("a")])
-                if subscription
-                else api.connect()
-            )
+            operation = api._ensure_report_listener() if subscription else api.connect()
             task = asyncio.create_task(operation)
             await started.wait()
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
             assert sockets[0].closed and sockets[0].close_calls == 1
-            assert not api._opening_protocols and not api._subscription_endpoints
+            assert not api._opening_protocols and not api._groups
         await coord.async_shutdown()
         await hass.async_stop()
 
@@ -225,7 +236,9 @@ def test_disconnect_cancels_notification_tasks_and_ignores_late_reports(tmp_path
     asyncio.run(run())
 
 
-def test_only_failed_subscription_is_recreated_and_stable_ids_are_preserved(tmp_path):
+def test_listener_loss_recreates_only_listener_while_control_socket_is_retained(
+    tmp_path,
+):
     async def run():
         hass, _, coord, api = await fixture(tmp_path)
         sockets = []
@@ -233,22 +246,16 @@ def test_only_failed_subscription_is_recreated_and_stable_ids_are_preserved(tmp_
         with socket_factory(api, sockets):
             assert await api.connect()
             assert await api.register_component_states(keys) == [1] * 31
-            first, second = api._subscription_endpoints
-            second_id = second.registration_id
-            first.transport.close()
+            control, listener = api.transport, api.report_transport
+            assert len(sockets) == 2
+            listener.close()
             await tick()
             assert await api.register_component_states(keys) == [1] * 31
-            assert api._subscription_endpoints[1] is second
-            assert second.registration_id == second_id
-            assert api._subscription_endpoints[0] is not first
-            assert len(sockets) == 4  # Main, two original groups, one replacement.
-            registrations = [
-                raw for raw, _ in second.transport.sent if "clientRegister" in raw
-            ]
-            assert len(registrations) == 2
-            assert registrations[0] == registrations[1]
-            await api.register_component_states([])
-            assert not api._subscription_endpoints
+            assert api.transport is control and api.report_transport is not listener
+            assert len(sockets) == 3
+            assert all(group.confirmed for group in api._groups)
+            assert await api.register_component_states([]) == []
+            assert not api._groups
             await api.disconnect()
             assert all(socket.closed for socket in sockets)
         await coord.async_shutdown()
@@ -312,6 +319,7 @@ def test_stalled_clu_does_not_delay_other_clus_periodic_work(tmp_path, register)
         for clu_id in ("clu1", "clu2"):
             coord._realtime_keys[clu_id].add(GrentonCluStateVariableKey("value"))
         calls, twice = {"clu1": 0, "clu2": 0}, asyncio.Event()
+        clock = 0.0
 
         async def operation(clu_id):
             calls[clu_id] += 1
@@ -321,11 +329,18 @@ def test_stalled_clu_does_not_delay_other_clus_periodic_work(tmp_path, register)
                 twice.set()
 
         async def sleep(interval):
-            assert interval == (45 if register else 5)
+            nonlocal clock
+            clock += interval
             await tick()
 
         setattr(coord, "_send_register" if register else "_send_ping", operation)
-        with patch("asyncio.sleep", side_effect=sleep):
+        with (
+            patch("asyncio.sleep", side_effect=sleep),
+            patch(
+                "custom_components.homeassistant_grenton.coordinator.monotonic",
+                side_effect=lambda: clock,
+            ),
+        ):
             task = asyncio.create_task(
                 coord._register_loop() if register else coord._ping_loop()
             )
@@ -404,7 +419,7 @@ def test_repeated_load_and_unload_leaves_no_live_sockets_or_waiters(tmp_path):
                 assert await api.register_component_states(keys) == [1] * 31
                 await api.disconnect()
                 await tick()
-                assert not api._opening_protocols and not api._subscription_endpoints
+                assert not api._opening_protocols and not api._groups
                 assert api.transport is None and api.protocol is None
                 assert all(
                     socket.closed
@@ -412,7 +427,7 @@ def test_repeated_load_and_unload_leaves_no_live_sockets_or_waiters(tmp_path):
                     and not socket.protocol._report_tasks
                     for socket in sockets
                 )
-            assert len(sockets) == 30
+            assert len(sockets) == 20
             assert all(socket.close_calls == 1 for socket in sockets)
         await coord.async_shutdown()
         await hass.async_stop()

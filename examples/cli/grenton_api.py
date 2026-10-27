@@ -9,6 +9,7 @@ from pathlib import Path
 custom_components_path = Path(__file__).parent.parent.parent / "custom_components"
 sys.path.insert(0, str(custom_components_path))
 
+from config import load_configuration, save_configuration, save_interface_cache
 from homeassistant_grenton.domain.api.clu import GrentonCluApi
 from homeassistant_grenton.domain.api.clu_health import KEEPALIVE_INTERVAL
 from homeassistant_grenton.domain.api.object_manager import (
@@ -21,11 +22,14 @@ from homeassistant_grenton.domain.clu import GrentonClu
 from homeassistant_grenton.domain.encryption import GrentonEncryption
 from homeassistant_grenton.dto.clu import GrentonCluDto
 from homeassistant_grenton.dto.encryption import GrentonEncryptionDto
-from homeassistant_grenton.state import MissingState
-
-from config import load_configuration, save_configuration, save_interface_cache
+from homeassistant_grenton.state import (
+    GrentonCluStateAttributeKey,
+    GrentonCluStateVariableKey,
+    MissingState,
+)
 
 _LOGGER = logging.getLogger(__name__)
+_CLU_WIRE_LOGGER = logging.getLogger(GrentonCluApi.__module__)
 
 _STATE_TYPES = ("VARIABLE", "ATTRIBUTE")
 _ERROR_MESSAGES = {
@@ -33,6 +37,26 @@ _ERROR_MESSAGES = {
     GrentonObjectManagerConnectionError: "✗ Connection error: %s",
     GrentonObjectManagerDataError: "✗ Data error: %s",
 }
+
+
+def _state_key_label(key) -> str:
+    if isinstance(key, GrentonCluStateAttributeKey):
+        return f"{key.object_name}.{key.name}"
+    return key.name
+
+
+def _value_type(value) -> str:
+    if isinstance(value, MissingState):
+        return "missing"
+    if value is None:
+        return "nil"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "float"
+    return "string"
 
 
 class GrentonManager:
@@ -84,6 +108,78 @@ class GrentonManager:
             sys.exit(1)
 
         await self._test_clus(config.clus, config.encryption)
+
+    async def fetch_values(
+        self,
+        config_path: Path,
+        clu_name: str,
+        attributes: list[tuple[str, str]],
+        variables: list[str],
+        *,
+        summary: bool = False,
+    ) -> dict:
+        """Read selected keys once through fetchValues, with no subscriptions."""
+        keys: list[GrentonCluStateAttributeKey | GrentonCluStateVariableKey] = [
+            GrentonCluStateAttributeKey(object_name, index)
+            for object_name, index in attributes
+        ]
+        keys.extend(
+            GrentonCluStateVariableKey(name.strip()) for name in variables if name.strip()
+        )
+        keys = list(dict.fromkeys(keys))
+        if not keys:
+            _LOGGER.error("✗ Select at least one --attribute or --variable")
+            sys.exit(2)
+
+        config = load_configuration(config_path)
+        if not config:
+            sys.exit(1)
+        target_clu = next((clu for clu in config.clus if clu.name == clu_name), None)
+        if target_clu is None:
+            _LOGGER.error(
+                "✗ CLU '%s' not found. Available CLUs: %s",
+                clu_name,
+                ", ".join(clu.name for clu in config.clus),
+            )
+            sys.exit(1)
+
+        api_client = GrentonCluApi(target_clu, config.encryption)
+        original_log_level = _CLU_WIRE_LOGGER.level
+        if summary and _CLU_WIRE_LOGGER.getEffectiveLevel() < logging.INFO:
+            # The shared API logs raw packets at DEBUG, including returned values.
+            _CLU_WIRE_LOGGER.setLevel(logging.INFO)
+        try:
+            if not await api_client.connect():
+                _LOGGER.error("✗ Failed to connect to CLU")
+                sys.exit(1)
+            values = await api_client.fetch_component_states(keys)
+            if len(values) != len(keys):
+                raise ValueError("Incomplete fetch-values response")
+            records = []
+            for key, value in zip(keys, values):
+                record = {"key": _state_key_label(key), "type": _value_type(value)}
+                if isinstance(value, MissingState):
+                    record["status"] = "missing"
+                elif summary:
+                    if isinstance(value, str):
+                        record["length"] = len(value)
+                else:
+                    record["value"] = value
+                records.append(record)
+            return {
+                "clu": {"name": target_clu.name, "id": target_clu.id},
+                "values": records,
+                "complete": all(not isinstance(value, MissingState) for value in values),
+            }
+        except Exception as error:  # noqa: BLE001 - report CLI failures after cleanup
+            _LOGGER.error("✗ Error fetching values: %s", error)
+            sys.exit(1)
+        finally:
+            try:
+                await api_client.disconnect()
+            finally:
+                if summary:
+                    _CLU_WIRE_LOGGER.setLevel(original_log_level)
 
     async def execute_action(
         self,
@@ -197,7 +293,7 @@ class GrentonManager:
         refresh_interval: int,
     ) -> None:
         """Subscribe to CLU state keys and print every value change until interrupted."""
-        from homeassistant_grenton.state import GrentonCluStateAttributeKey, GrentonValue
+        from homeassistant_grenton.state import GrentonValue
 
         config = load_configuration(config_path)
         if not config:
@@ -210,11 +306,6 @@ class GrentonManager:
             sys.exit(1)
 
         last_values: dict[str, GrentonValue] = {}
-
-        def label_for_key(key) -> str:
-            if isinstance(key, GrentonCluStateAttributeKey):
-                return f"{key.object_name}.{key.name}"
-            return key.name
 
         def emit(label: str, value: GrentonValue) -> None:
             timestamp = datetime.now().isoformat(timespec="seconds")
@@ -232,7 +323,7 @@ class GrentonManager:
             for key, value in zip(report_keys, values):
                 if isinstance(value, MissingState):
                     continue
-                label = label_for_key(key)
+                label = _state_key_label(key)
                 if label in last_values and last_values[label] == value:
                     continue
                 last_values[label] = value

@@ -17,7 +17,7 @@ from custom_components.homeassistant_grenton.domain.api.clu_messages import (
 from custom_components.homeassistant_grenton.state import GrentonCluStateVariableKey
 
 
-def test_partial_ping_failure_identifies_socket_and_reports_one_recovery(
+def test_control_ping_failure_identifies_socket_while_reports_continue_and_recovers_once(
     tmp_path, caplog
 ):
     async def run():
@@ -38,10 +38,13 @@ def test_partial_ping_failure_identifies_socket_and_reports_one_recovery(
                 await coord._send_ping(api.clu.id)
                 caplog.clear()
                 before = [len(socket.sent) for socket in sockets]
-                failed = api._subscription_endpoints[1]
-                failed.transport.reply = False
-                failed.protocol._response_timeout = 0
+                api.transport.reply = False
+                api.protocol._response_timeout = 0
                 clock[0] = 7
+                api.report_protocol._process_response(
+                    "resp:192.0.2.1:00000000:clientReport:2:{1}"
+                )
+                await tick()
                 await coord._send_ping(api.clu.id)
                 warnings = [
                     record.getMessage()
@@ -52,14 +55,12 @@ def test_partial_ping_failure_identifies_socket_and_reports_one_recovery(
                 timeout, summary = warnings
                 for detail in (
                     "Main CLU/clu1",
-                    failed.keep_alive_id,
                     "Request timeout during ping",
                     "limit=0.00s",
                     "queued=",
-                    "endpoint=subscription#2",
+                    "endpoint=control",
                     "local=127.0.0.1:12345",
                     "remote=192.0.2.1:1234",
-                    "keys=1 [var:30]",
                     "last_endpoint_response=",
                     "(7.0s ago)",
                     "last_clu_response=",
@@ -69,17 +70,16 @@ def test_partial_ping_failure_identifies_socket_and_reports_one_recovery(
                     "discarded=none",
                 ):
                     assert detail in timeout
-                assert "Ping failed (consecutive=1): 2/3 endpoints replied" in summary
+                assert "Ping failed (consecutive=1): 0/1 endpoints replied" in summary
                 assert (
-                    f"failed=subscription#2[{failed.keep_alive_id}]: no reply"
-                    in summary
+                    "failed=control: no reply" in summary
+                    and "total_timeouts=1" in summary
                 )
-                assert "total_timeouts=1" in summary
                 assert [
-                    len(socket.sent) - count for socket, count in zip(sockets, before)
-                ] == [1, 1, 1]
-                failed.transport.reply = True
-                failed.protocol._response_timeout = 5
+                    len(socket.sent) - prior for socket, prior in zip(sockets, before)
+                ] == [1, 0]
+                api.transport.reply = True
+                api.protocol._response_timeout = 5
                 await coord._send_ping(api.clu.id)
                 await coord._send_ping(api.clu.id)
                 recovered = [
@@ -87,8 +87,10 @@ def test_partial_ping_failure_identifies_socket_and_reports_one_recovery(
                     for record in caplog.records
                     if "Ping recovered" in record.getMessage()
                 ]
-                assert len(recovered) == 1
-                assert "after 1 failed cycle(s): 3/3 endpoints replied" in recovered[0]
+                assert (
+                    len(recovered) == 1
+                    and "after 1 failed cycle(s): 1/1 endpoints replied" in recovered[0]
+                )
                 assert coord._ping_failures[api.clu.id] == 0
             await coord.async_shutdown()
             await hass.async_stop()
@@ -118,7 +120,7 @@ def test_control_timeout_before_first_reply_shows_never_and_consecutive_failures
             )
             assert any(
                 "Ping failed (consecutive=2): 0/1 endpoints replied" in message
-                and f"failed=control[{api.keep_alive_id}]" in message
+                and "failed=control: no reply" in message
                 and "last_clu_response=never" in message
                 for message in messages
             )
@@ -257,14 +259,17 @@ def test_failed_socket_open_is_reported_without_extra_ping_attempts(tmp_path, ca
     asyncio.run(run())
 
 
-def test_subscription_exception_identifies_which_ping_failed(tmp_path, caplog):
+def test_control_exception_identifies_ping_failure_without_probing_listener(
+    tmp_path, caplog
+):
     async def run():
         hass, _, coord, api = await fixture(tmp_path)
         with socket_factory(api, []), caplog.at_level(logging.WARNING):
             await api.connect()
             await api.register_component_states([GrentonCluStateVariableKey("a")])
-            endpoint = api._subscription_endpoints[0]
-            endpoint.protocol.send_request = AsyncMock(
+            listener = api.report_transport
+            original = api.protocol.send_request
+            api.protocol.send_request = AsyncMock(
                 side_effect=ConnectionError("Socket closed while waiting")
             )
             await coord._send_ping(api.clu.id)
@@ -273,12 +278,12 @@ def test_subscription_exception_identifies_which_ping_failed(tmp_path, caplog):
                 for record in caplog.records
                 if "Ping failed" in record.getMessage()
             )
-            assert "1/2 endpoints replied" in message
             assert (
-                f"subscription#1[{endpoint.keep_alive_id}]: ConnectionError: Socket closed while waiting"
-                in message
+                "0/1 endpoints replied" in message
+                and "failed=control: no reply" in message
             )
-            assert api.health.request_timeouts == 0
+            assert api.health.request_timeouts == 0 and not listener.sent
+            api.protocol.send_request = original
         await coord.async_shutdown()
         await hass.async_stop()
 

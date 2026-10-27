@@ -27,6 +27,9 @@ from custom_components.homeassistant_grenton.coordinator import GrentonCoordinat
 from custom_components.homeassistant_grenton.domain.api.clu import (
     GrentonCluApiProtocol,
 )
+from custom_components.homeassistant_grenton.domain.api.clu_messages import (
+    GrentonCluApiFetchValuesRequest,
+)
 from custom_components.homeassistant_grenton.domain.api.clu_messages.action import (
     GrentonCluApiActionRequest,
 )
@@ -324,6 +327,7 @@ def test_use_cloud_writes_boolean_to_correct_clu_and_reads_back_without_assuming
         api = SimpleNamespace(
             execute_action=AsyncMock(return_value=True),
             register_component_states=AsyncMock(return_value=[False]),
+            state_read_batches=coord._apis[clu.id].state_read_batches,
         )
         api.poll_component_states = AsyncMock(return_value=[False])
         read = api.poll_component_states
@@ -374,13 +378,14 @@ def test_firmware_strings_survive_polled_responses_and_notification_parsing(
         firmware = GrentonCluFirmwareVersion(coord, clu)
         keys = coord.state.clus[clu.id].get_subscription_order()
         api = coord._apis[clu.id]
-        response = 'resp:192.0.2.1:abcd:clientReport:0:{"1.20"}'
-        api.protocol = SimpleNamespace(
-            send_request=AsyncMock(return_value=response)
-        )
+        response = 'resp:192.0.2.1:abcd:values:{"1.20"}'
+        api.protocol = SimpleNamespace(send_request=AsyncMock(return_value=response))
         await coord._send_slow_poll(clu.id)
         api.protocol.send_request.assert_awaited_once()
-        assert api.protocol.send_request.await_args.args[0].session_id == 1
+        assert isinstance(
+            api.protocol.send_request.await_args.args[0],
+            GrentonCluApiFetchValuesRequest,
+        )
         assert firmware.native_value == "1.20"
         assert firmware.device_info["sw_version"] == "1.20"
         protocol = GrentonCluApiProtocol(api)
