@@ -99,6 +99,9 @@ After initial setup, you can customize individual entities:
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
 
+With sensor device class **None**, choose **%**, enter a custom unit, or select
+**None** for no unit. This also applies to custom CLU variable sensors.
+
 Choose **Configure → Configure CLU**, select a controller, then
 **Connection and polling**, and set its
 **Polling interval** (default **60 seconds**, whole seconds from 1 to 86400).

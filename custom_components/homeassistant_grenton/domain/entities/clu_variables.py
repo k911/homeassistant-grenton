@@ -22,6 +22,7 @@ from .value import (
     TEMPORAL_DEVICE_CLASSES,
     GrentonEntityValue,
     GrentonEntityValueConfigurationSchema,
+    normalize_sensor_config,
 )
 
 CLU_VARIABLES = "clu_variables"
@@ -50,18 +51,12 @@ def variable_options(
 
 def normalize_variable(config: dict[str, Any]) -> dict[str, Any]:
     """Discard sensor settings when the selected type does not use them."""
-    result = dict(config)
+    result = normalize_sensor_config(config)
     result["variable_name"] = result["variable_name"].strip()
     result["label"] = result.get("label", "").strip() or result["variable_name"]
     result.setdefault("read_mode", "realtime")
-    if result["grenton_type"] == GrentonValueType.BOOLEAN or result.get(
-        "device_class"
-    ) in (None, "none"):
+    if result["grenton_type"] == GrentonValueType.BOOLEAN:
         result.pop("device_class", None)
-        result.pop(CONF_UNIT_OF_MEASUREMENT, None)
-    elif result.get(CONF_UNIT_OF_MEASUREMENT) == "none":
-        result.pop(CONF_UNIT_OF_MEASUREMENT, None)
-    if result.get("device_class") in TEMPORAL_DEVICE_CLASSES:
         result.pop(CONF_UNIT_OF_MEASUREMENT, None)
     return result
 

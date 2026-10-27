@@ -556,6 +556,9 @@ def test_value_flow_persists_read_mode_and_double_channels_remain_independent(
         if entity_type == "binary_sensor":
             inputs["invert_state"] = False
         result = await manager.async_configure(form["flow_id"], inputs)
+        if entity_type == "sensor":
+            assert result["step_id"] == "configure_sensor_unit"
+            result = await manager.async_configure(result["flow_id"], {})
         assert result["type"] == "create_entry"
         assert entry.options["entities"][entity.unique_id]["read_mode"] == "slow"
         hass.config_entries.async_schedule_reload.assert_called_once_with(

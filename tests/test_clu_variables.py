@@ -191,9 +191,11 @@ def test_native_clu_add_edit_remove_and_cancel_preserve_other_options(tmp_path):
                 flow["flow_id"],
                 {"variable_name": variable_name, "grenton_type": grenton_type},
             )
-            result = await manager.async_configure(
+            flow = await manager.async_configure(
                 flow["flow_id"], {"device_class": "none"}
             )
+            assert flow["step_id"] == "configure_sensor_unit"
+            result = await manager.async_configure(flow["flow_id"], {})
             assert result["type"] == "create_entry"
             assert not any(
                 "unit_of_measurement" in config

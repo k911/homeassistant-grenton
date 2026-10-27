@@ -50,7 +50,7 @@
       },
       "configure_sensor_unit": {
         "title": "Konfiguruj {entity_name} - Jednostka miary",
-        "description": "Wybierz jednostkę miary dla wybranej klasy urządzenia.",
+        "description": "Wybierz jednostkę. Bez klasy urządzenia możesz też wpisać własną.",
         "data": {
           "unit_of_measurement": "Jednostka miary"
         }
@@ -797,10 +797,15 @@
         }
       }
     },
+    "sensor_units": {
+      "options": {
+        "none": "Brak"
+      }
+    },
     "value_read_modes": {
       "options": {
-        "realtime": "Czas rzeczywisty",
-        "slow": "Odpytywanie"
+        "realtime": "W czasie rzeczywistym",
+        "slow": "Interwałowo"
       }
     },
     "entity_picker": {

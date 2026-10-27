@@ -50,7 +50,7 @@
       },
       "configure_sensor_unit": {
         "title": "Configure {entity_name} - Unit of Measurement",
-        "description": "Select the unit of measurement for selected device class.",
+        "description": "Choose a unit. Without a device class, you can also enter a custom unit.",
         "data": {
           "unit_of_measurement": "Unit of Measurement"
         }
@@ -795,6 +795,11 @@
         "minute": {
           "name": "Minute"
         }
+      }
+    },
+    "sensor_units": {
+      "options": {
+        "none": "None"
       }
     },
     "value_read_modes": {

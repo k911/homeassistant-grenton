@@ -11,7 +11,11 @@ from homeassistant.helpers import selector
 
 from .binary_sensor import GrentonEntityBinarySensor
 from .configurable import StepDefinition, StepResult
-from .value import GrentonEntityValue, GrentonEntityValueConfigurationSchema
+from .value import (
+    GrentonEntityValue,
+    GrentonEntityValueConfigurationSchema,
+    normalize_sensor_config,
+)
 
 
 def configured_value_v2_type(coordinator, unique_id: str) -> str:
@@ -134,18 +138,11 @@ class ValueV2Configuration:
         return ValueV2ConfigurationSchema()
 
     async def apply_configuration(self, user_input):
-        config = dict(user_input)
+        config = normalize_sensor_config(user_input)
         config["read_mode"] = value_read_mode(config)
         if config.get("entity_type") != "binary_sensor":
             config.pop("invert_state", None)
-        if config.get("device_class") in (None, "none"):
-            config.pop("device_class", None)
-            config.pop(CONF_UNIT_OF_MEASUREMENT, None)
-        if (
-            config.get("entity_type") == "binary_sensor"
-            or config.get("device_class") == SensorDeviceClass.ENUM
-            or config.get(CONF_UNIT_OF_MEASUREMENT) == "none"
-        ):
+        if config.get("entity_type") == "binary_sensor":
             config.pop(CONF_UNIT_OF_MEASUREMENT, None)
         return await super().apply_configuration(config)
 
