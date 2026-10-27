@@ -170,7 +170,11 @@
         "data": {
           "variable_name": "Variable name",
           "label": "Display name",
-          "grenton_type": "Grenton type"
+          "grenton_type": "Grenton type",
+          "read_mode": "Read mode"
+        },
+        "data_description": {
+          "read_mode": "Polling uses the CLU's configured interval."
         }
       },
       "configure_value_v2_type": {
@@ -214,6 +218,13 @@
         "description": "Select a CLU to configure.",
         "data": {
           "clu_id": "CLU"
+        }
+      },
+      "clu_configuration": {
+        "title": "Configure {clu_name}",
+        "menu_options": {
+          "clu_read_interval": "Connection and polling",
+          "clu_variables": "Variables"
         }
       },
       "clu_read_interval": {

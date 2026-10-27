@@ -74,6 +74,9 @@ async def open_settings(tmp_path, options=None, runtime=None):
         menu["flow_id"], {"next_step_id": "clu_read_settings"}
     )
     form = await manager.async_configure(form["flow_id"], {"clu_id": "clu1"})
+    form = await manager.async_configure(
+        form["flow_id"], {"next_step_id": "clu_read_interval"}
+    )
     return hass, entry, manager, form
 
 
@@ -117,6 +120,9 @@ def test_native_clu_popup_defaults_to_one_and_persists_while_unloaded(tmp_path):
         reopened = await manager.async_configure(
             reopened["flow_id"], {"clu_id": "clu2"}
         )
+        reopened = await manager.async_configure(
+            reopened["flow_id"], {"next_step_id": "clu_read_interval"}
+        )
         assert fields(reopened)["subscription_id"]["default"] == 70
         manager.async_abort(reopened["flow_id"])
         await hass.async_stop()
@@ -144,7 +150,9 @@ def test_id_change_applies_only_to_the_selected_clu_without_restarting_timer(tmp
     asyncio.run(run())
 
 
-def test_saving_unchanged_settings_reconciles_subscription_without_restarting_timer(tmp_path):
+def test_saving_unchanged_settings_reconciles_subscription_without_restarting_timer(
+    tmp_path,
+):
     async def run():
         runtime = SimpleNamespace(
             async_set_subscription_id=AsyncMock(),
@@ -216,7 +224,9 @@ def test_unchanged_saved_id_repairs_runtime_drift_after_an_interrupted_save(tmp_
 def test_runtime_failure_keeps_existing_options_and_polling_timer(tmp_path):
     async def run():
         runtime = SimpleNamespace(
-            async_set_subscription_id=AsyncMock(side_effect=HomeAssistantError("offline")),
+            async_set_subscription_id=AsyncMock(
+                side_effect=HomeAssistantError("offline")
+            ),
             async_set_slow_read_interval=AsyncMock(),
         )
         original = {"clu_read_settings": {"clu1": {"subscription_id": 1}}}

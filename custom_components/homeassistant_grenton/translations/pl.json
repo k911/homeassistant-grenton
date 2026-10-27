@@ -170,7 +170,11 @@
         "data": {
           "variable_name": "Nazwa zmiennej",
           "label": "Nazwa wyświetlana",
-          "grenton_type": "Typ Grenton"
+          "grenton_type": "Typ Grenton",
+          "read_mode": "Tryb odczytu"
+        },
+        "data_description": {
+          "read_mode": "Odpytywanie korzysta z interwału ustawionego dla CLU."
         }
       },
       "configure_value_v2_type": {
@@ -214,6 +218,13 @@
         "description": "Wybierz CLU do konfiguracji.",
         "data": {
           "clu_id": "CLU"
+        }
+      },
+      "clu_configuration": {
+        "title": "Konfiguracja {clu_name}",
+        "menu_options": {
+          "clu_read_interval": "Połączenie i odpytywanie",
+          "clu_variables": "Zmienne"
         }
       },
       "clu_read_interval": {

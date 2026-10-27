@@ -99,7 +99,8 @@ After initial setup, you can customize individual entities:
 
 The integration intelligently filters available options based on your selections and automatically skips unnecessary configuration steps.
 
-Choose **Configure → Configure CLU**, select a controller, and set its
+Choose **Configure → Configure CLU**, select a controller, then
+**Connection and polling**, and set its
 **Polling interval** (default **60 seconds**, whole seconds from 1 to 86400).
 Each CLU has its own interval: for example, the main CLU can poll temperatures
 every 60 seconds while HTTP Gate polls every 5 seconds. Saving changes only
@@ -531,14 +532,18 @@ for each known device type and the CLU serial prefixes. Extend these maps when
 adding types; the entity bindings use the mapped indexes and skip unsupported
 attributes.
 
-Open **Grenton → Configure** and select the CLU controller entity to configure
-custom variables. Choose **Add variable**, enter its Grenton variable name and
-optional display name, and select its Grenton type:
+Open **Grenton → Configure → Configure CLU**, select a controller, then choose
+**Variables**. Choose **Add variable**, enter its Grenton variable name and
+optional display name, and select its Grenton type and read mode:
 
 - **Boolean** creates a switch that writes `true` / `false` and reads the CLU
   state back after a change.
 - **String**, **Integer**, and **Float** create sensors with the same device
   class and unit settings as VALUE_V2. Select **None** for a plain value sensor.
+
+Each variable supports **Realtime** or **Polling**. Polling uses the selected
+CLU's interval and `fetchValues`; HTTP Gate always uses polling. Existing
+variables retain realtime reads unless configured otherwise.
 
 For a variable containing Unix seconds, choose **Timestamp** to display the date
 and time, or **Date** to display its calendar date in Home Assistant's configured

@@ -15,7 +15,6 @@ from .clu_settings import (
     subscription_id,
     validate_subscription_id,
 )
-from .domain.entities.clu import GrentonCluEntity
 from .domain.entities.clu_variables import (
     CluVariableConfigurationSchema,
     normalize_variable,
@@ -82,8 +81,8 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             clu_id = user_input.get("clu_id")
             if clu_id in clus:
-                self._read_clu_id = clu_id
-                return await self.async_step_clu_read_interval()
+                self._clu_id = clu_id
+                return await self.async_step_clu_configuration()
             errors["clu_id"] = "invalid_configuration"
         return self.async_show_form(
             step_id="clu_read_settings",
@@ -102,12 +101,20 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
             errors=errors,
         )
 
+    async def async_step_clu_configuration(self, user_input=None):
+        """Group controller settings and variable management under one CLU."""
+        return self.async_show_menu(
+            step_id="clu_configuration",
+            menu_options=["clu_read_interval", "clu_variables"],
+            description_placeholders={
+                "clu_name": self._configured_clus()[self._clu_id]
+            },
+        )
+
     async def async_step_clu_read_interval(self, user_input=None):
         errors = {}
-        interval = slow_read_interval(self.config_entry.options, self._read_clu_id)
-        saved_subscription_id = subscription_id(
-            self.config_entry.options, self._read_clu_id
-        )
+        interval = slow_read_interval(self.config_entry.options, self._clu_id)
+        saved_subscription_id = subscription_id(self.config_entry.options, self._clu_id)
         selected_subscription_id = saved_subscription_id
         if user_input is not None:
             try:
@@ -125,8 +132,8 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
             if not errors:
                 options = dict(self.config_entry.options)
                 settings = dict(options.get(CONF_CLU_READ_SETTINGS, {}))
-                settings[self._read_clu_id] = {
-                    **settings.get(self._read_clu_id, {}),
+                settings[self._clu_id] = {
+                    **settings.get(self._clu_id, {}),
                     CONF_SLOW_READ_INTERVAL: interval,
                     CONF_SUBSCRIPTION_ID: selected_subscription_id,
                 }
@@ -135,13 +142,13 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                 try:
                     if runtime is not None:
                         await runtime.coordinator.async_set_subscription_id(
-                            self._read_clu_id, selected_subscription_id
+                            self._clu_id, selected_subscription_id
                         )
                         if interval != slow_read_interval(
-                            self.config_entry.options, self._read_clu_id
+                            self.config_entry.options, self._clu_id
                         ):
                             await runtime.coordinator.async_set_slow_read_interval(
-                                self._read_clu_id, interval
+                                self._clu_id, interval
                             )
                 except HomeAssistantError:
                     errors["base"] = "cannot_apply_configuration"
@@ -153,7 +160,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
             last_step=True,
             errors=errors,
             description_placeholders={
-                "clu_name": self._configured_clus()[self._read_clu_id]
+                "clu_name": self._configured_clus()[self._clu_id]
             },
             data_schema=vol.Schema(
                 {
@@ -202,9 +209,6 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                 matched = next((e for e in entities if e.entity_id == selected), None)
                 if not matched:
                     return self.async_abort(reason="entity_not_found")
-                if isinstance(matched, GrentonCluEntity):
-                    self._clu = matched.clu
-                    return await self.async_step_clu_variables()
                 self.selected_entity_uid = matched.unique_id
                 return await self.async_step_configure_entity()
 
@@ -337,7 +341,9 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         from .integration_config import GrentonConfigEntry
 
         config_entry: GrentonConfigEntry = self.config_entry  # type: ignore
-        runtime_data = config_entry.runtime_data
+        runtime_data = getattr(config_entry, "runtime_data", None)
+        if runtime_data is None:
+            return []
 
         entities: list[Any] = []
         for device in runtime_data.devices:
@@ -346,13 +352,13 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                     entities.append(entity)
 
         for entity in getattr(runtime_data, "clu_entities", []):
-            if isinstance(entity, (ConfigurableEntity, GrentonCluEntity)):
+            if isinstance(entity, ConfigurableEntity):
                 entities.append(entity)
         return entities
 
     async def async_step_clu_variables(self, user_input=None):
         """Manage custom variables on the selected CLU."""
-        variables = variable_definitions(self.config_entry.options, self._clu.id)
+        variables = variable_definitions(self.config_entry.options, self._clu_id)
         if user_input is not None:
             operation = user_input.get("operation")
             if operation == "add":
@@ -367,7 +373,9 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         return self.async_show_form(
             step_id="clu_variables",
             last_step=False,
-            description_placeholders={"clu_name": self._clu.name},
+            description_placeholders={
+                "clu_name": self._configured_clus()[self._clu_id]
+            },
             data_schema=vol.Schema(
                 {
                     vol.Required("operation"): selector.SelectSelector(
@@ -381,7 +389,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         )
 
     async def async_step_clu_variable_select(self, user_input=None):
-        variables = variable_definitions(self.config_entry.options, self._clu.id)
+        variables = variable_definitions(self.config_entry.options, self._clu_id)
         errors = {}
         if user_input is not None:
             variable_id = user_input.get("variable_id")
@@ -392,7 +400,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                 return self.async_create_entry(
                     title="",
                     data=variable_options(
-                        self.config_entry.options, self._clu.id, variable_id, None
+                        self.config_entry.options, self._clu_id, variable_id, None
                     ),
                 )
             else:
@@ -429,7 +437,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
         if not hasattr(self, "_variable_id"):
             return await self.async_step_configure_entity(user_input)
         schema = CluVariableConfigurationSchema(
-            variables=variable_definitions(self.config_entry.options, self._clu.id),
+            variables=variable_definitions(self.config_entry.options, self._clu_id),
             variable_id=self._variable_id,
         )
         steps = schema.steps
@@ -459,7 +467,8 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                     data_schema=result.schema,
                     errors=errors,
                     description_placeholders={
-                        "entity_name": current.get("label") or self._clu.name
+                        "entity_name": current.get("label")
+                        or self._configured_clus()[self._clu_id]
                     },
                 )
         self.automatic_reload = True
@@ -467,7 +476,7 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
             title="",
             data=variable_options(
                 self.config_entry.options,
-                self._clu.id,
+                self._clu_id,
                 self._variable_id,
                 normalize_variable(self.entity_config),
             ),

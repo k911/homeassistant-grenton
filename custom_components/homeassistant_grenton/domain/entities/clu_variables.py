@@ -53,6 +53,7 @@ def normalize_variable(config: dict[str, Any]) -> dict[str, Any]:
     result = dict(config)
     result["variable_name"] = result["variable_name"].strip()
     result["label"] = result.get("label", "").strip() or result["variable_name"]
+    result.setdefault("read_mode", "realtime")
     if result["grenton_type"] == GrentonValueType.BOOLEAN or result.get(
         "device_class"
     ) in (None, "none"):
@@ -106,6 +107,14 @@ class CluVariableConfigurationSchema(GrentonEntityValueConfigurationSchema):
                             translation_key="grenton_variable_types",
                         )
                     ),
+                    vol.Required(
+                        "read_mode", default=current.get("read_mode", "realtime")
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=["realtime", "slow"],
+                            translation_key="value_read_modes",
+                        )
+                    ),
                 }
             ),
             validator=validate,
@@ -135,6 +144,15 @@ class CluVariableConfiguration(ConfigurableEntity[CluVariableConfigurationSchema
     """Persist custom variables separately from imported widget configurations."""
 
     reload_after_configuration = True
+
+    def _register_state(self, state):
+        self.coordinator.register_component_state(
+            state, read_mode=self._config.get("read_mode", "realtime")
+        )
+
+    @property
+    def available(self):
+        return super().available and self.coordinator.is_state_fresh(self.state_object)
 
     def _get_schema_instance(self):
         return CluVariableConfigurationSchema(
@@ -234,7 +252,7 @@ class GrentonCluVariableSwitch(
         self._attr_extra_state_attributes = {
             "grenton_type": config["grenton_type"],
         }
-        coordinator.register_component_state(self.state_object)
+        self._register_state(self.state_object)
 
     @property
     def is_on(self) -> bool | None:

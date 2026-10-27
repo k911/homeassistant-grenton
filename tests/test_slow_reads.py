@@ -470,6 +470,10 @@ def test_clu_flow_preserves_options_and_changes_only_selected_clu_timer(tmp_path
             for row in fields(form)["clu_id"]["selector"]["select"]["options"]
         } == {"clu1", "clu2"}
         form = await manager.async_configure(form["flow_id"], {"clu_id": "clu1"})
+        assert form["step_id"] == "clu_configuration"
+        form = await manager.async_configure(
+            form["flow_id"], {"next_step_id": "clu_read_interval"}
+        )
         assert fields(form)["slow_read_interval"]["default"] == 60
         invalid = await manager.async_configure(
             form["flow_id"], {"slow_read_interval": 60.5}
@@ -504,6 +508,9 @@ def test_clu_flow_preserves_options_and_changes_only_selected_clu_timer(tmp_path
         )
         reopened = await manager.async_configure(
             reopened["flow_id"], {"clu_id": "clu2"}
+        )
+        reopened = await manager.async_configure(
+            reopened["flow_id"], {"next_step_id": "clu_read_interval"}
         )
         assert fields(reopened)["slow_read_interval"]["default"] == 5
         manager.async_abort(reopened["flow_id"])
