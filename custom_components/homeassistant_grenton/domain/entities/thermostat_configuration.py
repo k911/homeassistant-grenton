@@ -99,6 +99,13 @@ class GrentonThermostatSelector(selector.Selector):
         if not isinstance(edit, bool):
             raise vol.Invalid("Schedule editing must be enabled or disabled")
         result: dict[str, Any] = {"cooling_enabled": cooling}
+        if "schedule_polling_enabled" in data:
+            polling = data["schedule_polling_enabled"]
+            if not isinstance(polling, bool):
+                raise vol.Invalid(
+                    "Schedule synchronization must be enabled or disabled"
+                )
+            result["schedule_polling_enabled"] = polling
         direction = data.get("control_direction", "unchanged")
         if direction not in ("unchanged", "heating", "cooling"):
             raise vol.Invalid("Choose heating, cooling, or keep the current direction")
@@ -181,6 +188,9 @@ class GrentonThermostatConfigurationSchema(BaseGrentonEntityConfigurationSchema)
                 "thermostat",
                 {
                     "cooling_enabled": current.get("cooling_enabled", False),
+                    "schedule_polling_enabled": current.get(
+                        "schedule_polling_enabled", True
+                    ),
                     "edit_schedule": False,
                     "edit_limits": False,
                     "minimum": self.settings.get("minimum"),

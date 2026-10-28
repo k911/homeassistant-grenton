@@ -21,6 +21,7 @@ from custom_components.homeassistant_grenton.domain.api.clu import (
 )
 from custom_components.homeassistant_grenton.domain.api.clu_messages import (
     GrentonCluApiFetchValuesRequest,
+    GrentonCluApiGetValueRequest,
 )
 from custom_components.homeassistant_grenton.domain.entities.clu_state import (
     clu_entities,
@@ -98,14 +99,16 @@ def test_existing_temperature_values_switch_to_slow_on_load(
     asyncio.run(run())
 
 
-def test_http_gate_polls_all_bindings_without_any_subscription_sockets(tmp_path):
+def test_http_gate_polls_small_bindings_and_active_schedule_without_subscriptions(
+    tmp_path,
+):
     async def run():
         entry = make_entry()
         set_options(entry, {"clu_read_settings": {"clu1": {"slow_read_interval": 5}}})
         hass = await make_hass(tmp_path, [entry])
         clu = make_clu("clu1", prefix="521")
         coord = coordinator(hass, entry, [clu])
-        DeviceMapper.to_domain(thermostat_widget(), coord)
+        thermostat = DeviceMapper.to_domain(thermostat_widget(), coord).entities[0]
         clu_entities(coord, clu)
         api = coord._apis["clu1"]
         api.connect = AsyncMock(return_value=True)
@@ -115,6 +118,9 @@ def test_http_gate_polls_all_bindings_without_any_subscription_sockets(tmp_path)
 
         async def read(request):
             requests.append(request)
+            if isinstance(request, GrentonCluApiGetValueRequest):
+                assert request.key.name == "9"
+                return f"resp:192.0.2.1:{request.msg_id}:{'Y0' * 672}+00:30"
             payload = ",".join(
                 '"Y0' + "Y0" * 671 + '+00:30"'
                 if key.name == "9"
@@ -135,14 +141,13 @@ def test_http_gate_polls_all_bindings_without_any_subscription_sockets(tmp_path)
             == coord._slow_keys[clu.id]
         )
         assert coord._slow_read_intervals[clu.id] == 5
-        assert len(requests) == 2  # Ordinary values plus the isolated schedule.
-        assert all(
-            isinstance(request, GrentonCluApiFetchValuesRequest) for request in requests
-        )
-        assert all(
-            request.payload.startswith("SYSTEM:fetchValues({") for request in requests
-        )
+        assert len(requests) == 2  # Ordinary values, then one isolated active schedule.
+        assert isinstance(requests[0], GrentonCluApiFetchValuesRequest)
+        assert requests[0].payload.startswith("SYSTEM:fetchValues({")
+        assert isinstance(requests[1], GrentonCluApiGetValueRequest)
+        assert requests[1].payload == "THERMOSTAT1:get(9)"
         assert [key.name for key in requests[-1].keys] == ["9"]
+        assert thermostat.decoded_schedule is not None
         api._ensure_report_listener.assert_not_awaited()
         assert not api._groups
         await coord._send_register(clu.id)

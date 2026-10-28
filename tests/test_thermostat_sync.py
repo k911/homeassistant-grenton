@@ -20,7 +20,9 @@ from custom_components.homeassistant_grenton.state import (
 )
 
 
-def test_schedule_is_polled_separately_and_shared_report_socket_is_reused(tmp_path):
+def test_schedule_poll_is_isolated_and_shared_report_socket_is_reused(
+    tmp_path,
+):
     async def run():
         from test_clu_lifecycle import synthetic_subscription
 
@@ -139,7 +141,7 @@ def test_newer_push_wins_over_registration_snapshot_and_actual_nil_clears_state(
         )
         assert await coord.async_refresh_clu_state("clu1")
         assert entity.hvac_mode == "off"  # Old snapshot says on; newer push says off.
-        assert entity.decoded_schedule is None  # Off pauses the large read.
+        assert entity.decoded_schedule is None  # Off pauses the large schedule read.
         schedule_state = entity.states["scheduleData"]
         assert await coord.async_refresh_clu_state(
             "clu1", required_states=[schedule_state]
@@ -167,7 +169,7 @@ def test_newer_push_wins_over_registration_snapshot_and_actual_nil_clears_state(
     asyncio.run(run())
 
 
-def test_startup_pulls_values_retries_failure_and_decodes_without_writing(tmp_path):
+def test_startup_retries_small_reads_then_loads_active_auto_schedule(tmp_path):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
@@ -208,6 +210,14 @@ def test_startup_pulls_values_retries_failure_and_decodes_without_writing(tmp_pa
         coord._apis["clu1"] = api
         await coord.async_setup()
         assert api.register_component_states.await_count == 2
+        assert (
+            sum(
+                key.name == "9"
+                for call in api.poll_component_states.await_args_list
+                for key in call.args[0]
+            )
+            == 1
+        )
         assert entity.schedule_status == "ready"
         assert set(entity.decoded_schedule.temperatures) == {20}
         assert entity.hvac_mode == "auto" and entity.control_direction_name == "cooling"

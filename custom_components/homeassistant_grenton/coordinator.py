@@ -92,6 +92,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
         self._stop_listener: Callable[[], None] | None = None
         self._realtime_keys: dict[str, set[StateKey]] = {clu.id: set() for clu in clus}
         self._slow_keys: dict[str, set[StateKey]] = {clu.id: set() for clu in clus}
+        self._conditional_large_keys: dict[str, set[StateKey]] = {
+            clu.id: set() for clu in clus
+        }
         self._slow_conditions: dict[
             str, dict[StateKey, list[Callable[[], bool] | None]]
         ] = {clu.id: {} for clu in clus}
@@ -117,7 +120,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
         # Initialize API instances for each CLU
         for clu in clus:
             self._apis[clu.id] = GrentonCluApi(
-                clu, encryption, health=self.connection_health[clu.id],
+                clu,
+                encryption,
+                health=self.connection_health[clu.id],
                 subscription_id=subscription_id(config_entry.options, clu.id),
             )
 
@@ -405,14 +410,29 @@ class GrentonCoordinator(DataUpdateCoordinator):
         key = self._state_key(state)
         if state.clu_id not in self._realtime_keys:
             return
-        if state.clu_id in self._poll_only_clus or (
-            read_mode == "slow" and key not in self._realtime_keys[state.clu_id]
-        ):
+        conditional_large = (
+            large_value and read_mode == "slow" and poll_condition is not None
+        )
+        if conditional_large:
+            # The owning thermostat controls this expensive read. Other
+            # consumers cannot turn it into an unconditional subscription
+            # or poll, even if they registered the same binding first.
+            if key not in self._conditional_large_keys[state.clu_id]:
+                self._slow_conditions[state.clu_id].pop(key, None)
+            self._conditional_large_keys[state.clu_id].add(key)
+            self._realtime_keys[state.clu_id].discard(key)
             self._slow_keys[state.clu_id].add(key)
-        elif read_mode != "slow":
-            self._realtime_keys[state.clu_id].add(key)
-            self._slow_keys[state.clu_id].discard(key)
-        if key in self._slow_keys[state.clu_id]:
+        elif key not in self._conditional_large_keys[state.clu_id]:
+            if state.clu_id in self._poll_only_clus or (
+                read_mode == "slow" and key not in self._realtime_keys[state.clu_id]
+            ):
+                self._slow_keys[state.clu_id].add(key)
+            elif read_mode != "slow":
+                self._realtime_keys[state.clu_id].add(key)
+                self._slow_keys[state.clu_id].discard(key)
+        if key in self._slow_keys[state.clu_id] and (
+            conditional_large or key not in self._conditional_large_keys[state.clu_id]
+        ):
             self._slow_conditions[state.clu_id].setdefault(key, []).append(
                 poll_condition
             )
@@ -528,7 +548,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
                         if self._stopping:
                             return set()
                         if len(values) != len(keys):
-                            _LOGGER.warning("[%s] Incomplete slow-read response", clu_id)
+                            _LOGGER.warning(
+                                "[%s] Incomplete slow-read response", clu_id
+                            )
                         else:
                             self.state.clus[clu_id].update_keys(keys, values)
                             for key, value in zip(keys, values):
@@ -623,9 +645,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
         self._register_task = asyncio.create_task(self._register_loop())
 
         # Send initial registrations
-        register_tasks = [
-            self._send_register(clu_id) for clu_id in self.state.clus
-        ]
+        register_tasks = [self._send_register(clu_id) for clu_id in self.state.clus]
         if register_tasks:
             results = await asyncio.gather(*register_tasks, return_exceptions=True)
             # Retry incomplete initial pulls once before publishing entities.

@@ -690,6 +690,9 @@
         "cooling_enabled": {
           "name": "Enable cooling"
         },
+        "schedule_polling_enabled": {
+          "name": "Automatically sync schedule"
+        },
         "edit_schedule": {
           "name": "Edit weekly schedule"
         },

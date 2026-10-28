@@ -303,6 +303,7 @@ def test_native_sensor_registration_shares_device_preserves_climate_id_and_remov
                 await platform.async_reset()
         cancel.assert_called_once()
         coord.execute_action.assert_not_called()
+        coord.async_refresh_clu_state.assert_not_awaited()
         await hass.async_stop()
 
     asyncio.run(run())

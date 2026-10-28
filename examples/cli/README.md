@@ -240,6 +240,7 @@ ping every 10 seconds. Groups renew every 45 seconds with fresh request IDs.
 Report parsing is shared too,
 including comma-containing and ambiguously quoted strings. Failed reads do not
 overwrite the last displayed values. One-off state reads use `SYSTEM:fetchValues`
-on the control socket and create no realtime subscriptions.
+on the control socket, with individually marked large attributes using direct
+`OBJECT:get(INDEX)` instead. These reads create no realtime subscriptions.
 Keepalive and registration timers run independently; stopping a watch cancels
 both tasks before closing its sockets.

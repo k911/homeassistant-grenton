@@ -68,6 +68,8 @@ class Transport:
             keys = payload.removeprefix("SYSTEM:fetchValues(")[:-1]
             count = len(split_lua_arguments(keys[1:-1]))
             result = f"values:{{{','.join('1' for _ in range(count))}}}"
+        elif ":get(" in payload:
+            result = "1"
         else:
             result = "true"
         response = f"resp:{peer[0]}:{message_id}:{result}"

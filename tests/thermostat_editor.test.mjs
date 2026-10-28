@@ -21,7 +21,7 @@ class Element {
 }
 const descendants = (element) => [element, ...element.children.flatMap(descendants)];
 
-function makeEditor({ language = "en", settings = {}, sections, edit = true } = {}) {
+function makeEditor({ language = "en", settings = {}, sections, edit = true, schedulePolling } = {}) {
   const elements = new Map();
   vm.runInNewContext(source, {
     HTMLElement: class {}, structuredClone,
@@ -33,6 +33,7 @@ function makeEditor({ language = "en", settings = {}, sections, edit = true } = 
   editor._value = { cooling_enabled: false, edit_schedule: edit, sections: structuredClone(sections ?? [{
     days: DAYS, periods: [{ time: "00:00", temperature: 20 }],
   }]) };
+  if (schedulePolling !== undefined) editor._value.schedule_polling_enabled = schedulePolling;
   editor._selector = { grenton_thermostat: { cooling_available: true, schedule_available: true, minimum: 10, maximum: 30, ...settings } };
   const translations = JSON.parse(readFileSync(new URL(`translations/${language}.json`, component), "utf8")).selector;
   editor._localizeValue = (key) => key.split(".").reduce((value, part) => value?.[part], translations);
@@ -61,7 +62,35 @@ for (const language of ["en", "pl"]) {
     assert.equal(editor.field("section_0_period_0_time_hour").disabled, true);
     assert.equal(editor.field("section_0_period_0_time_minute").disabled, true);
   });
+  test(`${language}: schedule sync is enabled by default and can be disabled without schedule data`, () => {
+    const editor = makeEditor({ language, edit: false, settings: { schedule_available: false } });
+    const sync = editor.field("schedule_polling_enabled");
+    assert.equal(sync.checked, true);
+    assert.ok(!sync.disabled);
+    assert.match(descendants(editor.root).map((item) => item.textContent ?? "").join(" "),
+      language === "pl" ? /Automatyczna synchronizacja harmonogramu/ : /Automatically sync schedule/);
+    const sections = structuredClone(editor.value.sections);
+    sync.checked = false;
+    sync.fire("input");
+    assert.equal(editor.emitted.schedule_polling_enabled, false);
+    assert.deepEqual(editor.emitted.sections, sections);
+    assert.equal(editor.emitted.edit_schedule, false);
+    editor._render();
+    assert.equal(editor.field("schedule_polling_enabled").checked, false);
+    const restored = makeEditor({ language, schedulePolling: false });
+    assert.equal(restored.field("schedule_polling_enabled").checked, false);
+    restored.field("schedule_polling_enabled").checked = true;
+    restored.field("schedule_polling_enabled").fire("input");
+    assert.equal(restored.emitted.schedule_polling_enabled, true);
+  });
 }
+
+test("the schedule sync option respects a disabled thermostat editor", () => {
+  const editor = makeEditor();
+  editor._disabled = true;
+  editor._render();
+  assert.equal(editor.field("schedule_polling_enabled").disabled, true);
+});
 
 test("day sections support presets, individual weekdays and removal", () => {
   const editor = makeEditor();

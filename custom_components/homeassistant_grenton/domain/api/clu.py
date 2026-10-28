@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import Counter
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from time import monotonic
 from typing import cast
@@ -30,6 +31,8 @@ from .clu_messages import (
     GrentonCluApiClientReportNotification,
     GrentonCluApiFetchValuesRequest,
     GrentonCluApiFetchValuesResponse,
+    GrentonCluApiGetValueRequest,
+    GrentonCluApiGetValueResponse,
     GrentonCluApiMessageParser,
     GrentonCluApiPingRequest,
     GrentonCluApiRequest,
@@ -45,6 +48,39 @@ MAX_SUBSCRIPTION_ID = 65535
 REPORT_BIND_ATTEMPTS = 8
 
 StateKey = GrentonCluStateVariableKey | GrentonCluStateAttributeKey
+
+
+class _RequestGate:
+    """Ordinary requests may overlap; a large read runs on its own.
+
+    Holding the FIFO turnstile while waiting for active requests to finish
+    prevents later pings or writes from overtaking a queued large read.
+    """
+
+    def __init__(self) -> None:
+        self._turnstile = asyncio.Lock()
+        self._active = 0
+        self._idle = asyncio.Event()
+        self._idle.set()
+
+    @asynccontextmanager
+    async def access(self, *, exclusive: bool) -> AsyncIterator[None]:
+        if exclusive:
+            async with self._turnstile:
+                await self._idle.wait()
+                yield
+            return
+        async with self._turnstile:
+            self._active += 1
+            self._idle.clear()
+        try:
+            yield
+        finally:
+            # No await between decrementing and waking the exclusive waiter:
+            # cancellation cannot leave the gate permanently occupied.
+            self._active -= 1
+            if not self._active:
+                self._idle.set()
 
 
 @dataclass
@@ -84,6 +120,7 @@ class GrentonCluApi:
         self._report_address_history: set[tuple[str, int]] = set()
         self._rebase_requested = False
         self._action_lock = asyncio.Lock()
+        self._request_gate = _RequestGate()
         self._send_lock = asyncio.Lock()
         self._next_send_at = 0.0
         self._connect_lock = asyncio.Lock()
@@ -624,13 +661,31 @@ class GrentonCluApi:
                         continue
                     wire = None
                     protocol = self.protocol
+                    key = chunk[0]
+                    request: (
+                        GrentonCluApiGetValueRequest | GrentonCluApiFetchValuesRequest
+                    )
+                    if (
+                        len(chunk) == 1
+                        and key in self.large_value_keys
+                        and isinstance(key, GrentonCluStateAttributeKey)
+                    ):
+                        try:
+                            request = GrentonCluApiGetValueRequest(key)
+                        except ValueError as error:
+                            _LOGGER.warning(
+                                "[%s] Invalid direct read target: %s",
+                                self.log_identity,
+                                error,
+                            )
+                            break
+                    else:
+                        request = GrentonCluApiFetchValuesRequest(chunk)
                     if protocol is not None:
                         try:
                             async with self._action_lock:
                                 if self._current(generation):
-                                    wire = await protocol.send_request(
-                                        GrentonCluApiFetchValuesRequest(chunk)
-                                    )
+                                    wire = await protocol.send_request(request)
                         except ConnectionError:
                             pass
                     if not self._current(generation):
@@ -640,14 +695,23 @@ class GrentonCluApi:
                     )
                     if wire is not None:
                         try:
-                            response = GrentonCluApiFetchValuesResponse(
-                                wire, chunk, self.clu
+                            response = (
+                                GrentonCluApiGetValueResponse(
+                                    wire, request.key, self.clu
+                                )
+                                if isinstance(request, GrentonCluApiGetValueRequest)
+                                else GrentonCluApiFetchValuesResponse(
+                                    wire, chunk, self.clu
+                                )
                             )
                             values = list(response.values)
                         except ValueError as error:
                             _LOGGER.warning(
-                                "[%s] Invalid fetchValues reply: %s",
+                                "[%s] Invalid %s reply: %s",
                                 self.log_identity,
+                                "get"
+                                if isinstance(request, GrentonCluApiGetValueRequest)
+                                else "fetchValues",
                                 error,
                             )
                     values_by_key.update(zip(chunk, values))
@@ -795,7 +859,9 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
             )
             return
         try:
-            plaintext = decrypted.decode().strip()
+            # PKCS7 padding was removed by the cipher. A direct get reply is
+            # an unquoted scalar, so trailing whitespace belongs to its value.
+            plaintext = decrypted.decode()
         except UnicodeDecodeError:
             self._discarded_packets["encoding"] += 1
             _LOGGER.warning(
@@ -904,16 +970,35 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
         self._report_tasks.add(task)
         task.add_done_callback(self._report_tasks.discard)
 
-    async def send_request(self, request: GrentonCluApiRequest) -> str | None:
-        """Pace transmission, then await exactly this request's reply."""
-        if (
-            not self.active
-            or self.transport is None
-            or (
-                self.api._closing
-                and not isinstance(request, GrentonCluApiClientDestroyRequest)
+    def _can_send(self, request: GrentonCluApiRequest) -> bool:
+        return (
+            self.active
+            and self.transport is not None
+            and (
+                not self.api._closing
+                or isinstance(request, GrentonCluApiClientDestroyRequest)
             )
+        )
+
+    def _is_large_read(self, request: GrentonCluApiRequest) -> bool:
+        return isinstance(
+            request, (GrentonCluApiFetchValuesRequest, GrentonCluApiGetValueRequest)
+        ) and (not self.api.large_value_keys.isdisjoint(request.keys))
+
+    async def send_request(self, request: GrentonCluApiRequest) -> str | None:
+        """Pace requests and keep large reads exclusive until their reply."""
+        if not self._can_send(request):
+            return None
+        queued_at = asyncio.get_running_loop().time()
+        async with self.api._request_gate.access(
+            exclusive=self._is_large_read(request)
         ):
+            return await self._send_request(request, queued_at)
+
+    async def _send_request(
+        self, request: GrentonCluApiRequest, queued_at: float
+    ) -> str | None:
+        if not self._can_send(request):
             return None
         msg_id = request.msg_id
         encrypted = self.api.cipher.encrypt(request.raw.encode())
@@ -927,7 +1012,6 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
             return None
         future: asyncio.Future[str] | None = None
         loop = asyncio.get_running_loop()
-        queued_at = loop.time()
         sent_at: float | None = None
         reports_at_send = self._received_reports
         replies_at_send = self._received_replies
@@ -937,14 +1021,8 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
                 delay = self.api._next_send_at - loop.time()
                 if delay > 0:
                     await asyncio.sleep(delay)
-                if (
-                    not self.active
-                    or self.transport is None
-                    or (
-                        self.api._closing
-                        and not isinstance(request, GrentonCluApiClientDestroyRequest)
-                    )
-                ):
+                transport = self.transport
+                if not self._can_send(request) or transport is None:
                     return None
                 if msg_id in self._pending:
                     _LOGGER.warning(
@@ -962,7 +1040,7 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
                 )
                 future = loop.create_future()
                 self._pending[msg_id] = future
-                self.transport.sendto(encrypted, (self.api.clu.ip, self.api.clu.port))
+                transport.sendto(encrypted, (self.api.clu.ip, self.api.clu.port))
                 self._sent_requests += 1
                 sent_at = loop.time()
                 self.api._next_send_at = loop.time() + MIN_SEND_INTERVAL
@@ -971,8 +1049,27 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
         except TimeoutError:
             self.api.health.request_timeouts += 1
             self.health.request_timeouts += 1
-            if isinstance(request, GrentonCluApiFetchValuesRequest):
-                operation = f"slow read ({len(request.keys)} keys)"
+            if isinstance(
+                request, (GrentonCluApiFetchValuesRequest, GrentonCluApiGetValueRequest)
+            ):
+                large = self._is_large_read(request)
+                operation = (
+                    f"{'large' if large else 'slow'} read ({len(request.keys)} keys)"
+                )
+                targets = [
+                    f"{key.object_name}.{key.name}"
+                    if isinstance(key, GrentonCluStateAttributeKey)
+                    else f"var:{key.name}"
+                    for key in request.keys[:3]
+                ]
+                if len(request.keys) > 3:
+                    targets.append(f"+{len(request.keys) - 3} more")
+                method = (
+                    "get"
+                    if isinstance(request, GrentonCluApiGetValueRequest)
+                    else "fetchValues"
+                )
+                operation += f" [method={method}, large={large}, targets={targets!r}]"
             elif isinstance(request, GrentonCluApiClientRegisterRequest):
                 operation = f"subscription registration ({len(request.keys)} keys)"
             elif isinstance(request, GrentonCluApiClientDestroyRequest):

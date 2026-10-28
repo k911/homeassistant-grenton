@@ -12,6 +12,7 @@ from test_clu_state import make_clu
 from custom_components.homeassistant_grenton.domain.api.clu_messages import (
     GrentonCluApiFetchValuesRequest,
     GrentonCluApiFetchValuesResponse,
+    GrentonCluApiGetValueRequest,
 )
 from custom_components.homeassistant_grenton.state import (
     MISSING_STATE,
@@ -20,13 +21,13 @@ from custom_components.homeassistant_grenton.state import (
 )
 
 
-def test_fetch_request_matches_captured_thermostat_payload():
+def test_fetch_request_formats_attribute_and_variable_keys():
     keys = [
-        GrentonCluStateAttributeKey("THE6183", index) for index in ("10", "11", "9")
+        GrentonCluStateAttributeKey("THE6183", index) for index in ("10", "11", "14")
     ]
     request = GrentonCluApiFetchValuesRequest(keys, "1234abcd")
     assert request.raw == (
-        "req::1234abcd:SYSTEM:fetchValues({{THE6183,10},{THE6183,11},{THE6183,9}})"
+        "req::1234abcd:SYSTEM:fetchValues({{THE6183,10},{THE6183,11},{THE6183,14}})"
     )
     mixed = GrentonCluApiFetchValuesRequest(
         [GrentonCluStateVariableKey('room"name'), keys[0]]
@@ -90,10 +91,16 @@ def test_invalid_fetch_envelope_does_not_log_returned_values(tmp_path, caplog):
     asyncio.run(run())
 
 
-def test_fetch_batches_deduplicate_keys_and_isolate_large_values(tmp_path):
+@pytest.mark.parametrize("large_attributes", [False, True])
+def test_fetch_batches_deduplicate_keys_and_isolate_large_values(
+    tmp_path, large_attributes
+):
     async def run():
         hass, _, coord, api = await fixture(tmp_path)
         keys = [GrentonCluStateVariableKey(str(index)) for index in range(65)]
+        if large_attributes:
+            keys[29] = GrentonCluStateAttributeKey("THERM1", "9")
+            keys[60] = GrentonCluStateAttributeKey("THERM2", "9")
         api.large_value_keys = {keys[29], keys[60]}
         week = "  " + "Y0" * 672 + "+00:30  "
         values = {
@@ -104,6 +111,8 @@ def test_fetch_batches_deduplicate_keys_and_isolate_large_values(tmp_path):
 
         async def read(request):
             requests.append(request)
+            if isinstance(request, GrentonCluApiGetValueRequest):
+                return f"resp:192.0.2.1:{request.msg_id}:{values[request.key]}"
             content = ",".join(
                 f'"{values[key]}"' if isinstance(values[key], str) else str(values[key])
                 for key in request.keys
@@ -118,8 +127,19 @@ def test_fetch_batches_deduplicate_keys_and_isolate_large_values(tmp_path):
         ]
         assert [len(request.keys) for request in requests] == [30, 30, 3, 1, 1]
         assert all(
-            isinstance(request, GrentonCluApiFetchValuesRequest) for request in requests
+            isinstance(request, GrentonCluApiFetchValuesRequest)
+            for request in requests[:3]
         )
+        if large_attributes:
+            assert [request.payload for request in requests[3:]] == [
+                "THERM1:get(9)",
+                "THERM2:get(9)",
+            ]
+        else:
+            assert all(
+                isinstance(request, GrentonCluApiFetchValuesRequest)
+                for request in requests[3:]
+            )
         assert len({request.msg_id for request in requests}) == 5
         assert await api.fetch_component_states([]) == []
         assert len(requests) == 5
@@ -156,7 +176,100 @@ def test_fetch_failed_batch_keeps_alignment_and_distinguishes_nil(tmp_path):
     asyncio.run(run())
 
 
-def test_fetch_correlates_encrypted_reply_on_existing_control_socket(tmp_path):
+@pytest.mark.parametrize("direct_reply", [None, "nil", "resp:::private-state"])
+def test_direct_large_read_failure_keeps_alignment_and_never_falls_back(
+    tmp_path, caplog, direct_reply
+):
+    async def run():
+        hass, _, coord, api = await fixture(tmp_path)
+        ordinary = GrentonCluStateVariableKey("ordinary")
+        large = GrentonCluStateAttributeKey("THERM1", "9")
+        api.large_value_keys.add(large)
+        requests = []
+
+        async def read(request):
+            requests.append(request)
+            if isinstance(request, GrentonCluApiGetValueRequest):
+                if direct_reply is None or direct_reply.startswith("resp:"):
+                    return direct_reply
+                return f"resp:192.0.2.1:{request.msg_id}:{direct_reply}"
+            return f"resp:192.0.2.1:{request.msg_id}:values:{{1}}"
+
+        api.protocol = SimpleNamespace(send_request=AsyncMock(side_effect=read))
+        expected = None if direct_reply == "nil" else MISSING_STATE
+        assert await api.fetch_component_states([large, ordinary, large]) == [
+            expected,
+            1,
+            expected,
+        ]
+        assert [request.payload for request in requests] == [
+            'SYSTEM:fetchValues({"ordinary"})',
+            "THERM1:get(9)",
+        ]
+        assert "private-state" not in caplog.text
+        await coord.async_shutdown()
+        await hass.async_stop()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        GrentonCluStateAttributeKey("THERM1;private-target()", "9"),
+        GrentonCluStateAttributeKey("THERM1", "9);private-index()"),
+    ],
+)
+def test_invalid_large_attribute_is_not_sent_and_later_batches_still_succeed(
+    tmp_path, caplog, invalid
+):
+    async def run():
+        hass, _, coord, api = await fixture(tmp_path)
+        ordinary = GrentonCluStateVariableKey("ordinary")
+        valid = GrentonCluStateAttributeKey("THERM2", "9")
+        api.large_value_keys = {invalid, valid}
+        requests = []
+
+        async def read(request):
+            requests.append(request)
+            payload = (
+                "schedule"
+                if isinstance(request, GrentonCluApiGetValueRequest)
+                else "values:{7}"
+            )
+            return f"resp:192.0.2.1:{request.msg_id}:{payload}"
+
+        api.protocol = SimpleNamespace(send_request=AsyncMock(side_effect=read))
+        assert await api.fetch_component_states(
+            [invalid, ordinary, valid, invalid]
+        ) == [MISSING_STATE, 7, "schedule", MISSING_STATE]
+        assert [request.payload for request in requests] == [
+            'SYSTEM:fetchValues({"ordinary"})',
+            "THERM2:get(9)",
+        ]
+        assert "Invalid direct read target" in caplog.text
+        assert "private-target" not in caplog.text
+        assert "private-index" not in caplog.text
+        assert not api._registration_lock.locked()
+        assert not api._action_lock.locked()
+        assert await api.fetch_component_states([ordinary]) == [7]
+        await coord.async_shutdown()
+        await hass.async_stop()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "large, value",
+    [
+        (False, 22.5),
+        (True, "Y0" * 672 + "+00:30"),
+        (True, '  schedule, "quoted value"  '),
+    ],
+)
+def test_fetch_correlates_encrypted_reply_on_existing_control_socket(
+    tmp_path, large, value
+):
     async def run():
         hass, _, coord, api = await fixture(tmp_path)
         cipher, sockets, sent = api.cipher, [], []
@@ -172,8 +285,9 @@ def test_fetch_correlates_encrypted_reply_on_existing_control_socket(tmp_path):
                 other = cipher.encrypt(
                     f"resp:{api.clu.ip}:unmatched:values:{{99}}".encode()
                 )
+                payload = str(value) if large else f"values:{{{value}}}"
                 reply = cipher.encrypt(
-                    f"resp:{api.clu.ip}:{message_id}:values:{{22.5}}".encode()
+                    f"resp:{api.clu.ip}:{message_id}:{payload}".encode()
                 )
                 loop = asyncio.get_running_loop()
                 loop.call_soon(protocol.datagram_received, other, peer)
@@ -183,11 +297,14 @@ def test_fetch_correlates_encrypted_reply_on_existing_control_socket(tmp_path):
                 loop.call_soon(protocol.datagram_received, reply, peer)
 
             sockets[0].sendto = send
-            key = GrentonCluStateAttributeKey("THE6183", "14")
-            assert await api.fetch_component_states([key]) == [22.5]
-            assert len(sent) == 1 and sent[0].endswith(
-                ":SYSTEM:fetchValues({{THE6183,14}})"
+            key = GrentonCluStateAttributeKey("THE6183", "9" if large else "14")
+            if large:
+                api.large_value_keys.add(key)
+            assert await api.fetch_component_states([key]) == [value]
+            expected = (
+                ":THE6183:get(9)" if large else ":SYSTEM:fetchValues({{THE6183,14}})"
             )
+            assert len(sent) == 1 and sent[0].endswith(expected)
             assert len(sockets) == 1 and not api._groups
             assert not protocol._pending
             assert protocol._discarded_packets["wrong_peer"] == 1

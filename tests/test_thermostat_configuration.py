@@ -96,6 +96,53 @@ def test_partial_import_keeps_cooling_disabled_and_uses_attribute_seven_fallback
     assert entity.actions["setControlDirectionAction"].index == "7"
 
 
+@pytest.mark.parametrize("saved", [None, True, False])
+def test_schedule_polling_defaults_to_enabled_for_existing_thermostats(saved):
+    config = {"cooling_enabled": False}
+    if saved is not None:
+        config["schedule_polling_enabled"] = saved
+    entity, _ = thermostat(options={"entities": {"thermostat1_climate": config}})
+    assert entity.schedule_polling_enabled == (saved is not False)
+    draft = ui_fields(
+        {"data_schema": entity._get_schema_instance()._build(config, {}).schema}
+    )["thermostat"]["description"]["suggested_value"]
+    assert draft["schedule_polling_enabled"] == (saved is not False)
+
+
+@pytest.mark.parametrize("invalid", [None, 0, 1, "false", "true", [], {}])
+def test_schedule_polling_selector_requires_a_real_boolean(invalid):
+    entity, _ = thermostat()
+    selector = GrentonThermostatSelector(entity._get_schema_instance().settings)
+    with pytest.raises(Invalid):
+        selector.configuration(
+            {"cooling_enabled": False, "schedule_polling_enabled": invalid}
+        )
+
+
+def test_popup_can_disable_polling_without_schedule_feedback_or_clu_writes():
+    entity, coord = thermostat(values={"9": None, "10": None})
+    flow, entry_patch = make_flow(coord, entity)
+
+    async def run():
+        with entry_patch:
+            form = await flow.async_step_entity_list({"entity": entity.entity_id})
+            field = ui_fields(form)["thermostat"]
+            assert not field["selector"]["grenton_thermostat"]["schedule_available"]
+            draft = field["description"]["suggested_value"]
+            assert draft["schedule_polling_enabled"] is True
+            draft["schedule_polling_enabled"] = False
+            result = await flow.async_step_configure_thermostat({"thermostat": draft})
+            assert result["type"] == "create_entry"
+            assert (
+                result["data"]["entities"][entity.unique_id]["schedule_polling_enabled"]
+                is False
+            )
+            assert not entity.schedule_polling_enabled
+            coord.execute_action.assert_not_called()
+
+    asyncio.run(run())
+
+
 def test_saved_false_overrides_import_and_saved_true_enables_omitted_bindings():
     key = "thermostat1_climate"
     entity, _ = thermostat(
@@ -143,7 +190,10 @@ def test_popup_direction_change_preserves_auto_mode_and_power(direction, value):
     options = asyncio.run(entity.apply_configuration(config))
     assert payloads(coord) == [f'THERMOSTAT1:set(7,"{value}")']
     assert entity.hvac_mode == HVACMode.AUTO
-    assert options["entities"][entity.unique_id] == {"cooling_enabled": True}
+    assert options["entities"][entity.unique_id] == {
+        "cooling_enabled": True,
+        "schedule_polling_enabled": True,
+    }
 
 
 @pytest.mark.parametrize(
@@ -282,7 +332,8 @@ def test_popup_prefills_groups_and_saves_one_complete_week_without_changing_mode
             result = await flow.async_step_configure_thermostat({"thermostat": draft})
             assert result["type"] == "create_entry"
             assert result["data"]["entities"][entity.unique_id] == {
-                "cooling_enabled": True
+                "cooling_enabled": True,
+                "schedule_polling_enabled": True,
             }
             assert entity.cooling_enabled
 

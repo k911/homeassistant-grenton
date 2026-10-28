@@ -78,6 +78,8 @@ class Socket:
             payload = split_lua_arguments(
                 payload.removeprefix("SYSTEM:clientDestroy(").removesuffix(")")
             )[2]
+        elif ":get(" in payload:
+            payload = "1"
         else:
             payload = "pong"
         asyncio.get_running_loop().call_soon(

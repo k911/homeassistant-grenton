@@ -109,7 +109,10 @@ def test_changing_maximum_preserves_targets_and_reencodes_metadata_from_captures
     assert entity.decoded_schedule.periods() == constant_week(20)
     assert entity.hvac_mode == "auto"
     assert entity.control_direction_name == "cooling"
-    assert options["entities"][entity.unique_id] == {"cooling_enabled": True}
+    assert options["entities"][entity.unique_id] == {
+        "cooling_enabled": True,
+        "schedule_polling_enabled": True,
+    }
     assert entity.min_temp == 10 and entity.max_temp == 33
     assert coord.async_refresh_clu_state.await_count == 2
 

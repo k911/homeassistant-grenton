@@ -73,7 +73,10 @@ class GrentonEntityThermostatV2(
                     state,
                     large_value=True,
                     read_mode="slow",
-                    poll_condition=lambda: self.following_schedule is True,
+                    poll_condition=lambda: (
+                        self.schedule_polling_enabled
+                        and self.following_schedule is True
+                    ),
                 )
             elif name in (
                 "currentTemperature",
@@ -147,12 +150,11 @@ class GrentonEntityThermostatV2(
                     "[%s] CLU weekly schedule decoded successfully",
                     self._log_context("scheduleData", "maxTemperature"),
                 )
-            elif (
-                self._value("scheduleData") is None
-                and self.following_schedule is not True
+            elif self._value("scheduleData") is None and not (
+                self.schedule_polling_enabled and self.following_schedule is True
             ):
                 _LOGGER.debug(
-                    "[%s] Schedule not loaded; background reads are paused",
+                    "[%s] Schedule not loaded; automatic synchronization is paused",
                     self._log_context("scheduleData"),
                 )
             else:
@@ -167,7 +169,7 @@ class GrentonEntityThermostatV2(
         self._analyse_schedule()
 
     async def async_prepare_configuration(self) -> None:
-        """Load the editor on demand, including when background reads are paused."""
+        """Read a fresh schedule and limits only when opening the editor."""
         if not await self._refresh_schedule():
             raise HomeAssistantError(
                 "Could not load the thermostat schedule and limits"
@@ -192,6 +194,10 @@ class GrentonEntityThermostatV2(
         return self._config.get("cooling_enabled", self._cooling_detected) is True
 
     @property
+    def schedule_polling_enabled(self) -> bool:
+        return self._config.get("schedule_polling_enabled", True) is True
+
+    @property
     def hvac_modes(self) -> list[HVACMode]:
         return [
             HVACMode.OFF,
@@ -201,7 +207,10 @@ class GrentonEntityThermostatV2(
         ]
 
     def default_config(self) -> dict[str, Any]:
-        return {"cooling_enabled": self._cooling_detected}
+        return {
+            "cooling_enabled": self._cooling_detected,
+            "schedule_polling_enabled": True,
+        }
 
     def _get_schema_instance(self) -> GrentonThermostatConfigurationSchema:
         minimum, maximum = (
@@ -254,7 +263,13 @@ class GrentonEntityThermostatV2(
                     "setControlDirectionAction", "1" if direction == "cooling" else "0"
                 )
         options = await ConfigurableEntity.apply_configuration(
-            self, {"cooling_enabled": user_input["cooling_enabled"]}
+            self,
+            {
+                "cooling_enabled": user_input["cooling_enabled"],
+                "schedule_polling_enabled": user_input.get(
+                    "schedule_polling_enabled", self.schedule_polling_enabled
+                ),
+            },
         )
         if self.hass is not None:
             self.async_write_ha_state()

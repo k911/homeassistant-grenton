@@ -690,6 +690,9 @@
         "cooling_enabled": {
           "name": "Włącz chłodzenie"
         },
+        "schedule_polling_enabled": {
+          "name": "Automatyczna synchronizacja harmonogramu"
+        },
         "edit_schedule": {
           "name": "Edytuj harmonogram tygodniowy"
         },

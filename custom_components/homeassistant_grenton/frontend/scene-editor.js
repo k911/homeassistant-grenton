@@ -432,6 +432,7 @@ class GrentonThermostatEditor extends GrentonEditor {
     const settings = this.selector?.grenton_thermostat ?? {};
     this._value ??= { cooling_enabled: false, edit_schedule: false, sections: [] };
     const draft = this._value;
+    draft.schedule_polling_enabled ??= true;
     this._periodTemperatureInputs = [];
     const cooling = this._input("cooling_enabled", draft.cooling_enabled,
       (value) => { draft.cooling_enabled = value; this._render(); }, "checkbox", false);
@@ -474,6 +475,9 @@ class GrentonThermostatEditor extends GrentonEditor {
       note.textContent = this._label("limits_hint", "Scheduled temperatures are preserved when the range changes. All targets must fit the new limits; edit the schedule below if needed.");
       parent.append(note);
     }
+    const sync = this._input("schedule_polling_enabled", draft.schedule_polling_enabled,
+      (value) => { draft.schedule_polling_enabled = value; }, "checkbox", false);
+    parent.append(this._field(this._label("schedule_polling_enabled", "Automatically sync schedule"), sync));
     const edit = this._input("edit_schedule", draft.edit_schedule,
       (value) => { draft.edit_schedule = value; this._render(); }, "checkbox", false);
     edit.disabled ||= !settings.schedule_available;

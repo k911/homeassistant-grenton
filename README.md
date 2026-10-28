@@ -167,21 +167,25 @@ Other values retain their configurable **Realtime** / **Polling** choice,
 independently for each VALUE_DOUBLE channel.
 
 Thermostat current temperature, target temperature, minimum and maximum are
-also polled. Schedule data is polled only while the thermostat is on in Auto,
-or read on demand for configuration and save verification. Power, manual/schedule
+also polled. Schedule data uses the source CLU's polling interval while the
+thermostat is on in Auto. Disable **Automatically sync schedule** in that
+thermostat's configuration to use explicit editor/save reads only. Power, manual/schedule
 mode, direction and output activity retain realtime subscriptions on capable CLUs.
 Changing the target or operating mode reads the target back immediately; schedule and limit changes
 retain their targeted readback checks.
 
-**CLU_GATE_HTTP** uses polling for every binding, including controls and
-controller diagnostics, because it does not provide realtime updates. It opens
+**CLU_GATE_HTTP** uses polling for regular bindings, including controls and
+controller diagnostics, because it does not provide realtime updates. Schedule
+data follows the thermostat's sync setting and active schedule mode. It opens
 no report listener. Its polling interval can be shorter than the
 main CLU's; configure it under **Configure CLU**. User actions still execute
 immediately; displayed feedback follows the next poll or an explicit readback.
 
 Polled values are read at startup and then at their source CLU's configured
-interval. Reads use `SYSTEM:fetchValues` on the existing control socket, in batches
-of up to 30 values, with large schedules isolated in their own batches. They do not
+interval. Ordinary reads use `SYSTEM:fetchValues` on the existing control socket,
+in batches of up to 30 values. Large attribute values, including schedules, use
+individual `OBJECT:get(INDEX)` requests as observed in Object Manager. Large
+variables remain isolated `fetchValues` reads. Reads do not
 create subscriptions or receive the 45-second registration refresh.
 On realtime-capable CLUs, a binding shared with a realtime consumer remains
 realtime; thermostat temperature feedback now requests slow polling too.
@@ -198,8 +202,8 @@ reduction depends on the number of values and their previous update frequency.
 
 ### CLU connections and cleanup
 
-Each CLU has one control UDP socket for actions, health pings and `fetchValues`
-reads. Realtime-capable CLUs also have one report listener shared by all groups.
+Each CLU has one control UDP socket for actions, health pings, `fetchValues` and
+direct attribute reads. Realtime-capable CLUs also have one report listener shared by all groups.
 Registrations specify that listener's local address and port; reports are routed
 by subscription ID. Groups contain up to 30 ordinary keys. Large values stay
 isolated, and duplicate bindings share one source.
@@ -209,6 +213,9 @@ One health ping runs every **10 seconds** per CLU. Groups renew every
 deadlines, skip missed ticks and avoid catch-up bursts. Slow reads yield between
 batches so renewals can proceed. Controllers run independently, and outgoing
 datagrams retain at least 20 ms spacing per CLU.
+Large reads wait for in-flight requests to finish, then run exclusively on that
+CLU until their reply or timeout. Pings, renewals and actions wait during the
+large read; unsolicited state reports can still arrive.
 
 Group replacement, integration reload/unload, failed startup and Home Assistant
 shutdown send bounded `clientDestroy` requests for owned subscriptions, then
@@ -219,7 +226,7 @@ Lost sockets are recovered on the next health check or registration refresh.
 Timeouts alone do not recreate sockets or replay actions. Old-generation,
 unknown-ID and malformed reports cannot update entities. Thirty keys is a
 conservative batching budget; arbitrary large strings can still produce large
-replies, so thermostat schedules remain isolated and polled.
+replies, so thermostat schedules remain isolated and large reads run exclusively.
 
 Each CLU device has local **Connection**, **Request timeouts** and
 **Realtime subscriptions** diagnostics. They observe existing traffic and add no
@@ -354,11 +361,14 @@ for example **22°C until 20:00**. Open it to see whether the schedule is being
 followed, the heating/cooling direction, the next target and change time, and
 readable periods for all seven days. Constant schedules show **20°C all week**.
 Manual mode and Off retain the last read schedule with **Following schedule: No**.
-After starting in either mode, the sensor remains unknown until configuration is
-opened, a schedule is saved, or Auto becomes active.
+After a Home Assistant restart, enabled synchronization loads the schedule if
+the thermostat is on in Auto. Otherwise the sensor remains unknown until
+configuration is opened, a schedule is saved, or automatic synchronization resumes.
 
-The sensor shares the thermostat's polled schedule and refreshes at each quarter-hour
-without writing to the thermostat. It follows Home Assistant's temperature unit,
+The sensor shares the thermostat's schedule and recalculates its displayed
+period at each quarter-hour without contacting the CLU itself. When automatic
+synchronization is disabled, it shows the last explicitly fetched snapshot;
+external edits appear after configuration is opened again. It follows Home Assistant's temperature unit,
 language (English/Polish) and time zone; the time zone should match the CLU clock.
 Before valid schedule data arrives, its state is unknown. The climate entity's
 existing ID and the thermostat's device name stay unchanged.
@@ -395,12 +405,15 @@ Schedule editing reads the configured minimum and maximum from thermostat
 attributes **10** and **11** and accepts **0.5°C** increments within those limits.
 The captured encoding supports nonnegative temperatures. The current schedule
 and limits must have been received from the CLU before an update can be sent.
-Schedule data has **no realtime subscription**. It is read at startup only when
-the thermostat is on in schedule mode (mode 2), then at the source CLU's polling
-interval. Manual mode, Off and unknown modes pause these reads; activating Auto
-resumes them on the next poll. Opening thermostat configuration loads the
-schedule on demand in any mode. Each large schedule is read individually on the
-existing control socket, separate from batches of up to 30 ordinary values.
+Schedule data has **no realtime subscription**. **Automatically sync schedule**
+is enabled by default, including for existing thermostats. It reads the schedule
+at startup and on the source CLU's polling interval only while power is on and
+mode is Auto (2). Manual mode, Off, unknown modes, or disabling the option pause
+background reads. Changing the option applies immediately and is saved per
+thermostat. Opening thermostat configuration loads the
+schedule on demand in any mode. Each large attribute schedule is read with
+`OBJECT:get(9)` on the existing control socket, separate from batches of up to
+30 ordinary values. Direct replies preserve the raw schedule text, including spaces.
 The integration never pushes a cached Home Assistant schedule.
 Outgoing packets are paced across the CLU's sockets to reduce request bursts.
 Newer pushed reports take precedence over an older in-flight read. Failed reads
@@ -408,8 +421,8 @@ retain cached values; an actual CLU `nil` clears them.
 
 Every schedule save first reads fresh data, then makes one immediate readback
 to verify the reported week and limits after writing, including in manual mode
-or Off. This one-off read does not enable background polling; only active Auto
-does. These reads request only the thermostat's schedule, limits and target.
+or Off, and when automatic synchronization is disabled. These explicit reads
+preserve the sync setting and request only the thermostat's schedule, limits and target.
 An acknowledgement alone
 does not count as a confirmed save. Missing or inconsistent data keeps the schedule
 sensor unknown and disables editing; the climate's `schedule_status` attribute
@@ -500,7 +513,9 @@ For `N` realtime groups, nominal traffic is **6 health pings** and
 before user actions, readbacks, retries and CLU responses/change reports.
 Slow reads reuse the control socket and add approximately
 `(ceil(S / 30) + L) × 60 / T` requests per minute for `S` ordinary polled
-values and `L` large schedules at an interval of `T` seconds.
+values and `L` periodically polled large values at an interval of `T` seconds.
+Here `L` includes thermostat schedules only while their automatic synchronization
+is enabled and they are on in Auto mode.
 See **Temperature Reads and Polling** above for configuration.
 
 See **CLU connections and cleanup** above for socket ownership and remote

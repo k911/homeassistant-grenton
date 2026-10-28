@@ -13,6 +13,7 @@ from .fetch_values import (
     GrentonCluApiFetchValuesRequest,
     GrentonCluApiFetchValuesResponse,
 )
+from .get_value import GrentonCluApiGetValueRequest, GrentonCluApiGetValueResponse
 from .parser import GrentonCluApiMessageParser
 from .ping import GrentonCluApiPingRequest, GrentonCluApiPingResponse
 
@@ -26,6 +27,8 @@ __all__ = [
     "GrentonCluApiClientReportNotification",
     "GrentonCluApiFetchValuesRequest",
     "GrentonCluApiFetchValuesResponse",
+    "GrentonCluApiGetValueRequest",
+    "GrentonCluApiGetValueResponse",
     "GrentonCluApiMessageParser",
     "GrentonCluApiNotification",
     "GrentonCluApiPingRequest",
