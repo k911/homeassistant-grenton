@@ -50,6 +50,19 @@ REPORT_BIND_ATTEMPTS = 8
 StateKey = GrentonCluStateVariableKey | GrentonCluStateAttributeKey
 
 
+def _diagnostic_targets(keys: Sequence[StateKey]) -> list[str]:
+    """Identify a batch without logging its state values or a long key list."""
+    targets = [
+        f"{key.object_name}.{key.name}"
+        if isinstance(key, GrentonCluStateAttributeKey)
+        else f"var:{key.name}"
+        for key in keys[:3]
+    ]
+    if len(keys) > 3:
+        targets.append(f"+{len(keys) - 3} more")
+    return targets
+
+
 class _RequestGate:
     """Ordinary requests may overlap; a large read runs on its own.
 
@@ -1056,22 +1069,21 @@ class GrentonCluApiProtocol(asyncio.DatagramProtocol):
                 operation = (
                     f"{'large' if large else 'slow'} read ({len(request.keys)} keys)"
                 )
-                targets = [
-                    f"{key.object_name}.{key.name}"
-                    if isinstance(key, GrentonCluStateAttributeKey)
-                    else f"var:{key.name}"
-                    for key in request.keys[:3]
-                ]
-                if len(request.keys) > 3:
-                    targets.append(f"+{len(request.keys) - 3} more")
                 method = (
                     "get"
                     if isinstance(request, GrentonCluApiGetValueRequest)
                     else "fetchValues"
                 )
-                operation += f" [method={method}, large={large}, targets={targets!r}]"
+                operation += (
+                    f" [method={method}, large={large}, "
+                    f"targets={_diagnostic_targets(request.keys)!r}]"
+                )
             elif isinstance(request, GrentonCluApiClientRegisterRequest):
-                operation = f"subscription registration ({len(request.keys)} keys)"
+                operation = (
+                    f"subscription registration ({len(request.keys)} keys) "
+                    f"[subscription_id={request.subscription_id}, "
+                    f"targets={_diagnostic_targets(request.keys)!r}]"
+                )
             elif isinstance(request, GrentonCluApiClientDestroyRequest):
                 operation = "subscription destruction"
             elif isinstance(request, GrentonCluApiPingRequest):

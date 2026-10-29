@@ -103,6 +103,8 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
 
     async def async_step_clu_configuration(self, user_input=None):
         """Group controller settings and variable management under one CLU."""
+        # HA menu headers do not receive placeholders; the description names
+        # the selected CLU instead.
         return self.async_show_menu(
             step_id="clu_configuration",
             menu_options=["clu_read_interval", "clu_variables"],

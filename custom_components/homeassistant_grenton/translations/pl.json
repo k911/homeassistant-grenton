@@ -221,7 +221,8 @@
         }
       },
       "clu_configuration": {
-        "title": "Konfiguracja {clu_name}",
+        "title": "Konfiguruj CLU",
+        "description": "{clu_name}",
         "menu_options": {
           "clu_read_interval": "Połączenie i odpytywanie",
           "clu_variables": "Zmienne"

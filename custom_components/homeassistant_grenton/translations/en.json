@@ -221,7 +221,8 @@
         }
       },
       "clu_configuration": {
-        "title": "Configure {clu_name}",
+        "title": "Configure CLU",
+        "description": "{clu_name}",
         "menu_options": {
           "clu_read_interval": "Connection and polling",
           "clu_variables": "Variables"
