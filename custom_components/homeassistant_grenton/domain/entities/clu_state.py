@@ -17,7 +17,7 @@ from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfT
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import Entity
 
 from ...coordinator import GrentonCoordinator
 from ...state import GrentonValue
@@ -26,8 +26,10 @@ from ..clu import GrentonClu
 from ..device_types import attribute_index
 from ..enums import GrentonActionEventType
 from ..state_object import GrentonAttributeValueObject
+from .base import GrentonStateEntity
 from .clu import GrentonCluEntity, clu_device_info
-from .clu_variables import GrentonCluCustomVariable, custom_variable_entities
+from .clu_diagnostics import connection_diagnostics
+from .clu_variables import custom_variable_entities
 
 
 def _boolean(value: GrentonValue) -> bool | None:
@@ -45,14 +47,20 @@ def _boolean(value: GrentonValue) -> bool | None:
     return None
 
 
-class GrentonCluStateEntity(CoordinatorEntity[GrentonCoordinator]):
-    """A subscribed built-in attribute belonging to the existing CLU device."""
+class GrentonCluStateEntity(GrentonStateEntity):
+    """A built-in attribute belonging to the existing CLU device."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
-        self, coordinator: GrentonCoordinator, clu: GrentonClu, attribute: str, key: str
+        self,
+        coordinator: GrentonCoordinator,
+        clu: GrentonClu,
+        attribute: str,
+        key: str,
+        *,
+        read_mode: str = "realtime",
     ) -> None:
         super().__init__(coordinator)
         self.clu = clu
@@ -62,7 +70,7 @@ class GrentonCluStateEntity(CoordinatorEntity[GrentonCoordinator]):
         self._attr_unique_id = f"clu_{clu.id}_{key.removeprefix('clu_')}"
         self._attr_translation_key = key
         self._attr_device_info = clu_device_info(clu)
-        coordinator.register_component_state(self.state_object)
+        coordinator.register_component_state(self.state_object, read_mode=read_mode)
 
     @property
     def _value(self) -> GrentonValue:
@@ -77,7 +85,9 @@ class GrentonCluUptime(GrentonCluStateEntity, SensorEntity):
     _attr_suggested_display_precision = 0
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "Uptime", "clu_uptime")
+        # Uptime changes continuously. Subscribing to it makes the CLU send
+        # the entire realtime group on every tick, even if other values stay put.
+        super().__init__(coordinator, clu, "Uptime", "clu_uptime", read_mode="slow")
 
     @property
     def native_value(self) -> int | None:
@@ -99,7 +109,9 @@ class GrentonCluCloudConnection(GrentonCluStateEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "CloudConnection", "clu_cloud_connection")
+        super().__init__(
+            coordinator, clu, "CloudConnection", "clu_cloud_connection", read_mode="slow"
+        )
 
     @property
     def is_on(self) -> bool | None:
@@ -112,7 +124,9 @@ class GrentonCluFirmwareVersion(GrentonCluStateEntity, SensorEntity):
     _attr_icon = "mdi:chip"
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "FirmwareVersion", "clu_firmware_version")
+        super().__init__(
+            coordinator, clu, "FirmwareVersion", "clu_firmware_version", read_mode="slow"
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -125,7 +139,7 @@ class GrentonCluFirmwareVersion(GrentonCluStateEntity, SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        info = self._attr_device_info
+        info = clu_device_info(self.clu)
         if version := self.native_value:
             info["sw_version"] = version
         return info
@@ -139,7 +153,7 @@ class GrentonCluFirmwareVersion(GrentonCluStateEntity, SensorEntity):
         ):
             registry = dr.async_get(self.hass)
             device = registry.async_get(entry.device_id)
-            if device and device.sw_version != version:
+            if isinstance(device, dr.DeviceEntry) and device.sw_version != version:
                 registry.async_update_device(device.id, sw_version=version)
         super()._handle_coordinator_update()
 
@@ -151,7 +165,9 @@ class GrentonCluUseCloud(GrentonCluStateEntity, SwitchEntity):
     _attr_icon = "mdi:cloud-outline"
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "UseCloud", "clu_use_cloud")
+        super().__init__(
+            coordinator, clu, "UseCloud", "clu_use_cloud", read_mode="slow"
+        )
 
     @property
     def is_on(self) -> bool | None:
@@ -185,7 +201,9 @@ class GrentonCluBusVoltage(GrentonCluStateEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
-        super().__init__(coordinator, clu, "BusVoltage", "clu_bus_voltage")
+        super().__init__(
+            coordinator, clu, "BusVoltage", "clu_bus_voltage", read_mode="slow"
+        )
 
     @property
     def native_value(self) -> float | None:
@@ -199,14 +217,10 @@ class GrentonCluBusVoltage(GrentonCluStateEntity, SensorEntity):
         return voltage if isfinite(voltage) else None
 
 
-def clu_entities(
-    coordinator: GrentonCoordinator, clu: GrentonClu
-) -> list[GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable]:
+def clu_entities(coordinator: GrentonCoordinator, clu: GrentonClu) -> list[Entity]:
     """Discover built-in entities independently of mobile-interface widgets."""
     controller = GrentonCluEntity(coordinator, clu)
-    entities: list[
-        GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable
-    ] = [controller]
+    entities: list[Entity] = [controller]
     for attribute, entity_class in (
         ("Uptime", GrentonCluUptime),
         ("CloudConnection", GrentonCluCloudConnection),
@@ -216,5 +230,6 @@ def clu_entities(
     ):
         if attribute_index(clu.device_type, attribute) is not None:
             entities.append(entity_class(coordinator, clu))
+    entities.extend(connection_diagnostics(coordinator, clu))
     entities.extend(custom_variable_entities(coordinator, clu))
     return entities
