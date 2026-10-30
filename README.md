@@ -1,19 +1,12 @@
 # Home Assistant Grenton
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![GitHub release](https://img.shields.io/github/v/release/sszczep/homeassistant-grenton?style=for-the-badge)](https://github.com/sszczep/homeassistant-grenton/releases)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=for-the-badge)](https://github.com/sszczep/homeassistant-grenton/graphs/commit-activity)
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?style=for-the-badge&logo=github)](https://github.com/sponsors/sszczep)
+[![GitHub release](https://img.shields.io/github/v/release/k911/homeassistant-grenton?style=for-the-badge)](https://github.com/k911/homeassistant-grenton/releases)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=for-the-badge)](https://github.com/k911/homeassistant-grenton/graphs/commit-activity)
 
 Custom Home Assistant integration for **Grenton Smart Home** system. Seamlessly connect and control your Grenton devices through Home Assistant with automatic discovery, real-time updates, and full configuration support.
 
 ![Grenton Integration](assets/dashboard.png)
-
-## 💖 Sponsor
-
-If you find this integration helpful, please consider supporting ongoing development via [**GitHub Sponsors**](https://github.com/sponsors/sszczep).
-
-Your support helps maintain features, fix bugs, and improve documentation.
 
 ## ✨ Features
 
@@ -50,22 +43,31 @@ See [Device specifications](#device-specifications) for detailed behavior and se
 
 ## 🚀 Installation
 
+Requires **Home Assistant 2026.9.4 or newer**, the tested baseline.
+
 ### Option 1: HACS (Recommended)
 
-1. Open [HACS](https://www.hacs.xyz/docs/use/download/download/) in your Home Assistant instance
-2. Go to **Integrations**
-3. Click the three dots in the top right corner
-4. Select **Custom repositories**
-5. Add this repository URL: `https://github.com/sszczep/homeassistant-grenton`
-6. Select **Integration** as the category
-7. Click **Install**
-8. Restart Home Assistant
+Requires **HACS 2.0.5 or newer**.
+
+1. Open **HACS** in Home Assistant
+2. Click the three dots in the top right corner and select **Custom repositories**
+3. Enter `https://github.com/k911/homeassistant-grenton`
+4. Select **Integration** as the category and click **Add**
+5. Open **Grenton** from the added repository and download it
+6. Restart Home Assistant
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=k911&repository=homeassistant-grenton&category=integration)
+
+HACS installs the integration into `/config/custom_components/grenton`.
+When switching from another fork, use only one Grenton repository in HACS.
+Keep the existing Grenton integration entry under **Devices & Services**;
+this fork uses the same `grenton` domain.
 
 ### Option 2: Manual Installation
 
-1. Download the latest release from the [Releases](https://github.com/sszczep/homeassistant-grenton/releases) section
+1. Download the latest release from the [Releases](https://github.com/k911/homeassistant-grenton/releases) section
 2. Extract the zip file
-3. Copy the `homeassistant_grenton` folder into your `custom_components` directory (usually `/config/custom_components/`)
+3. Copy the contents of `custom_components/homeassistant_grenton` into `/config/custom_components/grenton/` (create the `grenton` directory if needed)
 4. Restart Home Assistant
 
 ## 📖 Configuration
@@ -763,18 +765,12 @@ Contributions are welcome! Please:
 
 For issues, questions, or contributions:
 
-- **GitHub Issues**: [Report a bug or request a feature](https://github.com/sszczep/homeassistant-grenton/issues)
-- **Discussions**: [Ask questions and share ideas](https://github.com/sszczep/homeassistant-grenton/discussions)
-- **GitHub Sponsors**: [Sponsor ongoing development](https://github.com/sponsors/sszczep)
-
-## 💖 Sponsor
-
-If you find this integration helpful, please consider supporting ongoing development via [**GitHub Sponsors**](https://github.com/sponsors/sszczep).
-
-Your support helps maintain features, fix bugs, and improve documentation.
+- **GitHub Issues**: [Report a bug or request a feature](https://github.com/k911/homeassistant-grenton/issues)
+- **Discussions**: [Ask questions and share ideas](https://github.com/k911/homeassistant-grenton/discussions)
 
 ## 🙏 Acknowledgments
 
+- [@sszczep](https://github.com/sszczep), author of the original Grenton integration
 - Home Assistant community for the excellent platform
 - Grenton for their smart home system
 - All contributors and users of this integration
@@ -785,6 +781,6 @@ Your support helps maintain features, fix bugs, and improve documentation.
 
 **Made with ❤️ for the Home Assistant community**
 
-[Report Bug](https://github.com/sszczep/homeassistant-grenton/issues) · [Request Feature](https://github.com/sszczep/homeassistant-grenton/issues) · [Discuss](https://github.com/sszczep/homeassistant-grenton/discussions)
+[Report Bug](https://github.com/k911/homeassistant-grenton/issues) · [Request Feature](https://github.com/k911/homeassistant-grenton/issues) · [Discuss](https://github.com/k911/homeassistant-grenton/discussions)
 
 </div>

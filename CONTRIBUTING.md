@@ -9,7 +9,7 @@ Thank you for considering a contribution to this project! We welcome improvement
 Click **Fork** on GitHub and clone your fork:
 
 ```bash
-git clone https://github.com/sszczep/homeassistant-grenton.git
+git clone https://github.com/k911/homeassistant-grenton.git
 cd homeassistant-grenton
 ```
 
@@ -124,8 +124,8 @@ When filing an issue, please include:
 - Logs or screenshots if helpful
 
 Open an issue here:
-- Issues: https://github.com/sszczep/homeassistant-grenton/issues
-- Discussions: https://github.com/sszczep/homeassistant-grenton/discussions
+- Issues: https://github.com/k911/homeassistant-grenton/issues
+- Discussions: https://github.com/k911/homeassistant-grenton/discussions
 
 ### License
 
@@ -135,9 +135,4 @@ By contributing, you agree your contributions are licensed under **GPL-3.0** (sa
 
 Be respectful and collaborative. Follow GitHub Community Guidelines. Discrimination, harassment, or toxicity is not tolerated.
 
-### Sponsor
-
-If this project helps you, please consider sponsoring ongoing development:
-- GitHub Sponsors: https://github.com/sponsors/sszczep
-
-Thank you for your support and contributions!
+Thank you for your contributions!
