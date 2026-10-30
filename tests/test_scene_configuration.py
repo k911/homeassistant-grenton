@@ -117,6 +117,11 @@ async def save_scene(coordinator, entity, submitted):
         return await submit_flow(flow, submitted)
 
 
+def scene_payload(entity):
+    """Check execution separately from the compact target-only metadata."""
+    return GrentonCluApiActionRequest.from_action(entity.script_action).payload
+
+
 @pytest.mark.parametrize(
     ("action_cls", "call_type", "payload"),
     [
@@ -131,18 +136,28 @@ def test_imported_actions_are_visible_and_executable(
 ):
     entity = make_scene(coordinator, action_cls)
     attributes = entity.extra_state_attributes
-    assert attributes["call_type"] == call_type
-    assert attributes["clu_id"] == "clu1"
-    assert attributes.get("object_name") == (
-        None if call_type == "VARIABLE" else "Evening"
-    )
-    assert attributes["event"] == "CLICK"
-    assert attributes["call"] == payload
-    assert ("index" in attributes) == (call_type in ("METHOD", "ATTRIBUTE"))
-    if call_type == "VARIABLE":
-        assert attributes["variable_name"] == "7"
+    expected = {
+        "call_type": call_type,
+        "clu_id": "clu1",
+        "object": "Evening"
+        if call_type == "SCRIPT"
+        else ("7" if call_type == "VARIABLE" else "Evening.7"),
+    }
+    if call_type == "SCRIPT":
+        expected["args"] = [42, "abc"]
+    elif call_type == "METHOD":
+        # The imported method sends one quoted value, even when its editor
+        # can offer a typed number on the next save.
+        expected["args"] = ["42"]
+    assert attributes == expected
     asyncio.run(entity.async_press())
     assert coordinator.execute_action.await_args.args[0] == entity.script_action
+    assert (
+        GrentonCluApiActionRequest.from_action(
+            coordinator.execute_action.await_args.args[0]
+        ).payload
+        == payload
+    )
 
 
 @pytest.mark.parametrize("action_cls", [GrentonActionScript, GrentonActionMethod])
@@ -154,10 +169,12 @@ def test_all_settings_and_dynamic_typed_argument_controls_share_one_dialog(
 
     async def run():
         with entry_patch:
-            result = await flow.async_step_init()
+            result = await flow.async_step_entity_list()
             assert (
                 "button.evening"
-                in ui_fields(result)["entity"]["selector"]["entity"]["include_entities"]
+                in ui_fields(result)["entity"]["selector"]["grenton_entity"][
+                    "include_entities"
+                ]
             )
             result = await flow.async_step_entity_list({"entity": entity.entity_id})
             assert result["step_id"] == "configure_scene_action"
@@ -171,12 +188,15 @@ def test_all_settings_and_dynamic_typed_argument_controls_share_one_dialog(
             assert draft["call_type"] == entity.extra_state_attributes["call_type"]
             assert draft["clu_id"] == "clu1"
             assert draft["object_name"] == "Evening"
-            assert draft["arguments"] == entity.extra_state_attributes["arguments"]
             if action_cls is GrentonActionScript:
                 assert draft["arguments"] == [
                     {"type": "number", "value": 42},
                     {"type": "string", "value": "abc"},
                 ]
+                assert entity.extra_state_attributes["args"] == [42, "abc"]
+            else:
+                assert draft["arguments"] == [{"type": "number", "value": 42}]
+                assert entity.extra_state_attributes["args"] == ["42"]
             submitted = editor_input(draft["call_type"], arguments=draft["arguments"])
             result = await submit_flow(flow, submitted)
             assert result["type"] == "create_entry"  # No second dialog.
@@ -205,7 +225,10 @@ def test_argument_types_are_encoded_in_order_and_persist(
         prefix + '-1.25, "room \\"A\\"\\\\door\\nnext", false, nil, OTHER:get(2))'
     )
     assert result["type"] == "create_entry"
-    assert entity.extra_state_attributes["call"] == expected
+    assert scene_payload(entity) == expected
+    assert entity.extra_state_attributes["object"] == (
+        "Evening" if call_type == "SCRIPT" else "Evening.7"
+    )
     assert result["data"]["entities"]["scene_1"]["arguments"] == arguments
     coordinator.config_entry.options = result["data"]
     restored = make_scene(coordinator, value="99")
@@ -240,8 +263,11 @@ def test_whole_float_arguments_keep_their_type_after_save_and_reload(
     assert saved["value"] == 1.0
     coordinator.config_entry.options = result["data"]
     restored = make_scene(coordinator)
-    assert restored.extra_state_attributes["call"] == (
+    assert scene_payload(restored) == (
         "Evening(1.0)" if call_type == "SCRIPT" else "Evening:execute(7, 1.0)"
+    )
+    assert restored.extra_state_attributes["object"] == (
+        "Evening" if call_type == "SCRIPT" else "Evening.7"
     )
     flow, entry_patch = make_flow(coordinator, restored)
     with entry_patch:
@@ -272,7 +298,8 @@ def test_save_updates_state_and_keeps_unrelated_options(coordinator):
     )
     assert result["data"]["unrelated"] == {"keep": True}
     assert result["data"]["entities"]["other"] == {"unit": "W"}
-    assert entity.extra_state_attributes["call"] == "Relay:execute(3, 80)"
+    assert scene_payload(entity) == "Relay:execute(3, 80)"
+    assert entity.extra_state_attributes["object"] == "Relay.3"
     entity.async_write_ha_state.assert_called_once()
     assert entity._widget_action.value == '42, "abc"'
 
@@ -291,9 +318,13 @@ def test_removing_all_arguments_does_not_reinsert_old_defaults(
         submitted.pop("arguments")
     result = asyncio.run(save_scene(coordinator, entity, submitted))
     assert result["data"]["entities"]["scene_1"]["arguments"] == []
-    assert entity.extra_state_attributes["call"] == expected
+    assert scene_payload(entity) == expected
+    assert entity.extra_state_attributes["args"] == []
+    assert entity.extra_state_attributes["object"] == (
+        "Evening" if call_type == "SCRIPT" else "Evening.7"
+    )
     coordinator.config_entry.options = result["data"]
-    assert make_scene(coordinator).extra_state_attributes["call"] == expected
+    assert scene_payload(make_scene(coordinator)) == expected
 
 
 @pytest.mark.parametrize(
@@ -318,11 +349,12 @@ def test_invalid_settings_keep_the_combined_dialog_open(coordinator, field, valu
             assert result["step_id"] == "configure_scene_action"
             assert result["errors"] == {"action": "invalid_configuration"}
             assert flow.current_step_index == 0
-            assert entity.extra_state_attributes["call"] == 'Evening(42, "abc")'
+            assert scene_payload(entity) == 'Evening(42, "abc")'
             assert editor_draft(result)[field] == value
             result = await submit_flow(flow, editor_input("METHOD", index="4"))
             assert result["type"] == "create_entry"
-            assert entity.extra_state_attributes["call"] == "Evening:execute(4)"
+            assert scene_payload(entity) == "Evening:execute(4)"
+            assert entity.extra_state_attributes["object"] == "Evening.4"
 
     asyncio.run(run())
 
@@ -359,12 +391,14 @@ def test_invalid_arguments_are_retained_for_correction(
             result = await submit_flow(flow, submitted)
             assert result["errors"] == {"action": "invalid_configuration"}
             assert editor_draft(result)["arguments"] == rows
-            assert entity.extra_state_attributes["call"] == 'Evening(42, "abc")'
+            assert scene_payload(entity) == 'Evening(42, "abc")'
             result = await submit_flow(
                 flow, editor_input(arguments=[{"type": "string", "value": "fixed"}])
             )
             assert result["type"] == "create_entry"
-            assert entity.extra_state_attributes["call"] == 'Evening("fixed")'
+            assert scene_payload(entity) == 'Evening("fixed")'
+            assert entity.extra_state_attributes["object"] == "Evening"
+            assert entity.extra_state_attributes["args"] == ["fixed"]
 
     asyncio.run(run())
 
@@ -380,7 +414,7 @@ def test_missing_or_malformed_editor_draft_stays_editable(coordinator, submitted
             result = await submit_flow(flow, submitted)
             assert result["step_id"] == "configure_scene_action"
             assert result["errors"] == {"action": "invalid_configuration"}
-            assert entity.extra_state_attributes["call"] == 'Evening(42, "abc")'
+            assert scene_payload(entity) == 'Evening(42, "abc")'
             result = await submit_flow(flow, editor_input())
             assert result["type"] == "create_entry"
 
@@ -403,7 +437,9 @@ def test_rows_can_be_added_removed_and_reordered_on_reopen(coordinator):
     result = asyncio.run(
         save_scene(coordinator, entity, editor_input(arguments=changed))
     )
-    assert entity.extra_state_attributes["call"] == "Evening(true, 1, 3)"
+    assert scene_payload(entity) == "Evening(true, 1, 3)"
+    assert entity.extra_state_attributes["object"] == "Evening"
+    assert entity.extra_state_attributes["args"] == [True, 1, 3]
     assert result["data"]["entities"]["scene_1"]["arguments"] == changed
 
 
@@ -455,9 +491,14 @@ def test_set_value_calls_use_value_and_ignore_stale_argument_rows(
     )
     assert result["type"] == "create_entry"
     assert "arguments" not in result["data"]["entities"]["scene_1"]
-    assert entity.extra_state_attributes["call"] == (
+    assert GrentonCluApiActionRequest.from_action(entity.script_action).payload == (
         'setVar("7","10")' if call_type == "VARIABLE" else 'Evening:set(7,"10")'
     )
+    assert entity.extra_state_attributes == {
+        "clu_id": "clu1",
+        "call_type": call_type,
+        "object": "7" if call_type == "VARIABLE" else "Evening.7",
+    }
 
 
 def test_switching_to_script_removes_index(coordinator):
@@ -473,7 +514,9 @@ def test_switching_to_script_removes_index(coordinator):
     coordinator.config_entry.options = result["data"]
     restored = make_scene(coordinator, GrentonActionMethod)
     assert "index" not in restored.extra_state_attributes
-    assert restored.extra_state_attributes["call"] == 'Evening("bedroom")'
+    assert scene_payload(restored) == 'Evening("bedroom")'
+    assert restored.extra_state_attributes["object"] == "Evening"
+    assert restored.extra_state_attributes["args"] == ["bedroom"]
 
 
 def test_variable_call_does_not_require_an_unused_object_name(coordinator):
@@ -482,10 +525,13 @@ def test_variable_call_does_not_require_an_unused_object_name(coordinator):
     submitted.pop("object_name")
     result = asyncio.run(save_scene(coordinator, entity, submitted))
     assert result["type"] == "create_entry"
-    assert entity.extra_state_attributes["call"] == 'setVar("level","20")'
+    assert (
+        GrentonCluApiActionRequest.from_action(entity.script_action).payload
+        == 'setVar("level","20")'
+    )
     assert "object_name" not in entity.extra_state_attributes
     assert "index" not in entity.extra_state_attributes
-    assert entity.extra_state_attributes["variable_name"] == "level"
+    assert entity.extra_state_attributes["object"] == "level"
 
 
 @pytest.mark.parametrize(
@@ -510,8 +556,11 @@ def test_variable_target_migrates_without_using_original_widget_index(
         }
     }
     entity = make_scene(coordinator, GrentonActionMethod, index="7")
-    assert entity.extra_state_attributes["variable_name"] == "saved_level"
-    assert entity.extra_state_attributes["call"] == 'setVar("saved_level","10")'
+    assert entity.extra_state_attributes["object"] == "saved_level"
+    assert (
+        GrentonCluApiActionRequest.from_action(entity.script_action).payload
+        == 'setVar("saved_level","10")'
+    )
     assert "object_name" not in entity.extra_state_attributes
     assert "index" not in entity.extra_state_attributes
 
@@ -530,9 +579,16 @@ def test_target_only_form_preserves_the_existing_set_value(coordinator, action_c
     }
     result = asyncio.run(save_scene(coordinator, entity, submitted))
     assert result["type"] == "create_entry"
-    assert entity.extra_state_attributes["value"] == "original"
-    assert "arguments" not in entity.extra_state_attributes
-    assert entity.extra_state_attributes["call"] == (
+    assert entity.script_action.value == "original"
+    assert result["data"]["entities"]["scene_1"]["value"] == "original"
+    assert entity.extra_state_attributes == {
+        "clu_id": "clu2",
+        "call_type": submitted["call_type"],
+        "object": "bedroom_level"
+        if action_cls is GrentonActionVariable
+        else "DOUT_Object.0",
+    }
+    assert GrentonCluApiActionRequest.from_action(entity.script_action).payload == (
         'setVar("bedroom_level","original")'
         if action_cls is GrentonActionVariable
         else 'DOUT_Object:set(0,"original")'
@@ -554,7 +610,9 @@ def test_method_number_zero_is_an_optional_argument_not_an_attribute_value(coord
         )
     )
     assert result["type"] == "create_entry"
-    assert entity.extra_state_attributes["call"] == "DOUT_Object:execute(2, 0)"
+    assert scene_payload(entity) == "DOUT_Object:execute(2, 0)"
+    assert entity.extra_state_attributes["object"] == "DOUT_Object.2"
+    assert entity.extra_state_attributes["args"] == [0]
 
 
 @pytest.mark.parametrize("call_type", ["SCRIPT", "METHOD", "ATTRIBUTE", "VARIABLE"])
@@ -662,12 +720,10 @@ def test_mapper_keeps_existing_script_preference(coordinator):
             }
         ],
     )
-    assert (
-        DeviceSceneMapper.to_domain(dto, coordinator)
-        .entities[0]
-        .extra_state_attributes["call"]
-        == "Scene(1)"
-    )
+    entity = DeviceSceneMapper.to_domain(dto, coordinator).entities[0]
+    assert scene_payload(entity) == "Scene(1)"
+    assert entity.extra_state_attributes["object"] == "Scene"
+    assert entity.extra_state_attributes["args"] == [1]
 
 
 @pytest.mark.parametrize(
@@ -734,7 +790,11 @@ def test_imported_method_list_is_editable_as_separate_numbers_and_saved_correctl
             ).payload
             == "Evening:execute(7, 800, 0)"
         )
-        assert restored.extra_state_attributes["arguments"] == draft["arguments"]
+        assert restored.extra_state_attributes["args"] == [800, 0]
+        assert (
+            coordinator.config_entry.options["entities"]["scene_1"]["arguments"]
+            == draft["arguments"]
+        )
 
     asyncio.run(run())
 

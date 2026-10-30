@@ -3,6 +3,7 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, ClassVar
+from unicodedata import combining, normalize
 
 import voluptuous as vol
 from homeassistant.components.light import ColorMode, LightEntity
@@ -17,7 +18,7 @@ from ..action_configuration import (
     configured_action,
     normalize_action_configuration,
 )
-from ..api.clu_messages.action import GrentonCluApiActionRequest
+from ..entity_references import action_reference
 from ..enums import GrentonUnit
 from ..state_object import (
     GrentonAttributeValueObject,
@@ -95,10 +96,29 @@ class GrentonOnOffConfigurationSchema(BaseGrentonEntityConfigurationSchema):
         return StepResult(schema=vol.Schema({marker: editor}))
 
 
-def configured_on_off_type(coordinator: GrentonCoordinator, unique_id: str) -> str:
-    """Resolve the domain before forwarding entities to HA platforms."""
+def configured_on_off_type(
+    coordinator: GrentonCoordinator,
+    unique_id: str,
+    *,
+    label: str = "",
+    icon: str | None = None,
+) -> str:
+    """Prefer saved choices; otherwise detect lights from imported metadata."""
     config = coordinator.config_entry.options.get("entities", {}).get(unique_id, {})
-    return "light" if config.get("entity_type") == "light" else "switch"
+    if config.get("entity_type") in ("switch", "light"):
+        return config["entity_type"]
+    name = "".join(
+        character
+        for character in normalize("NFKD", label.casefold().replace("ł", "l"))
+        if not combining(character)
+    )
+    return (
+        "light"
+        if "light" in name
+        or "swiatlo" in name
+        or (icon or "").strip().casefold() == "bulb"
+        else "switch"
+    )
 
 
 class GrentonEntityOnOff(
@@ -107,6 +127,7 @@ class GrentonEntityOnOff(
     """Share state, actions and options between the switch and light domains."""
 
     reload_after_configuration = True
+    default_entity_type: ClassVar[str] = "switch"
 
     def __init__(
         self,
@@ -145,7 +166,7 @@ class GrentonEntityOnOff(
         else:
             state_config.update(object_name=state.object_name, index=state.index)
         return {
-            "entity_type": "switch",
+            "entity_type": self.default_entity_type,
             "state": state_config,
             "action_on": action_configuration(self._widget_action_on),
             "action_off": action_configuration(self._widget_action_off),
@@ -176,15 +197,12 @@ class GrentonEntityOnOff(
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        attributes = {"state_source": deepcopy(self._config["state"])}
+        attributes = dict(super().extra_state_attributes or {})
         for key, action in (
             ("action_on", self.action_on),
             ("action_off", self.action_off),
         ):
-            attributes[key] = {
-                **action_editor_draft(self._config[key]),
-                "call": GrentonCluApiActionRequest.from_action(action).payload,
-            }
+            attributes.update(action_reference(action, prefix=f"{key}_"))
         return attributes
 
     async def apply_configuration(self, user_input: dict[str, Any]) -> dict[str, Any]:
@@ -210,5 +228,6 @@ class GrentonEntityOnOff(
 class GrentonEntityOnOffLight(GrentonEntityOnOff, LightEntity):
     """An ON_OFF control exposed as a light without dimming capabilities."""
 
+    default_entity_type = "light"
     _attr_supported_color_modes: ClassVar[set[ColorMode]] = {ColorMode.ONOFF}
     _attr_color_mode = ColorMode.ONOFF
