@@ -14,9 +14,14 @@ from .const import DOMAIN
 from .domain.entities.clu import GrentonCluEntity
 from .domain.entities.scene_button import GrentonEntitySceneButton
 from .domain.entities.scene_configuration import scene_arguments_selector
+from .domain.entities.thermostat_v2 import GrentonEntityThermostatV2
 
 SERVICE_RUN_SCRIPT = "run_script"
 SERVICE_RUN_SCENE = "run_scene"
+SERVICE_SET_THERMOSTAT_SCHEDULE = "set_thermostat_schedule"
+SERVICE_SET_THERMOSTAT_SCHEDULE_SCHEMA = cv.make_entity_service_schema(
+    {vol.Required("schedule"): dict}
+)
 SERVICE_RUN_SCENE_SCHEMA = {
     vol.Optional("parameter"): cv.string,
 }
@@ -44,6 +49,31 @@ def async_setup_services(hass: HomeAssistant) -> None:
         entity_domain=Platform.BUTTON,
         schema=SERVICE_RUN_SCENE_SCHEMA,
         func=_async_run_scene,
+    )
+    service.async_register_batched_platform_entity_service(
+        hass,
+        DOMAIN,
+        SERVICE_SET_THERMOSTAT_SCHEDULE,
+        entity_domain=Platform.CLIMATE,
+        schema=SERVICE_SET_THERMOSTAT_SCHEDULE_SCHEMA,
+        func=_async_set_thermostat_schedule,
+    )
+
+
+async def _async_set_thermostat_schedule(
+    entities: list[Entity], call: ServiceCall
+) -> None:
+    """Update thermostat schedules using Home Assistant target resolution."""
+    thermostats = [
+        entity for entity in entities if isinstance(entity, GrentonEntityThermostatV2)
+    ]
+    if not thermostats:
+        raise ServiceValidationError("Select a Grenton thermostat entity or device")
+    await asyncio.gather(
+        *(
+            entity.async_set_thermostat_schedule(call.data["schedule"])
+            for entity in thermostats
+        )
     )
 
 

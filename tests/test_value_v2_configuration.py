@@ -222,6 +222,7 @@ def test_integration_options_flow_switches_domains_and_clears_incompatible_setti
             assert result["type"] == "create_entry"
             assert result["data"]["entities"][entity.unique_id] == {
                 "entity_type": "binary_sensor",
+                "read_mode": "realtime",
                 "device_class": "door",
                 "invert_state": invert_state,
             }
@@ -269,6 +270,7 @@ def test_integration_options_flow_switches_domains_and_clears_incompatible_setti
             )
             assert result["data"]["entities"]["front_door_0"] == {
                 "entity_type": "sensor",
+                "read_mode": "slow",
                 "device_class": "temperature",
                 "unit_of_measurement": "°C",
             }
@@ -332,12 +334,17 @@ def test_native_ha_registration_round_trip_and_enum_has_no_measurement_warning(
             assert state.state == ("on" if domain == "binary_sensor" else "0")
             assert "state_class" not in state.attributes
             assert "unit_of_measurement" not in state.attributes
-            assert state.attributes["state_source"] == {
+            assert {
+                key: state.attributes[key] for key in ("call_type", "clu_id", "object")
+            } == {
                 "call_type": "ATTRIBUTE",
                 "clu_id": "clu2",
-                "object_name": "DIN_1",
-                "index": "3",
+                "object": "DIN_1.3",
             }
+            assert (
+                not {"state_source", "object_name", "index", "variable_name"}
+                & state.attributes.keys()
+            )
             assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == 1
             if device_id:
                 assert entity.registry_entry.device_id == device_id
@@ -419,21 +426,20 @@ def test_double_source_attributes_follow_each_channel_and_preserve_sources(entit
         cluId="clu1", objectName="", index="DoorClosed"
     )
     left, right = DeviceMapper.to_domain(dto, coord).entities
-    assert left.extra_state_attributes["state_source"] == {
+    assert left.extra_state_attributes == {
         "call_type": "ATTRIBUTE",
         "clu_id": "clu2",
-        "object_name": "DIN_1",
-        "index": "3",
+        "object": "DIN_1.3",
     }
-    assert right.extra_state_attributes["state_source"] == {
+    assert right.extra_state_attributes == {
         "call_type": "VARIABLE",
         "clu_id": "clu1",
-        "variable_name": "DoorClosed",
+        "object": "DoorClosed",
     }
     # Inspecting or altering a returned snapshot cannot change the subscribed source.
-    right.extra_state_attributes["state_source"]["variable_name"] = "Other"
+    right.extra_state_attributes["object"] = "Other"
     assert right.state_object.index == "DoorClosed"
-    assert right.extra_state_attributes["state_source"]["variable_name"] == "DoorClosed"
+    assert right.extra_state_attributes["object"] == "DoorClosed"
     assert [call.args[0] for call in coord.register_component_state.call_args_list] == [
         left.state_object,
         right.state_object,
@@ -571,7 +577,7 @@ def test_native_binary_dialog_loads_localized_field_labels(
         ):
             flow = GrentonOptionsFlow()
             flow.hass = hass
-            await flow.async_step_init({"entity": device.entities[0].entity_id})
+            await flow.async_step_entity_list({"entity": device.entities[0].entity_id})
             form = await flow.async_step_configure_value_v2_type(
                 {"entity_type": "binary_sensor"}
             )

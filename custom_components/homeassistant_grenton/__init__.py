@@ -6,19 +6,18 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.entity import Entity
 
 from .coordinator import GrentonCoordinator
 from .domain.clu import GrentonClu
 from .domain.encryption import GrentonEncryption
 from .domain.entities.clu import GrentonCluEntity
-from .domain.entities.clu_state import GrentonCluStateEntity
 from .domain.entities.clu_state import clu_entities as create_clu_entities
 from .domain.entities.clu_variables import (
-    GrentonCluCustomVariable,
     GrentonCluVariableSensor,
     GrentonCluVariableSwitch,
 )
-from .domain.entities.on_off import GrentonEntityOnOff, configured_on_off_type
+from .domain.entities.on_off import GrentonEntityOnOff
 from .domain.entities.value_v2 import ValueV2Configuration, configured_value_v2_type
 from .dto.mobile_interface import GrentonMobileInterfaceDto
 from .frontend import async_register_scene_editor
@@ -28,7 +27,7 @@ from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.LIGHT, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.COVER, Platform.CAMERA]
+PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.SENSOR, Platform.LIGHT, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.COVER, Platform.CAMERA, Platform.CLIMATE]
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Make CLU actions available even before a config entry is loaded."""
@@ -76,9 +75,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: GrentonConfigEntr
     _cleanup_orphans(hass, config_entry, devices, clu_entities)
 
     # Setup the coordinator
-    await coordinator.async_setup()
-
-    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    try:
+        await coordinator.async_setup()
+        await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    except BaseException:
+        await coordinator.async_shutdown()
+        raise
 
     return True
 
@@ -87,7 +89,7 @@ def _cleanup_orphans(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     devices: list,
-    clu_entities: list[GrentonCluEntity | GrentonCluStateEntity | GrentonCluCustomVariable],
+    clu_entities: list[Entity],
 ) -> None:
     """Remove entity/device registry entries that no longer back a widget or CLU.
 
@@ -111,7 +113,7 @@ def _cleanup_orphans(
             valid_device_identifiers.update(info["identifiers"])
 
     configured_entity_domains = {
-        entity.unique_id: configured_on_off_type(entity.coordinator, entity.unique_id)
+        entity.unique_id: entity.default_entity_type
         for device in devices
         for entity in device.entities
         if isinstance(entity, GrentonEntityOnOff)
@@ -165,10 +167,9 @@ def _cleanup_orphans(
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     coordinator: GrentonCoordinator = config_entry.runtime_data.coordinator
     
-    # Shutdown coordinator (close UDP sockets)
-    await coordinator.async_shutdown()
-    
-    # Unload platforms
+    # Keep a working coordinator if HA cannot unload one of its platforms.
     unload_ok = await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
+    if unload_ok:
+        await coordinator.async_shutdown()
     
     return unload_ok

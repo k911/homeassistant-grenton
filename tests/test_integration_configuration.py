@@ -10,7 +10,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from probatio import to_field_list
+from probatio import Invalid, to_field_list
 from test_clu_scripts import make_clu, make_entry, make_hass
 from test_on_off_configuration import coordinator, widget
 
@@ -47,9 +47,19 @@ def test_integration_options_lists_all_widgets_and_preserves_sibling_configurati
             return_value=coord.config_entry,
         ):
             global_flow = GrentonOptionsFlow()
-            result = await global_flow.async_step_init()
+            result = await global_flow.async_step_entity_list()
+            # HA cannot infer an initial value for integration-defined selectors.
+            # The suggested empty string avoids that inference without choosing
+            # a real entity or accepting an unselected form submission.
+            assert fields(result)["entity"]["description"]["suggested_value"] == ""
+            with pytest.raises(Invalid):
+                result["data_schema"]({"entity": ""})
             assert (
-                len(fields(result)["entity"]["selector"]["entity"]["include_entities"])
+                len(
+                    fields(result)["entity"]["selector"]["grenton_entity"][
+                        "include_entities"
+                    ]
+                )
                 == 3
             )
             flow = GrentonOptionsFlow()
