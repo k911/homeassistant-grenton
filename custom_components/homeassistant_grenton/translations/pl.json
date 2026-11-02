@@ -357,6 +357,41 @@
       "clu_firmware_version": {
         "name": "Wersja oprogramowania"
       },
+      "clu_state": {
+        "name": "Stan",
+        "state": {
+          "system_starting": "Uruchamianie systemu",
+          "system_ok": "System OK",
+          "telnet_logging": "Logowanie Telnet",
+          "emergency": "Tryb awaryjny",
+          "critical_error": "Błąd krytyczny",
+          "monitor": "Tryb monitorowania",
+          "module_not_responding": "Moduł nie odpowiada",
+          "zwave_inclusion": "Dodawanie węzła Z-Wave",
+          "zwave_exclusion": "Usuwanie węzła Z-Wave",
+          "zwave_busy": "Operacja Z-Wave w toku",
+          "zwave_error": "Błąd operacji Z-Wave",
+          "zwave_success": "Operacja Z-Wave zakończona"
+        },
+        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+      },
+      "clu_telnet_log_level": {
+        "name": "Poziom logowania Telnet",
+        "state": {
+          "off": "Wyłączone", "error": "Błąd", "warning": "Ostrzeżenie", "info": "Informacje", "debug": "Debugowanie"
+        },
+        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+      },
+      "clu_reset_reason": {
+        "name": "Przyczyna restartu",
+        "state": {
+          "power_on": "Włączenie zasilania",
+          "external_reset": "Reset zewnętrzny",
+          "configuration_reload": "Przeładowanie konfiguracji",
+          "system_exception": "Wyjątek systemowy"
+        },
+        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+      },
       "thermostat_schedule": {
         "name": "Harmonogram",
         "state_attributes": {
@@ -418,6 +453,9 @@
       }
     },
     "switch": {
+      "clu_debug_logging": {
+        "name": "Logowanie DEBUG"
+      },
       "clu_use_cloud": {
         "name": "Używaj chmury"
       }

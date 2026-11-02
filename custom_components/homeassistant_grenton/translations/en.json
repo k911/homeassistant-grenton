@@ -357,6 +357,41 @@
       "clu_firmware_version": {
         "name": "Firmware version"
       },
+      "clu_state": {
+        "name": "State",
+        "state": {
+          "system_starting": "System starting",
+          "system_ok": "System OK",
+          "telnet_logging": "Telnet logging",
+          "emergency": "Emergency",
+          "critical_error": "Critical error",
+          "monitor": "Monitor mode",
+          "module_not_responding": "Module not responding",
+          "zwave_inclusion": "Adding Z-Wave node",
+          "zwave_exclusion": "Removing Z-Wave node",
+          "zwave_busy": "Z-Wave operation in progress",
+          "zwave_error": "Z-Wave operation failed",
+          "zwave_success": "Z-Wave operation successful"
+        },
+        "state_attributes": {"raw_value": {"name": "Raw value"}}
+      },
+      "clu_telnet_log_level": {
+        "name": "Telnet log level",
+        "state": {
+          "off": "Off", "error": "Error", "warning": "Warning", "info": "Info", "debug": "Debug"
+        },
+        "state_attributes": {"raw_value": {"name": "Raw value"}}
+      },
+      "clu_reset_reason": {
+        "name": "Reset reason",
+        "state": {
+          "power_on": "Power on",
+          "external_reset": "External reset",
+          "configuration_reload": "Configuration reload",
+          "system_exception": "System exception"
+        },
+        "state_attributes": {"raw_value": {"name": "Raw value"}}
+      },
       "thermostat_schedule": {
         "name": "Schedule",
         "state_attributes": {
@@ -418,6 +453,9 @@
       }
     },
     "switch": {
+      "clu_debug_logging": {
+        "name": "Debug logging"
+      },
       "clu_use_cloud": {
         "name": "Use cloud"
       }

@@ -97,7 +97,8 @@ python3 main.py debug-logs --clu CLU_Z_WAVE_1 --level INFO
 ```
 
 `logs` is an alias for `debug-logs`. `--level` accepts `OFF`, `ERROR`, `WARNING`,
-`INFO`, and `DEBUG` (case insensitive), mapped to CLU attribute 31 values 0–4.
+`INFO`, and `DEBUG` (case insensitive), mapped to values 0–4. The log-level
+attribute is selected by controller type: 31 on CLU Z-Wave, 23 on GATE HTTP.
 The default is `DEBUG`. The command selects the CLU by its name in the saved
 configuration and writes its imported object ID's attribute through the encrypted
 UDP API. Use `--config /path/to/config.yaml` for another configuration file.
@@ -188,6 +189,48 @@ python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
   --attribute DIN5697.1
 ```
 
+CLU attributes use the same command. For example, watch **uptime (0)** and the
+**internal log (1)** on your CLU Z-Wave:
+
+```bash
+python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
+  --attribute CLU828599.0 --attribute CLU828599.1
+```
+
+`--clu` is the configured controller name; `CLU828599` is its imported Lua object
+ID. Use the actual object ID from your configuration, not the controller's
+friendly name. The command prints the initial values, then changed values until
+Ctrl+C; it does not write the attributes. `--output json` emits timestamped JSON
+lines and preserves the complete log text, including embedded newlines:
+
+```bash
+python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
+  --attribute CLU828599.0 --attribute CLU828599.1 --output json
+```
+
+The watcher uses realtime subscriptions. Uptime changes every second and can
+cause the whole subscribed group, including the log, to be reported repeatedly.
+For a single diagnostic sample use `fetch-values` below, or watch only the log
+when continuous uptime updates are unnecessary. `--refresh-interval` controls
+subscription renewal (default 45 seconds), not the CLU's change-report frequency.
+
+Supported built-in diagnostic attribute indexes differ by controller type:
+
+| Value | CLU Z-Wave | GATE HTTP |
+| --- | ---: | ---: |
+| Uptime | 0 | 0 |
+| Internal log | 1 | Not exposed |
+| State | 2 | Not exposed |
+| Telnet log level | 31 | 23 |
+| Reset reason | Not exposed | 26 |
+
+State and reason values are returned as native numeric codes. On CLU Z-Wave,
+state 0 means starting, 1 OK, 2 Telnet logging, 3 emergency, 4 critical error,
+and 6 a nonresponding module. On GATE HTTP, reset reason 0 means power-on,
+2 configuration reload, and 3 system exception; retain other raw values rather
+than assuming they indicate a crash. A GATE reset reason describes that GATE,
+not the separate CLU Z-Wave.
+
 ### Fetch selected values once
 
 `fetch-values` reads attributes and variables through `SYSTEM:fetchValues` on
@@ -196,6 +239,18 @@ one control socket. It creates no realtime subscriptions and sends no writes.
 ```bash
 python3 main.py fetch-values --clu CLU_Z_WAVE_1 \
   --attribute CLU828599.0 --attribute THERMOSTAT1.14 --variable Counter
+```
+
+Read the supported native diagnostic values without opening subscriptions:
+
+```bash
+python3 main.py fetch-values --clu CLU_Z_WAVE_1 \
+  --attribute CLU828599.0 --attribute CLU828599.1 \
+  --attribute CLU828599.2 --attribute CLU828599.31 --output json
+
+python3 main.py fetch-values --clu CLU_GATE_HTTP_1 \
+  --attribute CLU521000922.0 --attribute CLU521000922.23 \
+  --attribute CLU521000922.26 --output json
 ```
 
 Repeat `--attribute OBJECT.INDEX` or `--variable NAME` as needed. For a safe

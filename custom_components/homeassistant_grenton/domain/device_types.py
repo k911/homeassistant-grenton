@@ -12,16 +12,20 @@ CLU_SERIAL_PREFIXES: dict[str, str] = {
 DEVICE_ATTRIBUTES: dict[str, dict[int, str]] = {
     CLU_Z_WAVE: {
         0: "Uptime",
+        2: "State",
         17: "FirmwareVersion",
         18: "UseCloud",
         19: "CloudConnection",
         27: "BusVoltage",
+        31: "TelnetLogLevel",
     },
     CLU_GATE_HTTP: {
         0: "Uptime",
         17: "FirmwareVersion",
         18: "UseCloud",
         19: "CloudConnection",
+        23: "TelnetLogLevel",
+        26: "ResetReason",
     },
 }
 

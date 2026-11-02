@@ -21,6 +21,7 @@ from homeassistant_grenton.domain.api.object_manager import (
     GrentonObjectManagerDataError,
 )
 from homeassistant_grenton.domain.clu import GrentonClu
+from homeassistant_grenton.domain.device_types import attribute_index
 from homeassistant_grenton.domain.encryption import GrentonEncryption
 from homeassistant_grenton.dto.clu import GrentonCluDto
 from homeassistant_grenton.dto.encryption import GrentonEncryptionDto
@@ -113,10 +114,14 @@ class GrentonManager:
                 clu_name, ", ".join(clu.name for clu in config.clus),
             )
             sys.exit(1)
+        index = attribute_index(clu.device_type, "TelnetLogLevel")
+        if index is None:
+            _LOGGER.error("CLU '%s' does not have a supported Telnet log-level attribute", clu.name)
+            sys.exit(1)
         api = GrentonCluApi(clu, config.encryption)
         action = GrentonActionAttribute(
             clu_id=clu.id, object_name=clu.object_name,
-            event=GrentonActionEventType.CLICK, index="31", value=str(levels[level]),
+            event=GrentonActionEventType.CLICK, index=index, value=str(levels[level]),
             lua_value=str(levels[level]),
         )
 
@@ -154,7 +159,7 @@ class GrentonManager:
                 except (OSError, TimeoutError) as error:
                     session_established = True
                     _LOGGER.warning("CLU Telnet connection failed: %s; reconnecting", error)
-                # Source deployment runs OnInit, which may reset attribute 31.
+                # Source deployment runs OnInit, which may reset the log level.
                 while True:
                     await asyncio.sleep(1)
                     try:

@@ -539,11 +539,41 @@ the device type.
 | Use cloud | 18 | `switch` | Both types; enable or disable the CLU cloud connector. |
 | Firmware version | 17 | `sensor` | Both types; read-only software version, also shown in the device's firmware metadata. |
 | Bus voltage | 27 | `sensor` | CLU_Z_WAVE only; read-only voltage in V, with measurement statistics. |
+| State | 2 | `sensor` | CLU_Z_WAVE only; native state such as System OK, Emergency or Critical error. |
+| Telnet log level | 31 / 23 | `sensor` | CLU_Z_WAVE / CLU_GATE_HTTP; Off, Error, Warning, Info or Debug. |
+| Reset reason | 26 | `sensor` | CLU_GATE_HTTP only; Power on, External reset, Configuration reload or System exception. |
+| Debug logging | 31 / 23 | `switch` | CLU_Z_WAVE / CLU_GATE_HTTP; enable DEBUG (4), or disable native logging with OFF (0). |
 
-Read-only values appear under **Diagnostic**; Use cloud appears under
-**Configuration**. They share the existing CLU device and receive values
-through attribute subscriptions. Use cloud writes a boolean to attribute 18
-and reads the CLU state back. Values not yet reported remain unknown.
+Read-only values appear under **Diagnostic**; Use cloud and Debug logging appear
+under **Configuration**. They share the existing CLU device and use each CLU's
+configured slow-poll interval (60 seconds by default), without adding realtime
+subscriptions. Values remain unknown until confirmed and expire after two missed
+poll intervals. Existing explicit realtime consumers retain their configured
+precedence for a shared attribute.
+
+Use cloud writes a boolean to attribute 18 and reads the CLU state back. Debug
+logging writes a numeric level to the type-specific attribute and reads just
+that attribute back, updating both the switch and the log-level sensor. The
+switch is on only for DEBUG; ERROR, WARNING and INFO remain visible on the level
+sensor while the switch is off. Enabling it does not open a Telnet connection.
+To listen to native logs, use the CLI `debug-logs` command after stopping Object
+Manager's log listener; each CLU supports only one Telnet session.
+
+State, level and reset-reason sensors include `raw_value`; unrecognized codes
+remain unknown instead of receiving an invented label. Internal log (attribute 1
+on CLU_Z_WAVE) is currently available through the CLI only; Home Assistant does
+not poll it. Use the CLI's `fetch-values` or `watch-attribute` to inspect it.
+For example, from `examples/cli`:
+
+```bash
+python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
+  --attribute CLU828599.0 --attribute CLU828599.1 --output json
+```
+
+This watches uptime and internal-log changes through subscriptions; it is
+separate from Home Assistant's slow polling. Use the imported CLU object ID
+from your configuration. More examples are in [the CLI README](examples/cli/README.md).
+
 Unrecognized serial prefixes still get a Controller entity for script calls;
 only supported types get built-in attribute entities.
 

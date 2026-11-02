@@ -181,7 +181,10 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
 
 class DebugLogsManagerTests(unittest.IsolatedAsyncioTestCase):
     def fixtures(self):
-        target = SimpleNamespace(id="CLU_REAL", object_name="CLU_REAL", name="Main", ip="192.0.2.10")
+        target = SimpleNamespace(
+            id="CLU_REAL", object_name="CLU_REAL", name="Main", ip="192.0.2.10",
+            device_type="CLU_Z_WAVE",
+        )
         config = SimpleNamespace(clus=[target], encryption=object())
         api = SimpleNamespace(
             connect=AsyncMock(return_value=True),
@@ -232,6 +235,32 @@ class DebugLogsManagerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertGreaterEqual(api.execute_action.await_count, 2)
                 sleep.assert_awaited()
                 api.disconnect.assert_awaited_once()
+
+    async def test_gate_http_uses_its_own_telnet_level_attribute(self):
+        config, api = self.fixtures()
+        config.clus[0].device_type = "CLU_GATE_HTTP"
+        with (
+            patch("grenton_api.load_configuration", return_value=config),
+            patch("grenton_api.GrentonCluApi", return_value=api),
+            patch("grenton_api.stream_logs", AsyncMock(side_effect=asyncio.CancelledError)),
+            self.assertRaises(asyncio.CancelledError),
+        ):
+            await GrentonManager().debug_logs(Path("unused"), "Main")
+        action = api.execute_action.await_args.args[0]
+        self.assertEqual(GrentonCluApiActionRequest.from_action(action).payload, "CLU_REAL:set(23,4)")
+        api.disconnect.assert_awaited_once()
+
+    async def test_unsupported_clu_does_not_open_or_write_to_a_socket(self):
+        config, _ = self.fixtures()
+        config.clus[0].device_type = None
+        with (
+            patch("grenton_api.load_configuration", return_value=config),
+            patch("grenton_api.GrentonCluApi") as constructor,
+            self.assertRaises(SystemExit) as result,
+        ):
+            await GrentonManager().debug_logs(Path("unused"), "Main")
+        self.assertEqual(result.exception.code, 1)
+        constructor.assert_not_called()
 
     async def test_initial_set_failure_does_not_open_telnet(self):
         config, api = self.fixtures()
