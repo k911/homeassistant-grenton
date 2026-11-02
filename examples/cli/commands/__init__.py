@@ -5,6 +5,7 @@ from .client_destroy import client_destroy_command, observation_seconds
 from .configure import configure_command
 from .debug_logs import debug_logs_command, telnet_port
 from .diagnostics import diagnostics_command, report_timeout
+from .download import download_command, positive_size
 from .execute import execute_command
 from .fetch_values import fetch_values_command
 from .shared_subscriptions import observation_duration, shared_subscription_command
@@ -33,6 +34,7 @@ Examples:
   %(prog)s debug-logs --clu CLU_Z_WAVE_1 --level DEBUG
   %(prog)s diagnostics --clu CLU_Z_WAVE_1
   %(prog)s firmware --clu CLU_Z_WAVE_1 --output json
+  %(prog)s download --remote 'a:\\user.lua' --output user.lua
         """,
     )
 
@@ -281,4 +283,13 @@ Examples:
             help="Management request deadline in seconds, maximum 300 (default: 10)",
         )
         report_parser.set_defaults(handler=diagnostics_command, report_kind=name)
+    download_parser = subparsers.add_parser("download", help="Download an existing file from a CLU")
+    download_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    download_parser.add_argument("--config", default=None, help="Saved configuration file")
+    download_parser.add_argument("--remote", required=True, help="Remote path, e.g. 'a:\\user.lua'")
+    download_parser.add_argument("--output", required=True, help="Local destination file")
+    download_parser.add_argument("--force", action="store_true", help="Replace an existing local file")
+    download_parser.add_argument("--timeout", type=report_timeout, default=10, help="Management deadline in seconds (default: 10)")
+    download_parser.add_argument("--max-bytes", type=positive_size, default=4 * 1024 * 1024, help="Maximum download size (default: 4194304)")
+    download_parser.set_defaults(handler=download_command)
     return parser

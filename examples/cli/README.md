@@ -173,6 +173,38 @@ catalog or upload firmware/source code. They fail with exit code 1 on request,
 transfer or export-validation errors. All sockets close on completion, error or
 cancellation.
 
+### Download files from a CLU
+
+Download an existing file using its CLU path and an explicit local destination:
+
+```bash
+python3 main.py download --clu CLU_Z_WAVE_1 \
+  --remote 'a:\user.lua' --output user.lua
+python3 main.py download --clu CLU_Z_WAVE_1 \
+  --remote 'a:\debug.bin' --output debug.bin
+```
+
+Quote remote paths so the shell preserves their backslashes. `--clu` selects a
+controller from the saved configuration; `--config` selects a different config
+file. The command activates transfers with encrypted `req_start_ftp`, then reads
+the file over UDP/69. It preserves the received bytes without JSON parsing or
+newline conversion, including empty files. It uses the CLU's observed `netascii`
+transfer mode rather than assuming a general-purpose TFTP server.
+
+Existing destination files are refused unless you add `--force`. The completed
+download is saved atomically; failures and cancellation do not replace an old
+file or publish a partial download. The output directory must already exist.
+Status messages go to stderr.
+
+`--timeout` sets the management request deadline (default 10 seconds). TFTP has
+bounded per-block retries and a 60-second overall deadline. `--max-bytes` changes
+the default 4 MiB download limit, for example `--max-bytes 8388608` for 8 MiB.
+
+This command reads existing files without refreshing generated exports. Use
+`diagnostics` or `firmware` to request fresh JSON data. A missing `debug.bin` or a
+TFTP server error is reported as a failed download; an empty file that downloads
+successfully remains a valid zero-byte result, not proof that no fault occurred.
+
 ### Watch attribute changes
 
 Attributes are specified as `OBJECT.INDEX`:

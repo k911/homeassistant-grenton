@@ -10,6 +10,7 @@ custom_components_path = Path(__file__).parent.parent.parent / "custom_component
 sys.path.insert(0, str(custom_components_path))
 
 from clu_logs import TelnetSessionRejected, stream_logs
+from clu_management import download_file as fetch_file
 from clu_management import fetch_report
 from config import load_configuration, save_configuration, save_interface_cache
 from homeassistant_grenton.domain.api.clu import GrentonCluApi
@@ -64,6 +65,30 @@ def _value_type(value) -> str:
 
 class GrentonManager:
     """Manages Grenton connections and operations."""
+
+    async def download_file(
+        self, config_path: Path, clu_name: str, remote_path: str,
+        *, timeout: float = 10, max_bytes: int = 4 * 1024 * 1024,
+    ) -> bytes:
+        """Fetch an existing CLU file through its management/TFTP service."""
+        config = load_configuration(config_path)
+        if not config:
+            sys.exit(1)
+        clu = next((clu for clu in config.clus if clu.name == clu_name), None)
+        if clu is None:
+            _LOGGER.error(
+                "CLU '%s' not found. Available CLUs: %s", clu_name,
+                ", ".join(clu.name for clu in config.clus),
+            )
+            sys.exit(1)
+        _LOGGER.info("Downloading %s from CLU '%s'", remote_path, clu.name)
+        try:
+            return await fetch_file(
+                clu, config.encryption, remote_path, timeout=timeout, max_bytes=max_bytes,
+            )
+        except (OSError, ValueError) as error:
+            _LOGGER.error("CLU download failed: %s", error)
+            sys.exit(1)
 
     async def diagnostics(self, config_path: Path, clu_name: str, *, timeout: float = 10) -> dict:
         """Fetch the CLU's current diagnostic pack, including device counters."""

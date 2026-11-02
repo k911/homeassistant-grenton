@@ -35,10 +35,10 @@ class ManagementProtocol(asyncio.DatagramProtocol):
         self.error_received(exc or ConnectionError("CLU management socket closed"))
 
 
-async def fetch_report(clu, encryption, kind: str, *, timeout: float = 10) -> dict:
-    """Refresh an export and download its JSON without changing firmware/source."""
-    if kind not in ("diagnostics", "firmware") or not 0 < timeout <= 300:
-        raise ValueError("Select diagnostics or firmware and a timeout in (0, 300]")
+async def _prepare_download(clu, encryption, *, timeout: float, kind: str | None = None) -> None:
+    """Optionally refresh an export, then activate the CLU's TFTP service."""
+    if not 0 < timeout <= 300:
+        raise ValueError("Select a timeout in (0, 300]")
     cipher = GrentonCipher(encryption)
     peer = (clu.ip, clu.port)
     protocol = ManagementProtocol(cipher, peer)
@@ -78,19 +78,40 @@ async def fetch_report(clu, encryption, kind: str, *, timeout: float = 10) -> di
             )
             if response != prefix + b"SUCCESS":
                 raise ValueError("CLU diagnostic refresh was unsuccessful")
-            path = "m:\\DIAGNOSTIC_PACK.JSON"
-        else:
+        elif kind == "firmware":
             prefix = b"resp_refresh_config:" + clu.ip.encode("ascii") + b":00000000:"
             # Captured response has binary f8 ff after this header. Do not decode
             # it as UTF-8 or assign unproven success/error semantics to those bytes.
             await request(b"req_refresh_config", lambda response: response.startswith(prefix))
-            path = "a:\\CONFIG.JSON"
         await request(b"req_start_ftp", lambda response: response == b"resp:OK")
     finally:
         owned = transport if transport is not None else protocol.transport
         if owned is not None:
             owned.close()
 
+
+async def download_file(
+    clu, encryption, path: str, *, timeout: float = 10, max_bytes: int = 4 * 1024 * 1024,
+) -> bytes:
+    """Read an existing file as bytes; no export refresh or source upload."""
+    try:
+        encoded = path.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise ValueError("CLU TFTP paths must be ASCII") from error
+    if not encoded or b"\0" in encoded:
+        raise ValueError("Invalid CLU TFTP path")
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        raise ValueError("Maximum download size must be a positive integer")
+    await _prepare_download(clu, encryption, timeout=timeout)
+    return await read_tftp(clu.ip, path, timeout=min(timeout, 3), max_bytes=max_bytes)
+
+
+async def fetch_report(clu, encryption, kind: str, *, timeout: float = 10) -> dict:
+    """Refresh an export and download its JSON without changing firmware/source."""
+    if kind not in ("diagnostics", "firmware"):
+        raise ValueError("Select diagnostics or firmware")
+    await _prepare_download(clu, encryption, timeout=timeout, kind=kind)
+    path = "m:\\DIAGNOSTIC_PACK.JSON" if kind == "diagnostics" else "a:\\CONFIG.JSON"
     payload = await read_tftp(clu.ip, path, timeout=min(timeout, 3))
     try:
         result = json.loads(payload)
