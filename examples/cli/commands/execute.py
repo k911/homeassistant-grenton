@@ -20,5 +20,6 @@ def execute_command(args: argparse.Namespace) -> None:
             args.object,
             args.action,
             args.value,
+            call_type=args.call_type,
         )
     )

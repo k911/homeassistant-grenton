@@ -9,8 +9,9 @@ from pathlib import Path
 custom_components_path = Path(__file__).parent.parent.parent / "custom_components"
 sys.path.insert(0, str(custom_components_path))
 
+from config import load_configuration, save_configuration, save_interface_cache
 from homeassistant_grenton.domain.api.clu import GrentonCluApi
-from homeassistant_grenton.domain.api.clu_cli import GrentonCluCliApi
+from homeassistant_grenton.domain.api.clu_health import KEEPALIVE_INTERVAL
 from homeassistant_grenton.domain.api.object_manager import (
     GrentonObjectManagerApi,
     GrentonObjectManagerAuthError,
@@ -21,18 +22,41 @@ from homeassistant_grenton.domain.clu import GrentonClu
 from homeassistant_grenton.domain.encryption import GrentonEncryption
 from homeassistant_grenton.dto.clu import GrentonCluDto
 from homeassistant_grenton.dto.encryption import GrentonEncryptionDto
-
-from config import load_configuration, save_configuration, save_interface_cache
+from homeassistant_grenton.state import (
+    GrentonCluStateAttributeKey,
+    GrentonCluStateVariableKey,
+    MissingState,
+)
 
 _LOGGER = logging.getLogger(__name__)
+_CLU_WIRE_LOGGER = logging.getLogger(GrentonCluApi.__module__)
 
 _STATE_TYPES = ("VARIABLE", "ATTRIBUTE")
-_PING_INTERVAL = 5
 _ERROR_MESSAGES = {
     GrentonObjectManagerAuthError: "✗ Authentication failed: Invalid PIN",
     GrentonObjectManagerConnectionError: "✗ Connection error: %s",
     GrentonObjectManagerDataError: "✗ Data error: %s",
 }
+
+
+def _state_key_label(key) -> str:
+    if isinstance(key, GrentonCluStateAttributeKey):
+        return f"{key.object_name}.{key.name}"
+    return key.name
+
+
+def _value_type(value) -> str:
+    if isinstance(value, MissingState):
+        return "missing"
+    if value is None:
+        return "nil"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "float"
+    return "string"
 
 
 class GrentonManager:
@@ -85,13 +109,97 @@ class GrentonManager:
 
         await self._test_clus(config.clus, config.encryption)
 
-    async def execute_action(self, config_path: Path, clu_name: str, object_name: str, action_index: str, action_value: str) -> None:
-        """Execute action on CLU object.
+    async def fetch_values(
+        self,
+        config_path: Path,
+        clu_name: str,
+        attributes: list[tuple[str, str]],
+        variables: list[str],
+        *,
+        summary: bool = False,
+    ) -> dict:
+        """Read selected keys once through fetchValues, with no subscriptions."""
+        keys: list[GrentonCluStateAttributeKey | GrentonCluStateVariableKey] = [
+            GrentonCluStateAttributeKey(object_name, index)
+            for object_name, index in attributes
+        ]
+        keys.extend(
+            GrentonCluStateVariableKey(name.strip()) for name in variables if name.strip()
+        )
+        keys = list(dict.fromkeys(keys))
+        if not keys:
+            _LOGGER.error("✗ Select at least one --attribute or --variable")
+            sys.exit(2)
 
-        Creates a GrentonActionMethod message: object_name:execute(action_index, action_value)
-        """
-        from homeassistant_grenton.domain.action import GrentonActionMethod
+        config = load_configuration(config_path)
+        if not config:
+            sys.exit(1)
+        target_clu = next((clu for clu in config.clus if clu.name == clu_name), None)
+        if target_clu is None:
+            _LOGGER.error(
+                "✗ CLU '%s' not found. Available CLUs: %s",
+                clu_name,
+                ", ".join(clu.name for clu in config.clus),
+            )
+            sys.exit(1)
+
+        api_client = GrentonCluApi(target_clu, config.encryption)
+        original_log_level = _CLU_WIRE_LOGGER.level
+        if summary and _CLU_WIRE_LOGGER.getEffectiveLevel() < logging.INFO:
+            # The shared API logs raw packets at DEBUG, including returned values.
+            _CLU_WIRE_LOGGER.setLevel(logging.INFO)
+        try:
+            if not await api_client.connect():
+                _LOGGER.error("✗ Failed to connect to CLU")
+                sys.exit(1)
+            values = await api_client.fetch_component_states(keys)
+            if len(values) != len(keys):
+                raise ValueError("Incomplete fetch-values response")
+            records = []
+            for key, value in zip(keys, values):
+                record = {"key": _state_key_label(key), "type": _value_type(value)}
+                if isinstance(value, MissingState):
+                    record["status"] = "missing"
+                elif summary:
+                    if isinstance(value, str):
+                        record["length"] = len(value)
+                else:
+                    record["value"] = value
+                records.append(record)
+            return {
+                "clu": {"name": target_clu.name, "id": target_clu.id},
+                "values": records,
+                "complete": all(not isinstance(value, MissingState) for value in values),
+            }
+        except Exception as error:  # noqa: BLE001 - report CLI failures after cleanup
+            _LOGGER.error("✗ Error fetching values: %s", error)
+            sys.exit(1)
+        finally:
+            try:
+                await api_client.disconnect()
+            finally:
+                if summary:
+                    _CLU_WIRE_LOGGER.setLevel(original_log_level)
+
+    async def execute_action(
+        self,
+        config_path: Path,
+        clu_name: str,
+        object_name: str,
+        action_index: str,
+        action_value: str,
+        *,
+        call_type: str = "method",
+    ) -> None:
+        """Call a method or write an attribute using the shared CLU action API."""
+        from homeassistant_grenton.domain.action import (
+            GrentonActionAttribute,
+            GrentonActionMethod,
+        )
         from homeassistant_grenton.domain.enums import GrentonActionEventType
+
+        if call_type not in ("method", "attribute"):
+            raise ValueError(f"Unsupported call type: {call_type}")
 
         config = load_configuration(config_path)
         if not config:
@@ -108,30 +216,36 @@ class GrentonManager:
             _LOGGER.info("Connecting to CLU '%s'", target_clu.name)
 
             api_client = GrentonCluApi(target_clu, config.encryption)
-            if not await api_client.connect():
-                _LOGGER.error("✗ Failed to connect to CLU")
-                sys.exit(1)
+            operation = "set" if call_type == "attribute" else "execute"
+            try:
+                if not await api_client.connect():
+                    _LOGGER.error("✗ Failed to connect to CLU")
+                    sys.exit(1)
 
-            _LOGGER.info("✓ Connected successfully")
-
-            # Create and execute action
-            _LOGGER.info("Executing: %s.execute(%s, %s)", object_name, action_index, action_value)
-
-            action = GrentonActionMethod(
-                clu_id=target_clu.id,
-                object_name=object_name,
-                event=GrentonActionEventType.CLICK,
-                index=action_index,
-                value=action_value,
-            )
-
-            result = await api_client.execute_action(action)
-
-            await api_client.disconnect()
+                _LOGGER.info("✓ Connected successfully")
+                _LOGGER.info(
+                    "Executing: %s.%s(%s, %s)",
+                    object_name, operation, action_index, action_value,
+                )
+                action_class = (
+                    GrentonActionAttribute
+                    if call_type == "attribute"
+                    else GrentonActionMethod
+                )
+                action = action_class(
+                    clu_id=target_clu.id,
+                    object_name=object_name,
+                    event=GrentonActionEventType.CLICK,
+                    index=action_index,
+                    value=action_value,
+                )
+                result = await api_client.execute_action(action)
+            finally:
+                await api_client.disconnect()
 
             if result:
                 _LOGGER.info("✓ Action executed successfully")
-                print(f"✓ {object_name}.execute({action_index}, \"{action_value}\")")
+                print(f'✓ {object_name}.{operation}({action_index}, "{action_value}")')
                 sys.exit(0)
             else:
                 _LOGGER.error("✗ Action execution failed")
@@ -179,7 +293,7 @@ class GrentonManager:
         refresh_interval: int,
     ) -> None:
         """Subscribe to CLU state keys and print every value change until interrupted."""
-        from homeassistant_grenton.state import GrentonCluStateAttributeKey, GrentonValue
+        from homeassistant_grenton.state import GrentonValue
 
         config = load_configuration(config_path)
         if not config:
@@ -192,11 +306,6 @@ class GrentonManager:
             sys.exit(1)
 
         last_values: dict[str, GrentonValue] = {}
-
-        def label_for_key(key) -> str:
-            if isinstance(key, GrentonCluStateAttributeKey):
-                return f"{key.object_name}.{key.name}"
-            return key.name
 
         def emit(label: str, value: GrentonValue) -> None:
             timestamp = datetime.now().isoformat(timespec="seconds")
@@ -212,20 +321,22 @@ class GrentonManager:
 
         def apply_values(report_keys: list, values: list[GrentonValue]) -> None:
             for key, value in zip(report_keys, values):
-                label = label_for_key(key)
+                if isinstance(value, MissingState):
+                    continue
+                label = _state_key_label(key)
                 if label in last_values and last_values[label] == value:
                     continue
                 last_values[label] = value
                 emit(label, value)
 
-        api_client = GrentonCluCliApi(target_clu, config.encryption)
+        api_client = GrentonCluApi(target_clu, config.encryption)
 
         _LOGGER.info("Connecting to CLU '%s'", target_clu.name)
-        if not await api_client.connect():
-            _LOGGER.error("✗ Failed to connect to CLU")
-            sys.exit(1)
-
+        tasks = []
         try:
+            if not await api_client.connect():
+                _LOGGER.error("✗ Failed to connect to CLU")
+                sys.exit(1)
             await api_client.ping()
 
             async def handle_report(report_keys: list, report_values: list[GrentonValue]) -> None:
@@ -240,20 +351,22 @@ class GrentonManager:
                 sys.exit(1)
             apply_values(keys, values)
 
-            # The CLU subscription expires, so ping regularly and re-register periodically.
-            elapsed = 0
-            while True:
-                await asyncio.sleep(_PING_INTERVAL)
-                await api_client.ping()
+            async def keepalive():
+                while True:
+                    await asyncio.sleep(KEEPALIVE_INTERVAL)
+                    await api_client.ping()
 
-                elapsed += _PING_INTERVAL
-                if elapsed >= refresh_interval:
-                    elapsed = 0
+            async def refresh():
+                while True:
+                    await asyncio.sleep(refresh_interval)
                     refreshed = await api_client.register_component_states(keys)
                     if refreshed is None:
                         _LOGGER.warning("Subscription refresh failed, retrying on next cycle")
                     else:
                         apply_values(keys, refreshed)
+
+            tasks = [asyncio.create_task(keepalive()), asyncio.create_task(refresh())]
+            await asyncio.gather(*tasks)
 
         except asyncio.CancelledError:
             raise
@@ -261,6 +374,9 @@ class GrentonManager:
             _LOGGER.error("✗ Error while watching %ss: %s", kind, e)
             sys.exit(1)
         finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             await api_client.disconnect()
 
     async def view_clu_state(self, config_path, clu_name: str) -> dict:
@@ -286,10 +402,10 @@ class GrentonManager:
             _LOGGER.error("✗ CLU '%s' not found. Available CLUs: %s", clu_name, available)
             sys.exit(1)
 
+        api_client = GrentonCluApi(target_clu, encryption)
         try:
             _LOGGER.info("Connecting to CLU '%s'", target_clu.name)
 
-            api_client = GrentonCluApi(target_clu, encryption)
             if not await api_client.connect():
                 _LOGGER.error("✗ Failed to connect to CLU")
                 sys.exit(1)
@@ -326,11 +442,13 @@ class GrentonManager:
 
             if clu_state.has_states_to_register():
                 keys = clu_state.get_subscription_order()
-                values = await api_client.register_component_states(keys)
+                values = await api_client.poll_component_states(keys)
 
                 # Update state with returned values and collect grouped output
                 if values:
                     for key, value in zip(keys, values):
+                        if isinstance(value, MissingState):
+                            continue
                         if isinstance(key, GrentonCluStateVariableKey):
                             clu_state.set_variable(key, value)
 
@@ -377,8 +495,6 @@ class GrentonManager:
             else:
                 _LOGGER.debug("[%s] No component states to register", target_clu.id)
 
-            await api_client.disconnect()
-
             # Build output structure
             output = {
                 "clu": {
@@ -395,6 +511,8 @@ class GrentonManager:
         except Exception as e:
             _LOGGER.error("✗ Error viewing CLU state: %s", e)
             sys.exit(1)
+        finally:
+            await api_client.disconnect()
 
     def _parse_interface_cache_for_clu(self, cache_path: Path, clu_id: str) -> tuple[dict[str, list[str]], dict[tuple[str, str], list[str]]]:
         """Parse the cached interface JSON and return variable/attribute label maps for a CLU."""
