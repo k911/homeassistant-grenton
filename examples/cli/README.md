@@ -87,6 +87,47 @@ Values are passed as quoted strings, matching the mobile interface's attribute
 and method actions. Successful writes print `set(...)`; rejected calls and
 connection failures exit with code 1.
 
+### Stream CLU debug logs
+
+Set the CLU's log level and follow its Telnet output until Ctrl+C:
+
+```bash
+python3 main.py debug-logs --clu CLU_Z_WAVE_1
+python3 main.py debug-logs --clu CLU_Z_WAVE_1 --level INFO
+```
+
+`logs` is an alias for `debug-logs`. `--level` accepts `OFF`, `ERROR`, `WARNING`,
+`INFO`, and `DEBUG` (case insensitive), mapped to CLU attribute 31 values 0–4.
+The default is `DEBUG`. The command selects the CLU by its name in the saved
+configuration and writes its imported object ID's attribute through the encrypted
+UDP API. Use `--config /path/to/config.yaml` for another configuration file.
+
+Logs go directly to stdout, so they can be saved with shell redirection;
+connection status and retry messages go to stderr:
+
+```bash
+python3 main.py debug-logs --clu CLU_Z_WAVE_1 > clu.log
+```
+
+The listener uses Telnet port 23 by default, negotiates options like Object
+Manager, and sends CRLF keepalives every five seconds. `--port` selects another
+existing Telnet port; it does not change the CLU's port configuration. Connection
+attempts have a five-second timeout. After EOF or a connection failure, it retries
+after one second and reapplies the selected level, including after a source
+deployment resets the setting during `OnInit`. No Telnet username or password
+exchange is used, matching the captured CLU behavior.
+
+Ctrl+C closes both local UDP and Telnet connections. The selected CLU log level
+remains set. To disable logging explicitly and exit without opening Telnet:
+
+```bash
+python3 main.py debug-logs --clu CLU_Z_WAVE_1 --level OFF
+```
+
+The global `--debug` option controls the CLI's own diagnostic messages on stderr;
+`debug-logs --level` controls the CLU's verbosity. Custom Lua logging queues may
+have their own destinations; this command streams the CLU's Telnet output.
+
 ### Watch attribute changes
 
 Attributes are specified as `OBJECT.INDEX`:

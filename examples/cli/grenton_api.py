@@ -9,6 +9,7 @@ from pathlib import Path
 custom_components_path = Path(__file__).parent.parent.parent / "custom_components"
 sys.path.insert(0, str(custom_components_path))
 
+from clu_logs import stream_logs
 from config import load_configuration, save_configuration, save_interface_cache
 from homeassistant_grenton.domain.api.clu import GrentonCluApi
 from homeassistant_grenton.domain.api.clu_health import KEEPALIVE_INTERVAL
@@ -61,6 +62,65 @@ def _value_type(value) -> str:
 
 class GrentonManager:
     """Manages Grenton connections and operations."""
+
+    async def debug_logs(
+        self, config_path: Path, clu_name: str, level: str = "DEBUG", port: int = 23,
+    ) -> None:
+        """Set verbosity and follow Telnet, reapplying it after reconnects."""
+        from homeassistant_grenton.domain.action import GrentonActionAttribute
+        from homeassistant_grenton.domain.enums import GrentonActionEventType
+
+        levels = {"OFF": 0, "ERROR": 1, "WARNING": 2, "INFO": 3, "DEBUG": 4}
+        level = level.upper()
+        if level not in levels or not 1 <= port <= 65535:
+            raise ValueError("Invalid CLU log level or Telnet port")
+        config = load_configuration(config_path)
+        if not config:
+            sys.exit(1)
+        clu = next((clu for clu in config.clus if clu.name == clu_name), None)
+        if clu is None:
+            _LOGGER.error(
+                "CLU '%s' not found. Available CLUs: %s",
+                clu_name, ", ".join(clu.name for clu in config.clus),
+            )
+            sys.exit(1)
+        api = GrentonCluApi(clu, config.encryption)
+        action = GrentonActionAttribute(
+            clu_id=clu.id, object_name=clu.object_name,
+            event=GrentonActionEventType.CLICK, index="31", value=str(levels[level]),
+            lua_value=str(levels[level]),
+        )
+
+        async def set_level() -> None:
+            if not await api.connect() or not await api.execute_action(action):
+                raise ConnectionError(f"Failed to set CLU log level to {level}")
+
+        try:
+            try:
+                await set_level()
+            except (OSError, TimeoutError) as error:
+                _LOGGER.error("%s", error)
+                sys.exit(1)
+            _LOGGER.info("CLU '%s' log level set to %s", clu.name, level)
+            if level == "OFF":
+                return
+            while True:
+                try:
+                    _LOGGER.info("Listening to CLU '%s' at %s:%d", clu.name, clu.ip, port)
+                    await stream_logs(clu.ip, port)
+                    _LOGGER.warning("CLU Telnet stream ended; reconnecting")
+                except (OSError, TimeoutError) as error:
+                    _LOGGER.warning("CLU Telnet connection failed: %s; reconnecting", error)
+                # Source deployment runs OnInit, which may reset attribute 31.
+                while True:
+                    await asyncio.sleep(1)
+                    try:
+                        await set_level()
+                        break
+                    except (OSError, TimeoutError) as error:
+                        _LOGGER.warning("%s; retrying", error)
+        finally:
+            await api.disconnect()
 
     async def configure_and_test(
         self,

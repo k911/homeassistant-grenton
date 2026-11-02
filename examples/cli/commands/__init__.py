@@ -3,6 +3,7 @@ import argparse
 
 from .client_destroy import client_destroy_command, observation_seconds
 from .configure import configure_command
+from .debug_logs import debug_logs_command, telnet_port
 from .execute import execute_command
 from .fetch_values import fetch_values_command
 from .shared_subscriptions import observation_duration, shared_subscription_command
@@ -28,6 +29,7 @@ Examples:
   %(prog)s watch-variable --clu CLU_Z_WAVE_1 --variable myVariable --variable otherVariable
   %(prog)s watch-attribute --attribute DIN5696.0
   %(prog)s watch-attribute --clu CLU_Z_WAVE_1 --attribute DIN5696.0 --attribute DIN5697.1
+  %(prog)s debug-logs --clu CLU_Z_WAVE_1 --level DEBUG
         """,
     )
 
@@ -35,7 +37,7 @@ Examples:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Enable debug logging",
+        help="Enable CLI diagnostic logging to stderr (does not set CLU verbosity)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -244,4 +246,19 @@ Examples:
         help="Show only types and string lengths; suppress raw packet DEBUG logs",
     )
     fetch_parser.set_defaults(handler=fetch_values_command)
+
+    logs_parser = subparsers.add_parser(
+        "debug-logs", aliases=["logs"], help="Set CLU verbosity and stream Telnet logs",
+    )
+    logs_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    logs_parser.add_argument("--config", default=None, help="Saved configuration file")
+    logs_parser.add_argument(
+        "--level", type=str.upper, choices=["OFF", "ERROR", "WARNING", "INFO", "DEBUG"],
+        default="DEBUG", help="CLU log level (default: DEBUG); OFF disables logs and exits",
+    )
+    logs_parser.add_argument(
+        "--port", type=telnet_port, default=23,
+        help="Existing CLU Telnet port (default: 23)",
+    )
+    logs_parser.set_defaults(handler=debug_logs_command)
     return parser
