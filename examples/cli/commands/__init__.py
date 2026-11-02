@@ -4,6 +4,7 @@ import argparse
 from .client_destroy import client_destroy_command, observation_seconds
 from .configure import configure_command
 from .debug_logs import debug_logs_command, telnet_port
+from .diagnostics import diagnostics_command, report_timeout
 from .execute import execute_command
 from .fetch_values import fetch_values_command
 from .shared_subscriptions import observation_duration, shared_subscription_command
@@ -30,6 +31,8 @@ Examples:
   %(prog)s watch-attribute --attribute DIN5696.0
   %(prog)s watch-attribute --clu CLU_Z_WAVE_1 --attribute DIN5696.0 --attribute DIN5697.1
   %(prog)s debug-logs --clu CLU_Z_WAVE_1 --level DEBUG
+  %(prog)s diagnostics --clu CLU_Z_WAVE_1
+  %(prog)s firmware --clu CLU_Z_WAVE_1 --output json
         """,
     )
 
@@ -261,4 +264,21 @@ Examples:
         help="Existing CLU Telnet port (default: 23)",
     )
     logs_parser.set_defaults(handler=debug_logs_command)
+
+    for name, help_text in (
+        ("diagnostics", "Read CLU and device health, voltages and failure counters"),
+        ("firmware", "Refresh installed CLU and device firmware inventory"),
+    ):
+        report_parser = subparsers.add_parser(name, help=help_text)
+        report_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+        report_parser.add_argument("--config", default=None, help="Saved configuration file")
+        report_parser.add_argument(
+            "--output", "--format", choices=["text", "json"], default="text",
+            help="Output format (default: text)",
+        )
+        report_parser.add_argument(
+            "--timeout", type=report_timeout, default=10,
+            help="Management request deadline in seconds, maximum 300 (default: 10)",
+        )
+        report_parser.set_defaults(handler=diagnostics_command, report_kind=name)
     return parser

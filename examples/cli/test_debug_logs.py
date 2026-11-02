@@ -9,7 +9,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import commands  # noqa: F401 - initializes the CLI import path
-from clu_logs import INITIAL_NEGOTIATION, LogOutputClosed, TelnetDecoder, stream_logs
+from clu_logs import (
+    INITIAL_NEGOTIATION,
+    LogOutputClosed,
+    TelnetDecoder,
+    TelnetSessionRejected,
+    stream_logs,
+)
 from commands import create_parser
 from grenton_api import GrentonManager
 from homeassistant_grenton.domain.api.clu_messages.action import (
@@ -95,18 +101,53 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
         reader = SimpleNamespace(read=AsyncMock(side_effect=ConnectionResetError("reset")))
         with (
             patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
-            self.assertRaises(ConnectionResetError),
+            self.assertRaises(TelnetSessionRejected),
         ):
             await stream_logs("192.0.2.10")
         writer.close.assert_called_once()
         writer.wait_closed.assert_awaited_once()
 
+    async def test_silent_or_closed_unnegotiated_session_is_rejected(self):
+        for silent in (False, True):
+            with self.subTest(silent=silent):
+                writer = self.writer()
+
+                async def read(_size, silent=silent):
+                    if silent:
+                        await asyncio.Future()
+                    return b""
+
+                reader = SimpleNamespace(read=AsyncMock(side_effect=read))
+                with (
+                    patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+                    patch("clu_logs.CONNECT_TIMEOUT", 0.01),
+                    self.assertRaises(TelnetSessionRejected),
+                ):
+                    await stream_logs("192.0.2.10")
+                writer.close.assert_called_once()
+                writer.wait_closed.assert_awaited_once()
+
+    async def test_reset_after_negotiation_remains_a_reconnectable_error(self):
+        writer = self.writer()
+        reader = SimpleNamespace(read=AsyncMock(side_effect=[b"\xff\xfd\x00", ConnectionResetError("reboot")]))
+        with (
+            patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+            self.assertRaises(ConnectionResetError),
+        ):
+            await stream_logs("192.0.2.10")
+        writer.close.assert_called_once()
+
     async def test_failed_keepalive_cancels_blocked_receiver_and_closes(self):
         writer = self.writer()
         writer.drain.side_effect = [None, BrokenPipeError("keepalive failed")]
         cancelled = asyncio.Event()
+        negotiated = False
 
         async def read(_size):
+            nonlocal negotiated
+            if not negotiated:
+                negotiated = True
+                return b"\xff\xfd\x00"
             try:
                 await asyncio.Future()
             except asyncio.CancelledError:
@@ -204,6 +245,39 @@ class DebugLogsManagerTests(unittest.IsolatedAsyncioTestCase):
             await GrentonManager().debug_logs(Path("unused"), "Main")
         self.assertEqual(result.exception.code, 1)
         stream.assert_not_awaited()
+        api.disconnect.assert_awaited_once()
+
+    async def test_initial_rejected_session_warns_and_exits_without_retrying(self):
+        config, api = self.fixtures()
+        with (
+            patch("grenton_api.load_configuration", return_value=config),
+            patch("grenton_api.GrentonCluApi", return_value=api),
+            patch("grenton_api.stream_logs", AsyncMock(side_effect=TelnetSessionRejected("reset by peer"))) as stream,
+            patch("grenton_api.asyncio.sleep", AsyncMock()) as sleep,
+            self.assertLogs("grenton_api", level="WARNING") as logs,
+            self.assertRaises(SystemExit) as result,
+        ):
+            await GrentonManager().debug_logs(Path("unused"), "Main")
+        self.assertEqual(result.exception.code, 1)
+        self.assertIn("Only one Telnet", " ".join(logs.output))
+        self.assertIn("Stop logging in Object Manager", " ".join(logs.output))
+        stream.assert_awaited_once()
+        sleep.assert_not_awaited()
+        api.execute_action.assert_awaited_once()
+        api.disconnect.assert_awaited_once()
+
+    async def test_startup_rejections_after_an_established_session_still_retry(self):
+        config, api = self.fixtures()
+        stream = AsyncMock(side_effect=[ConnectionResetError("reboot"), TelnetSessionRejected("starting"), asyncio.CancelledError])
+        with (
+            patch("grenton_api.load_configuration", return_value=config),
+            patch("grenton_api.GrentonCluApi", return_value=api),
+            patch("grenton_api.stream_logs", stream),
+            patch("grenton_api.asyncio.sleep", AsyncMock()),
+            self.assertRaises(asyncio.CancelledError),
+        ):
+            await GrentonManager().debug_logs(Path("unused"), "Main")
+        self.assertEqual(stream.await_count, 3)
         api.disconnect.assert_awaited_once()
 
     async def test_closed_output_stops_without_reconnecting(self):

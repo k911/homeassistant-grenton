@@ -9,7 +9,8 @@ from pathlib import Path
 custom_components_path = Path(__file__).parent.parent.parent / "custom_components"
 sys.path.insert(0, str(custom_components_path))
 
-from clu_logs import stream_logs
+from clu_logs import TelnetSessionRejected, stream_logs
+from clu_management import fetch_report
 from config import load_configuration, save_configuration, save_interface_cache
 from homeassistant_grenton.domain.api.clu import GrentonCluApi
 from homeassistant_grenton.domain.api.clu_health import KEEPALIVE_INTERVAL
@@ -63,6 +64,34 @@ def _value_type(value) -> str:
 class GrentonManager:
     """Manages Grenton connections and operations."""
 
+    async def diagnostics(self, config_path: Path, clu_name: str, *, timeout: float = 10) -> dict:
+        """Fetch the CLU's current diagnostic pack, including device counters."""
+        return await self._management_report(config_path, clu_name, "diagnostics", timeout)
+
+    async def firmware(self, config_path: Path, clu_name: str, *, timeout: float = 10) -> dict:
+        """Refresh and fetch installed CLU/device firmware version inventory."""
+        return await self._management_report(config_path, clu_name, "firmware", timeout)
+
+    async def _management_report(
+        self, config_path: Path, clu_name: str, kind: str, timeout: float,
+    ) -> dict:
+        config = load_configuration(config_path)
+        if not config:
+            sys.exit(1)
+        clu = next((clu for clu in config.clus if clu.name == clu_name), None)
+        if clu is None:
+            _LOGGER.error(
+                "CLU '%s' not found. Available CLUs: %s", clu_name,
+                ", ".join(clu.name for clu in config.clus),
+            )
+            sys.exit(1)
+        _LOGGER.info("Refreshing %s for CLU '%s'", kind, clu.name)
+        try:
+            return await fetch_report(clu, config.encryption, kind, timeout=timeout)
+        except (OSError, TimeoutError, ValueError) as error:
+            _LOGGER.error("Failed to read CLU %s: %s", kind, error)
+            sys.exit(1)
+
     async def debug_logs(
         self, config_path: Path, clu_name: str, level: str = "DEBUG", port: int = 23,
     ) -> None:
@@ -104,12 +133,26 @@ class GrentonManager:
             _LOGGER.info("CLU '%s' log level set to %s", clu.name, level)
             if level == "OFF":
                 return
+            session_established = False
             while True:
                 try:
-                    _LOGGER.info("Listening to CLU '%s' at %s:%d", clu.name, clu.ip, port)
+                    _LOGGER.info("Connecting to CLU '%s' Telnet at %s:%d", clu.name, clu.ip, port)
                     await stream_logs(clu.ip, port)
+                    session_established = True
                     _LOGGER.warning("CLU Telnet stream ended; reconnecting")
+                except TelnetSessionRejected as error:
+                    if not session_established:
+                        _LOGGER.warning(
+                            "Could not establish CLU Telnet session: %s. Only one Telnet "
+                            "connection per CLU is supported; another client may be using it. "
+                            "Stop logging in Object Manager or close the other Telnet client "
+                            "and try again. The CLU may also still be starting.",
+                            error,
+                        )
+                        sys.exit(1)
+                    _LOGGER.warning("CLU Telnet session unavailable: %s; reconnecting", error)
                 except (OSError, TimeoutError) as error:
+                    session_established = True
                     _LOGGER.warning("CLU Telnet connection failed: %s; reconnecting", error)
                 # Source deployment runs OnInit, which may reset attribute 31.
                 while True:

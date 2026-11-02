@@ -14,6 +14,10 @@ class LogOutputClosed(Exception):
     """The log consumer closed stdout; stop rather than reconnecting the CLU."""
 
 
+class TelnetSessionRejected(ConnectionError):
+    """The CLU did not establish a usable Telnet session."""
+
+
 def _emit(text: str) -> None:
     try:
         sys.stdout.write(text)
@@ -32,6 +36,7 @@ class TelnetDecoder:
     def __init__(self) -> None:
         self._state = "data"
         self._command = 0
+        self.negotiated = False
 
     def feed(self, data: bytes) -> tuple[bytes, bytes]:
         """Return application bytes and any required negotiation replies."""
@@ -55,6 +60,8 @@ class TelnetDecoder:
                 else:
                     self._state = "data"
             elif self._state == "option":
+                if self._command == 253 and value == 0:
+                    self.negotiated = True  # Server accepts our WILL BINARY.
                 if self._command == 251:  # WILL -> DONT
                     replies.extend((255, 254, value))
                 elif self._command == 253 and value != 0:  # DO -> WONT
@@ -71,19 +78,30 @@ class TelnetDecoder:
 
 async def stream_logs(host: str, port: int = 23) -> None:
     """Stream until EOF or failure; always close the socket and worker tasks."""
-    async with asyncio.timeout(CONNECT_TIMEOUT):
-        reader, writer = await asyncio.open_connection(host, port)
+    try:
+        async with asyncio.timeout(CONNECT_TIMEOUT):
+            reader, writer = await asyncio.open_connection(host, port)
+    except (OSError, TimeoutError) as error:
+        raise TelnetSessionRejected(str(error) or "TCP connection timed out") from error
+    established = False
 
     async def receive() -> None:
+        nonlocal established
         telnet = TelnetDecoder()
         utf8 = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        while data := await reader.read(4096):
-            payload, replies = telnet.feed(data)
-            if replies:
-                writer.write(replies)
-                await writer.drain()
-            if payload:
-                _emit(utf8.decode(payload))
+        async with asyncio.timeout(CONNECT_TIMEOUT) as handshake:
+            while data := await reader.read(4096):
+                payload, replies = telnet.feed(data)
+                if replies:
+                    writer.write(replies)
+                    await writer.drain()
+                if not established and (telnet.negotiated or payload):
+                    established = True
+                    handshake.reschedule(None)
+                if payload:
+                    _emit(utf8.decode(payload))
+        if not established:
+            raise TelnetSessionRejected("connection closed before Telnet negotiation completed")
         _emit(utf8.decode(b"", final=True))
 
     async def keepalive() -> None:
@@ -100,6 +118,12 @@ async def stream_logs(host: str, port: int = 23) -> None:
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             task.result()
+    except (OSError, TimeoutError) as error:
+        if not established:
+            raise TelnetSessionRejected(
+                str(error) or "Telnet negotiation timed out"
+            ) from error
+        raise
     finally:
         for task in tasks:
             task.cancel()

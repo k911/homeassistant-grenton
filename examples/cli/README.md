@@ -112,8 +112,12 @@ python3 main.py debug-logs --clu CLU_Z_WAVE_1 > clu.log
 The listener uses Telnet port 23 by default, negotiates options like Object
 Manager, and sends CRLF keepalives every five seconds. `--port` selects another
 existing Telnet port; it does not change the CLU's port configuration. Connection
-attempts have a five-second timeout. After EOF or a connection failure, it retries
-after one second and reapplies the selected level, including after a source
+attempts and initial negotiation have a five-second timeout each. A CLU supports
+only one Telnet connection: stop logging in Object Manager before using this
+command. If the initial session cannot be established, the command warns and
+exits with code 1 rather than retrying indefinitely. Once a session has been
+established, EOF or a connection failure triggers a retry after one second and
+reapplies the selected level, including after a source
 deployment resets the setting during `OnInit`. No Telnet username or password
 exchange is used, matching the captured CLU behavior.
 
@@ -127,6 +131,46 @@ python3 main.py debug-logs --clu CLU_Z_WAVE_1 --level OFF
 The global `--debug` option controls the CLI's own diagnostic messages on stderr;
 `debug-logs --level` controls the CLU's verbosity. Custom Lua logging queues may
 have their own destinations; this command streams the CLU's Telnet output.
+
+### Read CLU diagnostics and installed firmware versions
+
+Fetch a fresh diagnostic snapshot with CLU health, cloud connection, bus voltages,
+device status, failure counters, and installed firmware:
+
+```bash
+python3 main.py diagnostics --clu CLU_Z_WAVE_1
+python3 main.py diagnostics --clu CLU_Z_WAVE_1 --output json > diagnostics.json
+```
+
+Refresh and list the currently installed firmware versions for the CLU and its
+TF-bus and Z-Wave devices:
+
+```bash
+python3 main.py firmware --clu CLU_Z_WAVE_1
+python3 main.py firmware --clu CLU_Z_WAVE_1 --output json > firmware.json
+```
+
+The text output lists serial numbers, status, firmware versions, hardware type
+and revision, firmware type and API version. Diagnostics also includes reported
+voltages, failure counters and banned flags where available. A dash means the
+export does not provide that field. Failure-counter time windows are unspecified;
+the numbers do not by themselves identify recent failures. JSON output preserves
+the full exported fields, including any additional metadata.
+
+Both commands select the CLU by its name in the saved configuration. They accept
+`--config /path/to/config.yaml`, `--output text|json` (also `--format`), and
+`--timeout 10` for the management request deadline in seconds (maximum 300).
+The diagnostics command requests `req_diagnostic_refresh`; the firmware command
+requests `req_refresh_config`. Each then activates the transfer service with
+`req_start_ftp` and downloads the appropriate JSON export over the captured
+fixed-port TFTP protocol on UDP/69. TFTP preserves raw bytes and retries lost
+blocks, with a 60-second transfer deadline and a 4 MiB size limit. Management
+messages use the configured encrypted UDP connection, normally port 1234.
+
+These commands read installed versions; they do not query a vendor release
+catalog or upload firmware/source code. They fail with exit code 1 on request,
+transfer or export-validation errors. All sockets close on completion, error or
+cancellation.
 
 ### Watch attribute changes
 
