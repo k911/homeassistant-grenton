@@ -20,9 +20,9 @@ class DownloadProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def execute(self, fixture, *, payload=b"\0\xff\r\n", error=None):
         tftp = AsyncMock(return_value=payload, side_effect=error)
         with (
-            patch("clu_management.GrentonCipher", return_value=fixture.cipher),
+            patch("homeassistant_grenton.domain.api.clu_files.GrentonCipher", return_value=fixture.cipher),
             patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", side_effect=fixture.endpoint),
-            patch("clu_management.read_tftp", tftp),
+            patch("homeassistant_grenton.domain.api.clu_files.read_tftp", tftp),
         ):
             result = await download_file(
                 fixture.clu, object(), r"a:\USER.LUA", timeout=0.1, max_bytes=1024,
@@ -60,9 +60,9 @@ class DownloadProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_service_timeout_does_not_start_file_read(self):
         fixture = management_tests.ManagementReportTests().fixture(reply=False)
         with (
-            patch("clu_management.GrentonCipher", return_value=fixture.cipher),
+            patch("homeassistant_grenton.domain.api.clu_files.GrentonCipher", return_value=fixture.cipher),
             patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", side_effect=fixture.endpoint),
-            patch("clu_management.read_tftp", AsyncMock()) as tftp,
+            patch("homeassistant_grenton.domain.api.clu_files.read_tftp", AsyncMock()) as tftp,
             self.assertRaises(TimeoutError),
         ):
             await download_file(fixture.clu, object(), r"a:\USER.LUA", timeout=0.01)

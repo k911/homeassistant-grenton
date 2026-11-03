@@ -351,6 +351,9 @@
       "clu_uptime": {
         "name": "Czas pracy"
       },
+      "clu_last_restart": {
+        "name": "Ostatni restart"
+      },
       "clu_bus_voltage": {
         "name": "Napięcie magistrali"
       },
@@ -453,6 +456,9 @@
       }
     },
     "switch": {
+      "clu_debug_capture": {
+        "name": "Przechwytywanie diagnostyki"
+      },
       "clu_debug_logging": {
         "name": "Logowanie DEBUG"
       },

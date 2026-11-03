@@ -525,6 +525,49 @@ subscription removal.
 A ping timeout alone does not prove a reboot; a drop in the CLU Uptime sensor does
 provide evidence of a restart. Neither identifies its cause.
 
+#### Restart detection and debug capture
+
+The integration keeps the last successful uptime per CLU in memory. Failed,
+missing or invalid readings do not replace it. A fresh decrease emits a warning;
+repeated equal/increasing samples do not emit another warning for that boot.
+Both slow polls and explicitly configured realtime reports use the same observer.
+
+After HA starts or the integration reloads, the first reading establishes a new
+baseline. A first uptime within the configured slow-poll interval plus **5
+seconds** also emits a **recent restart** warning. A higher first reading is
+silent. This avoids persistent baseline storage; a restart during a long HA
+outage can be missed once uptime exceeds that startup window.
+
+Each supported CLU has a **Last restart** timestamp sensor, estimated from the
+first uptime sample and updated when a new reset is detected. It represents the
+approximate boot time, not the cause or the exact time HA noticed it. Its
+attributes include detection time, old/new uptime and debug-capture outcome.
+An initial old uptime still provides an estimated boot timestamp without a warning.
+
+The separate **Debug capture** configuration switch defaults to off. Its
+preference persists per CLU; the uptime baseline does not. When enabled at the
+time a restart is detected, the integration tries to download `a:\debug.bin` in
+the background, with **two attempts maximum** and a five-second pause after the
+first failure. Success stops
+the retry. Empty files and transfer errors count as unsuccessful attempts; after
+both fail, one warning explains that no debug file could be captured. A regular
+restart or disabled native debugging may leave no file available.
+
+Debug capture never reads or changes Telnet log level, opens Telnet, or enables
+the independent **Debug logging** switch. Normal CLU polling continues during
+downloads. Disabling capture, detecting a newer restart on that CLU, or unloading
+the integration cancels the superseded work.
+The existing transfer deadlines and 4 MiB size limit bound each attempt.
+
+Successful nonempty dumps are saved atomically under
+`<HA config>/grenton/debug/<entry>/<controller>/` (directory IDs are hashed),
+keeping the five newest dumps per controller. Failed or empty downloads do not
+evict previous dumps. The sensor's `debug_capture_file` attribute gives the
+config-relative filename. Files are not placed in the public `www` directory.
+Capture status/error metadata remains available on the Last restart sensor even
+when no binary file can be retrieved. A reboot warning is independent of whether
+capture is enabled or succeeds.
+
 The CLU type is detected from its serial number: `221…` is `CLU_Z_WAVE`,
 and `521…` is `CLU_GATE_HTTP`. The detected type is shown as the device model.
 Built-in values use indexed attributes on the CLU object ID imported from the

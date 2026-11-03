@@ -168,7 +168,7 @@ class TftpTests(unittest.IsolatedAsyncioTestCase):
         create, transport, _ = self.endpoint(respond)
         with (
             patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", create),
-            patch("clu_tftp.TRANSFER_TIMEOUT", 0.01),
+            patch("homeassistant_grenton.domain.api.tftp.TRANSFER_TIMEOUT", 0.01),
             self.assertRaises(TimeoutError),
         ):
             await read_tftp("192.0.2.10", "a:\\CONFIG.JSON", timeout=1)

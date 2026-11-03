@@ -351,6 +351,9 @@
       "clu_uptime": {
         "name": "Uptime"
       },
+      "clu_last_restart": {
+        "name": "Last restart"
+      },
       "clu_bus_voltage": {
         "name": "Bus voltage"
       },
@@ -453,6 +456,9 @@
       }
     },
     "switch": {
+      "clu_debug_capture": {
+        "name": "Debug capture"
+      },
       "clu_debug_logging": {
         "name": "Debug logging"
       },

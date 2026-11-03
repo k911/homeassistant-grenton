@@ -162,7 +162,7 @@ def test_supported_attributes_poll_on_each_clu_and_update_native_entities(tmp_pa
             api.register_component_states.assert_not_awaited()
             api.poll_component_states.assert_awaited_once_with(keys)
         platforms = await register_platforms(hass, entry)
-        assert [len(platform.entities) for platform in platforms] == [15, 4, 4]
+        assert [len(platform.entities) for platform in platforms] == [17, 4, 6]
         registry = er.async_get(hass)
         device_registry = dr.async_get(hass)
         assert len(device_registry.devices) == 2
@@ -183,7 +183,7 @@ def test_supported_attributes_poll_on_each_clu_and_update_native_entities(tmp_pa
                 assert voltage.native_unit_of_measurement == "V"
                 assert voltage.state_class.value == "measurement"
             else:
-                assert len(group) == 11
+                assert len(group) == 13
             assert hass.states.get(controller.entity_id).state == clu.serial_number
             assert hass.states.get(uptime.entity_id).state == "123"
             assert uptime.device_class == SensorDeviceClass.DURATION

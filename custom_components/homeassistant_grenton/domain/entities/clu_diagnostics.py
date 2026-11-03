@@ -5,9 +5,11 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -15,6 +17,7 @@ from homeassistant.helpers.entity import Entity
 
 from ...coordinator import GrentonCoordinator
 from ..clu import GrentonClu
+from ..device_types import attribute_index
 from .clu import clu_device_info
 
 
@@ -74,10 +77,50 @@ class CluSubscriptions(CluConnectionDiagnostic, SensorEntity):
         return self.coordinator.subscription_count(self.clu.id)
 
 
+class CluLastRestart(CluConnectionDiagnostic, SensorEntity):
+    """Estimated boot timestamp derived from confirmed uptime observations."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:restart"
+
+    @property
+    def native_value(self):
+        return self.coordinator.restarts.records[self.clu.id].boot_time
+
+    @property
+    def extra_state_attributes(self):
+        record = self.coordinator.restarts.records[self.clu.id]
+        return {
+            "detected_at": record.detected_at.isoformat() if record.detected_at else None,
+            "previous_uptime": record.previous_uptime,
+            "uptime_at_detection": record.uptime,
+            "debug_capture_status": record.capture_status,
+            "debug_capture_error": record.capture_error,
+            "debug_capture_file": record.capture_file,
+        }
+
+
+class CluDebugCapture(CluConnectionDiagnostic, SwitchEntity):
+    """Local automatic dump preference; never changes native verbosity."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:bug-check-outline"
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.restarts.capture_enabled(self.clu.id)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.coordinator.restarts.async_set_capture(self.clu.id, True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.coordinator.restarts.async_set_capture(self.clu.id, False)
+
+
 def connection_diagnostics(
     coordinator: GrentonCoordinator, clu: GrentonClu
 ) -> list[Entity]:
-    return [
+    entities = [
         entity(coordinator, clu, key)
         for entity, key in (
             (CluConnection, "clu_connection"),
@@ -85,3 +128,9 @@ def connection_diagnostics(
             (CluSubscriptions, "clu_subscriptions"),
         )
     ]
+    if attribute_index(clu.device_type, "Uptime") is not None:
+        entities.extend([
+            CluLastRestart(coordinator, clu, "clu_last_restart"),
+            CluDebugCapture(coordinator, clu, "clu_debug_capture"),
+        ])
+    return entities

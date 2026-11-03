@@ -68,9 +68,9 @@ class ManagementReportTests(unittest.IsolatedAsyncioTestCase):
             contents = json.dumps(fixture.report).encode()
         tftp = AsyncMock(return_value=contents, side_effect=error)
         with (
-            patch("clu_management.GrentonCipher", return_value=fixture.cipher),
+            patch("homeassistant_grenton.domain.api.clu_files.GrentonCipher", return_value=fixture.cipher),
             patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", side_effect=fixture.endpoint),
-            patch("clu_management.read_tftp", tftp),
+            patch("homeassistant_grenton.domain.api.clu_files.read_tftp", tftp),
         ):
             result = await fetch_report(fixture.clu, object(), kind, timeout=timeout)
         return result, tftp
@@ -105,9 +105,9 @@ class ManagementReportTests(unittest.IsolatedAsyncioTestCase):
     async def test_unanswered_request_times_out_and_never_downloads(self):
         fixture = self.fixture(reply=False)
         with (
-            patch("clu_management.GrentonCipher", return_value=fixture.cipher),
+            patch("homeassistant_grenton.domain.api.clu_files.GrentonCipher", return_value=fixture.cipher),
             patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", side_effect=fixture.endpoint),
-            patch("clu_management.read_tftp", AsyncMock()) as tftp,
+            patch("homeassistant_grenton.domain.api.clu_files.read_tftp", AsyncMock()) as tftp,
             self.assertRaises(TimeoutError),
         ):
             await fetch_report(fixture.clu, object(), "diagnostics", timeout=0.01)
@@ -128,9 +128,9 @@ class ManagementReportTests(unittest.IsolatedAsyncioTestCase):
 
         fixture.transport.sendto.side_effect = unrelated
         with (
-            patch("clu_management.GrentonCipher", return_value=fixture.cipher),
+            patch("homeassistant_grenton.domain.api.clu_files.GrentonCipher", return_value=fixture.cipher),
             patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", side_effect=fixture.endpoint),
-            patch("clu_management.read_tftp", AsyncMock()) as tftp,
+            patch("homeassistant_grenton.domain.api.clu_files.read_tftp", AsyncMock()) as tftp,
             self.assertRaises(TimeoutError),
         ):
             await fetch_report(fixture.clu, object(), "diagnostics", timeout=0.01)
@@ -142,9 +142,9 @@ class ManagementReportTests(unittest.IsolatedAsyncioTestCase):
         sent = asyncio.Event()
         fixture.transport.sendto.side_effect = lambda *args: sent.set()
         with (
-            patch("clu_management.GrentonCipher", return_value=fixture.cipher),
+            patch("homeassistant_grenton.domain.api.clu_files.GrentonCipher", return_value=fixture.cipher),
             patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", side_effect=fixture.endpoint),
-            patch("clu_management.read_tftp", AsyncMock()) as tftp,
+            patch("homeassistant_grenton.domain.api.clu_files.read_tftp", AsyncMock()) as tftp,
         ):
             task = asyncio.create_task(fetch_report(fixture.clu, object(), "diagnostics"))
             await sent.wait()

@@ -31,6 +31,7 @@ from .domain.device_types import CLU_GATE_HTTP
 from .domain.encryption import GrentonEncryption
 from .domain.state_object import GrentonStateObject, GrentonVariableValueObject
 from .read_policy import slow_read_interval, validate_slow_read_interval
+from .restarts import CluRestartMonitor
 from .state import (
     MISSING_STATE,
     GrentonCluState,
@@ -116,6 +117,10 @@ class GrentonCoordinator(DataUpdateCoordinator):
         }
         self._availability_signatures: dict[str, tuple[bool, frozenset[StateKey]]] = {}
         self._health_signal_prefix = f"grenton_health_{config_entry.entry_id}_"
+        self.restarts = CluRestartMonitor(
+            hass, config_entry, clus, encryption, self._slow_read_intervals,
+            self._publish_clu_update,
+        )
 
         # Initialize API instances for each CLU
         for clu in clus:
@@ -317,6 +322,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
                 for key, value in zip(keys, values)
             ]
             clu_state.update_keys(keys, merged)
+            self.restarts.observe(clu_id, keys, merged)
             for key, value in zip(keys, merged):
                 if not isinstance(value, MissingState):
                     self._realtime_success[clu_id][key] = started_at
@@ -392,6 +398,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
             versions = self._report_versions[clu_id]
             versions[key] = versions.get(key, 0) + 1
         clu_state.update_keys(keys, values)
+        self.restarts.observe(clu_id, keys, values)
         for key in keys:
             if key in self._realtime_keys[clu_id]:
                 self._realtime_success[clu_id][key] = monotonic()
@@ -553,6 +560,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
                             )
                         else:
                             self.state.clus[clu_id].update_keys(keys, values)
+                            self.restarts.observe(clu_id, keys, values)
                             for key, value in zip(keys, values):
                                 if not isinstance(value, MissingState):
                                     self._slow_success[clu_id][key] = stamp
@@ -721,6 +729,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
             self._slow_tasks.clear()
+            await self.restarts.async_shutdown()
             # The API attempts bounded remote removal before local UDP close.
             await asyncio.gather(
                 *(self._disconnect_api(api) for api in self._apis.values()),
