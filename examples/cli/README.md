@@ -64,7 +64,7 @@ label for a newly created group. Attribute indices are written as numbers. If
 one label contains multiple attributes, their interface object-field names are
 added as descriptions so the entries remain distinguishable.
 
-### Set an attribute or call a method
+### Set an attribute, call a method, or run a script
 
 The `execute` command calls a method by default. Use `--call-type attribute` to
 write an attribute through the CLU API, without sending a new Object Manager
@@ -83,9 +83,20 @@ temperature. The existing method syntax remains available:
 python3 main.py execute --clu CLU_Z_WAVE_1 --object DOU0699 --action 2 --value 1
 ```
 
-Values are passed as quoted strings, matching the mobile interface's attribute
-and method actions. Successful writes print `set(...)`; rejected calls and
-connection failures exit with code 1.
+Use `--call-type script` to execute a script directly on the CLU. `--object`
+specifies the script name, and `--action` is omitted. Arguments can be passed via
+`--value` or omitted for a parameterless call:
+
+```bash
+python3 main.py execute --clu CLU_Z_WAVE_1 --object Evening --call-type script
+python3 main.py execute --clu CLU_Z_WAVE_1 --object Evening --call-type script \
+  --value '"room A", 42'
+```
+
+Values are passed as quoted strings for attributes and methods, or raw argument
+expressions for scripts. Successful calls print the action (e.g. `set(...)`,
+`execute(...)`, or `script(...)`); rejected calls and connection failures exit
+with code 1.
 
 ### Stream CLU debug logs
 

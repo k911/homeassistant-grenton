@@ -35,6 +35,10 @@ Examples:
   %(prog)s diagnostics --clu CLU_Z_WAVE_1
   %(prog)s firmware --clu CLU_Z_WAVE_1 --output json
   %(prog)s download --remote 'a:\\user.lua' --output user.lua
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object DOU0699 --action 2 --value 1
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object THE6183 --call-type attribute --action 10 --value 10
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object Evening --call-type script
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object Evening --call-type script --value '"room A", 42'
         """,
     )
 
@@ -119,7 +123,7 @@ Examples:
     view_state_parser.set_defaults(handler=view_state_command)
 
     # Execute action command
-    execute_parser = subparsers.add_parser("execute", help="Execute action on CLU object")
+    execute_parser = subparsers.add_parser("execute", help="Execute action or script on CLU")
     execute_parser.add_argument(
         "--clu",
         default="CLU_Z_WAVE_1",
@@ -128,23 +132,23 @@ Examples:
     execute_parser.add_argument(
         "--object",
         required=True,
-        help="Object ID/name (e.g., DOU0699)",
+        help="Object ID/name or script name (e.g., DOU0699, myScript)",
     )
     execute_parser.add_argument(
         "--action",
-        required=True,
-        help="Method or attribute index (e.g., 10)",
+        default=None,
+        help="Method or attribute index (e.g., 10); omitted for scripts",
     )
     execute_parser.add_argument(
         "--call-type",
-        choices=["method", "attribute"],
+        choices=["method", "attribute", "script"],
         default="method",
-        help="Call a method or set an attribute (default: method)",
+        help="Call a method, set an attribute, or run a script (default: method)",
     )
     execute_parser.add_argument(
         "--value",
-        required=True,
-        help="Action value (e.g., 1, 0, or command)",
+        default=None,
+        help="Action value or script arguments (e.g., 1, 0, or 'arg1, arg2')",
     )
     execute_parser.add_argument(
         "--config",

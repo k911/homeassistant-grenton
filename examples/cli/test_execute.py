@@ -13,9 +13,9 @@ from homeassistant_grenton.domain.api.clu_messages.action import (
 
 
 class ExecuteTests(unittest.TestCase):
-    def run_command(self, extra=(), *, result=True, error=None, connected=True):
-        args = create_parser().parse_args(
-            [
+    def run_command(self, extra=(), *, result=True, error=None, connected=True, base_args=None):
+        if base_args is None:
+            raw_args = [
                 "execute",
                 "--clu",
                 "Main",
@@ -27,7 +27,9 @@ class ExecuteTests(unittest.TestCase):
                 "10",
                 *extra,
             ]
-        )
+        else:
+            raw_args = ["execute", *base_args, *extra]
+        args = create_parser().parse_args(raw_args)
         config = SimpleNamespace(
             clus=[SimpleNamespace(id="clu1", name="Main")],
             encryption=object(),
@@ -45,7 +47,8 @@ class ExecuteTests(unittest.TestCase):
             self.assertRaises(SystemExit) as exit_result,
         ):
             args.handler(args)
-        api.disconnect.assert_awaited_once()
+        if exit_result.exception.code != 2:
+            api.disconnect.assert_awaited_once()
         return api, exit_result.exception.code, output.getvalue()
 
     def test_existing_execute_defaults_to_method(self):
@@ -77,6 +80,100 @@ class ExecuteTests(unittest.TestCase):
             'THERMOSTAT1:execute(10,"10")',
         )
         self.assertEqual(status, 0)
+
+    def test_script_execution_without_arguments(self):
+        api, status, output = self.run_command(
+            base_args=["--clu", "Main", "--object", "Evening", "--call-type", "script"]
+        )
+        action = api.execute_action.await_args.args[0]
+        self.assertEqual(
+            GrentonCluApiActionRequest.from_action(action).payload,
+            "Evening()",
+        )
+        self.assertEqual(action.clu_id, "clu1")
+        self.assertEqual(status, 0)
+        self.assertIn("✓ Evening()", output)
+
+    def test_script_execution_with_arguments(self):
+        api, status, output = self.run_command(
+            base_args=[
+                "--clu",
+                "Main",
+                "--object",
+                "Evening",
+                "--call-type",
+                "script",
+                "--value",
+                '"room A", 42',
+            ]
+        )
+        action = api.execute_action.await_args.args[0]
+        self.assertEqual(
+            GrentonCluApiActionRequest.from_action(action).payload,
+            'Evening("room A", 42)',
+        )
+        self.assertEqual(status, 0)
+        self.assertIn('✓ Evening("room A", 42)', output)
+
+    def test_rejected_script_call_exits_unsuccessfully(self):
+        api, status, output = self.run_command(
+            base_args=["--clu", "Main", "--object", "Evening", "--call-type", "script"],
+            result=False,
+        )
+        api.execute_action.assert_awaited_once()
+        self.assertEqual(status, 1)
+        self.assertEqual(output, "")
+
+    def test_script_exception_still_disconnects_and_exits_unsuccessfully(self):
+        api, status, output = self.run_command(
+            base_args=["--clu", "Main", "--object", "Evening", "--call-type", "script"],
+            error=TimeoutError("No response"),
+        )
+        api.execute_action.assert_awaited_once()
+        self.assertEqual(status, 1)
+        self.assertEqual(output, "")
+
+    def test_method_requires_action_index(self):
+        _, status, _ = self.run_command(
+            base_args=["--clu", "Main", "--object", "THERMOSTAT1", "--value", "10"]
+        )
+        self.assertEqual(status, 2)
+
+    def test_method_requires_value(self):
+        _, status, _ = self.run_command(
+            base_args=["--clu", "Main", "--object", "THERMOSTAT1", "--action", "10"]
+        )
+        self.assertEqual(status, 2)
+
+    def test_attribute_requires_action_index(self):
+        _, status, _ = self.run_command(
+            base_args=[
+                "--clu",
+                "Main",
+                "--object",
+                "THERMOSTAT1",
+                "--call-type",
+                "attribute",
+                "--value",
+                "10",
+            ]
+        )
+        self.assertEqual(status, 2)
+
+    def test_attribute_requires_value(self):
+        _, status, _ = self.run_command(
+            base_args=[
+                "--clu",
+                "Main",
+                "--object",
+                "THERMOSTAT1",
+                "--call-type",
+                "attribute",
+                "--action",
+                "10",
+            ]
+        )
+        self.assertEqual(status, 2)
 
     def test_rejected_attribute_call_exits_unsuccessfully(self):
         api, status, output = self.run_command(
