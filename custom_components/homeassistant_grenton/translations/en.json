@@ -379,14 +379,14 @@
         "state_attributes": {"raw_value": {"name": "Raw value"}}
       },
       "clu_telnet_log_level": {
-        "name": "Telnet log level",
+        "name": "Log level",
         "state": {
-          "off": "Off", "error": "Error", "warning": "Warning", "info": "Info", "debug": "Debug"
+          "off": "OFF", "error": "ERROR", "warning": "WARNING", "info": "INFO", "debug": "DEBUG"
         },
         "state_attributes": {"raw_value": {"name": "Raw value"}}
       },
       "clu_reset_reason": {
-        "name": "Reset reason",
+        "name": "Last restart reason",
         "state": {
           "power_on": "Power on",
           "external_reset": "External reset",
@@ -457,10 +457,10 @@
     },
     "switch": {
       "clu_debug_capture": {
-        "name": "Debug capture"
+        "name": "Diagnostic file capture"
       },
       "clu_debug_logging": {
-        "name": "Debug logging"
+        "name": "Enable debugging"
       },
       "clu_use_cloud": {
         "name": "Use cloud"

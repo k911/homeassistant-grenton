@@ -544,7 +544,7 @@ approximate boot time, not the cause or the exact time HA noticed it. Its
 attributes include detection time, old/new uptime and debug-capture outcome.
 An initial old uptime still provides an estimated boot timestamp without a warning.
 
-The separate **Debug capture** configuration switch defaults to off. Its
+The separate **Diagnostic file capture** configuration switch defaults to off. Its
 preference persists per CLU; the uptime baseline does not. When enabled at the
 time a restart is detected, the integration tries to download `a:\debug.bin` in
 the background, with **two attempts maximum** and a five-second pause after the
@@ -553,8 +553,8 @@ the retry. Empty files and transfer errors count as unsuccessful attempts; after
 both fail, one warning explains that no debug file could be captured. A regular
 restart or disabled native debugging may leave no file available.
 
-Debug capture never reads or changes Telnet log level, opens Telnet, or enables
-the independent **Debug logging** switch. Normal CLU polling continues during
+Diagnostic file capture never reads or changes Telnet log level, opens Telnet, or enables
+the independent **Enable debugging** switch. Normal CLU polling continues during
 downloads. Disabling capture, detecting a newer restart on that CLU, or unloading
 the integration cancels the superseded work.
 The existing transfer deadlines and 4 MiB size limit bound each attempt.
@@ -583,11 +583,11 @@ the device type.
 | Firmware version | 17 | `sensor` | Both types; read-only software version, also shown in the device's firmware metadata. |
 | Bus voltage | 27 | `sensor` | CLU_Z_WAVE only; read-only voltage in V, with measurement statistics. |
 | State | 2 | `sensor` | CLU_Z_WAVE only; native state such as System OK, Emergency or Critical error. |
-| Telnet log level | 31 / 23 | `sensor` | CLU_Z_WAVE / CLU_GATE_HTTP; Off, Error, Warning, Info or Debug. |
-| Reset reason | 26 | `sensor` | CLU_GATE_HTTP only; Power on, External reset, Configuration reload or System exception. |
-| Debug logging | 31 / 23 | `switch` | CLU_Z_WAVE / CLU_GATE_HTTP; enable DEBUG (4), or disable native logging with OFF (0). |
+| Log level | 31 / 23 | `sensor` | CLU_Z_WAVE / CLU_GATE_HTTP; OFF, ERROR, WARNING, INFO or DEBUG. |
+| Last restart reason | 26 | `sensor` | CLU_GATE_HTTP only; Power on, External reset, Configuration reload or System exception. |
+| Enable debugging | 31 / 23 | `switch` | CLU_Z_WAVE / CLU_GATE_HTTP; enable DEBUG (4), or disable native logging with OFF (0). |
 
-Read-only values appear under **Diagnostic**; Use cloud and Debug logging appear
+Read-only values appear under **Diagnostic**; Use cloud and Enable debugging appear
 under **Configuration**. They share the existing CLU device and use each CLU's
 configured slow-poll interval (60 seconds by default), without adding realtime
 subscriptions. Values remain unknown until confirmed and expire after two missed

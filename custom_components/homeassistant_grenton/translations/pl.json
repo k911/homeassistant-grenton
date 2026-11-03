@@ -379,14 +379,14 @@
         "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
       },
       "clu_telnet_log_level": {
-        "name": "Poziom logowania Telnet",
+        "name": "Poziom logowania",
         "state": {
-          "off": "Wyłączone", "error": "Błąd", "warning": "Ostrzeżenie", "info": "Informacje", "debug": "Debugowanie"
+          "off": "OFF", "error": "ERROR", "warning": "WARNING", "info": "INFO", "debug": "DEBUG"
         },
         "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
       },
       "clu_reset_reason": {
-        "name": "Przyczyna restartu",
+        "name": "Przyczyna ostatniego restartu",
         "state": {
           "power_on": "Włączenie zasilania",
           "external_reset": "Reset zewnętrzny",
@@ -457,10 +457,10 @@
     },
     "switch": {
       "clu_debug_capture": {
-        "name": "Przechwytywanie diagnostyki"
+        "name": "Przechwytywanie plików diagnostycznych"
       },
       "clu_debug_logging": {
-        "name": "Logowanie DEBUG"
+        "name": "Włączenie debugowania"
       },
       "clu_use_cloud": {
         "name": "Używaj chmury"
