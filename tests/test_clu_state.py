@@ -134,8 +134,11 @@ def test_supported_attributes_poll_on_each_clu_and_update_native_entities(tmp_pa
             indexes = ["0", "19", "18", "17"]
             values = [123, True, False, "3.1.0"]
             if clu.device_type == CLU_Z_WAVE:
-                indexes.append("27")
-                values.append(24.5)
+                indexes.extend(["27", "2", "31"])
+                values.extend([24.5, 1, 0])
+            else:
+                indexes.extend(["23", "26"])
+                values.extend([0, 2])
             assert [key.name for key in keys] == indexes
             assert all(isinstance(key, GrentonCluStateAttributeKey) for key in keys)
             assert all(key.object_name == clu.id for key in keys)
@@ -159,7 +162,7 @@ def test_supported_attributes_poll_on_each_clu_and_update_native_entities(tmp_pa
             api.register_component_states.assert_not_awaited()
             api.poll_component_states.assert_awaited_once_with(keys)
         platforms = await register_platforms(hass, entry)
-        assert [len(platform.entities) for platform in platforms] == [11, 4, 2]
+        assert [len(platform.entities) for platform in platforms] == [17, 4, 8]
         registry = er.async_get(hass)
         device_registry = dr.async_get(hass)
         assert len(device_registry.devices) == 2
@@ -180,7 +183,7 @@ def test_supported_attributes_poll_on_each_clu_and_update_native_entities(tmp_pa
                 assert voltage.native_unit_of_measurement == "V"
                 assert voltage.state_class.value == "measurement"
             else:
-                assert len(group) == 8
+                assert len(group) == 14
             assert hass.states.get(controller.entity_id).state == clu.serial_number
             assert hass.states.get(uptime.entity_id).state == "123"
             assert uptime.device_class == SensorDeviceClass.DURATION
@@ -197,7 +200,7 @@ def test_supported_attributes_poll_on_each_clu_and_update_native_entities(tmp_pa
 
         # A poll changes only its own CLU, including a reboot and new firmware.
         coord._apis["clu1"].poll_component_states = AsyncMock(
-            return_value=[0, False, True, "3.2.0", 24.5]
+            return_value=[0, False, True, "3.2.0", 24.5, 1, 4]
         )
         await coord._send_slow_poll("clu1")
         assert entities[1].native_value == 0
@@ -513,8 +516,14 @@ def test_new_type_uses_its_own_indexes_and_skips_unsupported_entities(
 @pytest.mark.parametrize(
     "object_id,serial,device_type,indexes",
     [
-        ("CLU900001", "221000001", CLU_Z_WAVE, ["0", "19", "18", "17", "27"]),
-        ("CLU521000002", "521000002", CLU_GATE_HTTP, ["0", "19", "18", "17"]),
+        (
+            "CLU900001", "221000001", CLU_Z_WAVE,
+            ["0", "19", "18", "17", "27", "2", "31"],
+        ),
+        (
+            "CLU521000002", "521000002", CLU_GATE_HTTP,
+            ["0", "19", "18", "17", "23", "26"],
+        ),
     ],
 )
 def test_imported_clu_id_addresses_attributes_independently_of_serial(
@@ -547,7 +556,9 @@ def test_imported_clu_id_addresses_attributes_independently_of_serial(
         )
         report = '123,true,false,"1.20"'
         if device_type == CLU_Z_WAVE:
-            report += ",24.5"
+            report += ",24.5,1,0"
+        else:
+            report += ",0,2"
         values = GrentonCluApiClientRegisterResponse(
             f"resp:192.0.2.1:abcd:clientReport:0:{{{report}}}", keys, clu
         ).values

@@ -176,7 +176,7 @@ def test_diagnostics_add_no_reads_remain_available_offline_and_remove_their_list
             assert registry.async_get(obsolete.entity_id) is None
             entry.runtime_data = RuntimeData(coord, [], diagnostics)
             platforms = await register_platforms(hass, entry)
-            connection, timeouts, subscriptions = diagnostics
+            connection, timeouts, subscriptions = diagnostics[:3]
             try:
                 assert connection.is_on is None and api.health.last_seen is None
                 assert timeouts.native_value == subscriptions.native_value == 0

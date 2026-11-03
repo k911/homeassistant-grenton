@@ -1,0 +1,299 @@
+"""CLI commands package."""
+import argparse
+
+from .client_destroy import client_destroy_command, observation_seconds
+from .configure import configure_command
+from .debug_logs import debug_logs_command, telnet_port
+from .diagnostics import diagnostics_command, report_timeout
+from .download import download_command, positive_size
+from .execute import execute_command
+from .fetch_values import fetch_values_command
+from .shared_subscriptions import observation_duration, shared_subscription_command
+from .test import test_command
+from .view_state import view_state_command
+from .watch_attribute import watch_attribute_command
+from .watch_variable import watch_variable_command
+
+
+def create_parser() -> argparse.ArgumentParser:
+    """Create and return the argument parser."""
+    parser = argparse.ArgumentParser(
+        description="Grenton connection configuration tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s configure --pin 1234
+  %(prog)s configure --url http://192.168.1.100:9998 --pin 5678
+  %(prog)s test
+  %(prog)s test --config ~/.grenton/config.yaml
+  %(prog)s fetch-values --attribute CLU828599.0 --attribute THERMOSTAT1.9 --summary
+  %(prog)s watch-variable --variable myVariable
+  %(prog)s watch-variable --clu CLU_Z_WAVE_1 --variable myVariable --variable otherVariable
+  %(prog)s watch-attribute --attribute DIN5696.0
+  %(prog)s watch-attribute --clu CLU_Z_WAVE_1 --attribute DIN5696.0 --attribute DIN5697.1
+  %(prog)s debug-logs --clu CLU_Z_WAVE_1 --level DEBUG
+  %(prog)s diagnostics --clu CLU_Z_WAVE_1
+  %(prog)s firmware --clu CLU_Z_WAVE_1 --output json
+  %(prog)s download --remote 'a:\\user.lua' --output user.lua
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object DOU0699 --action 2 --value 1
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object THE6183 --call-type attribute --action 10 --value 10
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object Evening --call-type script
+  %(prog)s execute --clu CLU_Z_WAVE_1 --object Evening --call-type script --value '"room A", 42'
+        """,
+    )
+
+    # Global options
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable CLI diagnostic logging to stderr (does not set CLU verbosity)",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Configure command
+    configure_parser = subparsers.add_parser("configure", help="Configure Grenton connection")
+    configure_parser.add_argument(
+        "--url",
+        default="http://localhost:9998",
+        help="Grenton Object Manager URL (default: http://localhost:9998)",
+    )
+    configure_parser.add_argument("--pin", required=True, help="Grenton Object Manager PIN")
+    configure_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    configure_parser.add_argument(
+        "--update-tracked-objects",
+        action="store_true",
+        help="Discover interface variables/attributes and merge them into grenton_tracked_objects",
+    )
+    configure_parser.set_defaults(handler=configure_command)
+
+    # Test command
+    test_parser = subparsers.add_parser("test", help="Test Grenton connection")
+    test_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    test_parser.set_defaults(handler=test_command)
+
+    destroy_parser = subparsers.add_parser(
+        "test-client-destroy", help="Verify cleanup of a temporary uptime subscription",
+    )
+    destroy_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    destroy_parser.add_argument("--config", default=None, help="Saved configuration file")
+    destroy_parser.add_argument(
+        "--observe-seconds", type=observation_seconds, default=10,
+        help="Seconds to observe before and after destruction, 5–15 (default: 10)",
+    )
+    destroy_parser.set_defaults(handler=client_destroy_command)
+
+    shared_parser = subparsers.add_parser(
+        "test-subscriptions", help="Verify shared-listener routing, renewals and cleanup",
+    )
+    shared_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    shared_parser.add_argument("--config", default=None, help="Saved configuration file")
+    shared_parser.add_argument(
+        "--duration", type=observation_duration, default=100,
+        help="Initial observation seconds, 100–300 (default: 100)",
+    )
+    shared_parser.set_defaults(handler=shared_subscription_command)
+
+    # View state command
+    view_state_parser = subparsers.add_parser("view-state", help="Display CLU state and attributes")
+    view_state_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name to view state for (default: CLU_Z_WAVE_1)",
+    )
+    view_state_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    view_state_parser.add_argument(
+        "--output",
+        choices=["yaml", "json"],
+        default="yaml",
+        help="Output format: yaml or json (default: yaml)",
+    )
+    view_state_parser.set_defaults(handler=view_state_command)
+
+    # Execute action command
+    execute_parser = subparsers.add_parser("execute", help="Execute action or script on CLU")
+    execute_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    execute_parser.add_argument(
+        "--object",
+        required=True,
+        help="Object ID/name or script name (e.g., DOU0699, myScript)",
+    )
+    execute_parser.add_argument(
+        "--action",
+        default=None,
+        help="Method or attribute index (e.g., 10); omitted for scripts",
+    )
+    execute_parser.add_argument(
+        "--call-type",
+        choices=["method", "attribute", "script"],
+        default="method",
+        help="Call a method, set an attribute, or run a script (default: method)",
+    )
+    execute_parser.add_argument(
+        "--value",
+        default=None,
+        help="Action value or script arguments (e.g., 1, 0, or 'arg1, arg2')",
+    )
+    execute_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    execute_parser.set_defaults(handler=execute_command)
+
+    # Watch variable command
+    watch_variable_parser = subparsers.add_parser(
+        "watch-variable",
+        help="Subscribe to CLU variables and print value changes",
+    )
+    watch_variable_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    watch_variable_parser.add_argument(
+        "--variable",
+        action="append",
+        required=True,
+        metavar="NAME",
+        help="Variable name to watch (repeat for multiple variables)",
+    )
+    watch_variable_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    watch_variable_parser.add_argument(
+        "--output",
+        choices=["text", "json"],
+        default="text",
+        help="Output format: text or json lines (default: text)",
+    )
+    watch_variable_parser.add_argument(
+        "--refresh-interval",
+        type=int,
+        default=45,
+        help="Seconds between subscription refreshes (default: 45)",
+    )
+    watch_variable_parser.set_defaults(handler=watch_variable_command)
+
+    # Watch attribute command
+    watch_attribute_parser = subparsers.add_parser(
+        "watch-attribute",
+        help="Subscribe to CLU object attributes and print value changes",
+    )
+    watch_attribute_parser.add_argument(
+        "--clu",
+        default="CLU_Z_WAVE_1",
+        help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    watch_attribute_parser.add_argument(
+        "--attribute",
+        action="append",
+        required=True,
+        metavar="OBJECT.INDEX",
+        help="Attribute to watch as OBJECT.INDEX, e.g. DIN5696.0 (repeat for multiple attributes)",
+    )
+    watch_attribute_parser.add_argument(
+        "--config",
+        default=None,
+        help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    watch_attribute_parser.add_argument(
+        "--output",
+        choices=["text", "json"],
+        default="text",
+        help="Output format: text or json lines (default: text)",
+    )
+    watch_attribute_parser.add_argument(
+        "--refresh-interval",
+        type=int,
+        default=45,
+        help="Seconds between subscription refreshes (default: 45)",
+    )
+    watch_attribute_parser.set_defaults(handler=watch_attribute_command)
+
+    fetch_parser = subparsers.add_parser(
+        "fetch-values", help="Read selected values once using SYSTEM:fetchValues",
+    )
+    fetch_parser.add_argument(
+        "--clu", default="CLU_Z_WAVE_1", help="CLU name (default: CLU_Z_WAVE_1)",
+    )
+    fetch_parser.add_argument(
+        "--attribute", action="append", default=[], metavar="OBJECT.INDEX",
+        help="Attribute to read as OBJECT.INDEX (repeat for multiple attributes)",
+    )
+    fetch_parser.add_argument(
+        "--variable", action="append", default=[], metavar="NAME",
+        help="Variable name to read (repeat for multiple variables)",
+    )
+    fetch_parser.add_argument(
+        "--config", default=None, help="Configuration file path (default: ~/.grenton/config.yaml)",
+    )
+    fetch_parser.add_argument(
+        "--format", "--output", dest="output", choices=["text", "json"], default="text",
+        help="Output format: text or json (default: text)",
+    )
+    fetch_parser.add_argument(
+        "--summary", action="store_true",
+        help="Show only types and string lengths; suppress raw packet DEBUG logs",
+    )
+    fetch_parser.set_defaults(handler=fetch_values_command)
+
+    logs_parser = subparsers.add_parser(
+        "debug-logs", aliases=["logs"], help="Set CLU verbosity and stream Telnet logs",
+    )
+    logs_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    logs_parser.add_argument("--config", default=None, help="Saved configuration file")
+    logs_parser.add_argument(
+        "--level", type=str.upper, choices=["OFF", "ERROR", "WARNING", "INFO", "DEBUG"],
+        default="DEBUG", help="CLU log level (default: DEBUG); OFF disables logs and exits",
+    )
+    logs_parser.add_argument(
+        "--port", type=telnet_port, default=23,
+        help="Existing CLU Telnet port (default: 23)",
+    )
+    logs_parser.set_defaults(handler=debug_logs_command)
+
+    for name, help_text in (
+        ("diagnostics", "Read CLU and device health, voltages and failure counters"),
+        ("firmware", "Refresh installed CLU and device firmware inventory"),
+    ):
+        report_parser = subparsers.add_parser(name, help=help_text)
+        report_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+        report_parser.add_argument("--config", default=None, help="Saved configuration file")
+        report_parser.add_argument(
+            "--output", "--format", choices=["text", "json"], default="text",
+            help="Output format (default: text)",
+        )
+        report_parser.add_argument(
+            "--timeout", type=report_timeout, default=10,
+            help="Management request deadline in seconds, maximum 300 (default: 10)",
+        )
+        report_parser.set_defaults(handler=diagnostics_command, report_kind=name)
+    download_parser = subparsers.add_parser("download", help="Download an existing file from a CLU")
+    download_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
+    download_parser.add_argument("--config", default=None, help="Saved configuration file")
+    download_parser.add_argument("--remote", required=True, help="Remote path, e.g. 'a:\\user.lua'")
+    download_parser.add_argument("--output", required=True, help="Local destination file")
+    download_parser.add_argument("--force", action="store_true", help="Replace an existing local file")
+    download_parser.add_argument("--timeout", type=report_timeout, default=10, help="Management deadline in seconds (default: 10)")
+    download_parser.add_argument("--max-bytes", type=positive_size, default=4 * 1024 * 1024, help="Maximum download size (default: 4194304)")
+    download_parser.set_defaults(handler=download_command)
+    return parser

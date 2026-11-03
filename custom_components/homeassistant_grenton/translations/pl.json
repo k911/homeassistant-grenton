@@ -351,11 +351,49 @@
       "clu_uptime": {
         "name": "Czas pracy"
       },
+      "clu_last_restart": {
+        "name": "Ostatni restart"
+      },
       "clu_bus_voltage": {
         "name": "Napięcie magistrali"
       },
       "clu_firmware_version": {
         "name": "Wersja oprogramowania"
+      },
+      "clu_state": {
+        "name": "Stan",
+        "state": {
+          "system_starting": "Uruchamianie systemu",
+          "system_ok": "System OK",
+          "telnet_logging": "Logowanie (telnet)",
+          "emergency": "Tryb awaryjny",
+          "critical_error": "Błąd krytyczny",
+          "monitor": "Tryb monitorowania",
+          "module_not_responding": "Moduł nie odpowiada",
+          "zwave_inclusion": "Dodawanie węzła Z-Wave",
+          "zwave_exclusion": "Usuwanie węzła Z-Wave",
+          "zwave_busy": "Operacja Z-Wave w toku",
+          "zwave_error": "Błąd operacji Z-Wave",
+          "zwave_success": "Operacja Z-Wave zakończona"
+        },
+        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+      },
+      "clu_telnet_log_level": {
+        "name": "Poziom logowania",
+        "state": {
+          "off": "OFF", "error": "ERROR", "warning": "WARNING", "info": "INFO", "debug": "DEBUG"
+        },
+        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+      },
+      "clu_reset_reason": {
+        "name": "Przyczyna ostatniego restartu",
+        "state": {
+          "power_on": "Włączenie zasilania",
+          "external_reset": "Reset zewnętrzny",
+          "configuration_reload": "Przeładowanie konfiguracji",
+          "system_exception": "Wyjątek systemowy"
+        },
+        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
       },
       "thermostat_schedule": {
         "name": "Harmonogram",
@@ -418,6 +456,15 @@
       }
     },
     "switch": {
+      "clu_telnet_logging": {
+        "name": "Przechwytywanie logów debugowania"
+      },
+      "clu_debug_capture": {
+        "name": "Przechwytywanie plików diagnostycznych"
+      },
+      "clu_debug_logging": {
+        "name": "Tryb debugowania"
+      },
       "clu_use_cloud": {
         "name": "Używaj chmury"
       }

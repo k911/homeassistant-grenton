@@ -525,6 +525,83 @@ subscription removal.
 A ping timeout alone does not prove a reboot; a drop in the CLU Uptime sensor does
 provide evidence of a restart. Neither identifies its cause.
 
+#### Restart detection and debug capture
+
+The integration keeps the last successful uptime per CLU in memory. Failed,
+missing or invalid readings do not replace it. A fresh decrease emits a warning;
+repeated equal/increasing samples do not emit another warning for that boot.
+Both slow polls and explicitly configured realtime reports use the same observer.
+
+After HA starts or the integration reloads, the first reading establishes a new
+baseline. A first uptime within the configured slow-poll interval plus **5
+seconds** also emits a **recent restart** warning. A higher first reading is
+silent. This avoids persistent baseline storage; a restart during a long HA
+outage can be missed once uptime exceeds that startup window.
+
+Each supported CLU has a **Last restart** timestamp sensor, estimated from the
+first uptime sample and updated when a new reset is detected. It represents the
+approximate boot time, not the cause or the exact time HA noticed it. Its
+attributes include detection time, old/new uptime and debug-capture outcome.
+An initial old uptime still provides an estimated boot timestamp without a warning.
+
+The separate **Diagnostic file capture** configuration switch defaults to off. Its
+preference persists per CLU; the uptime baseline does not. When enabled at the
+time a restart is detected, the integration tries to download `a:\debug.bin` in
+the background, with **two attempts maximum** and a five-second pause after the
+first failure. Success stops
+the retry. Empty files and transfer errors count as unsuccessful attempts; after
+both fail, one warning explains that no debug file could be captured. A regular
+restart or disabled native debugging may leave no file available.
+
+Diagnostic file capture never reads or changes Telnet log level, opens Telnet, or enables
+the independent **Debug mode** switch. Normal CLU polling continues during
+downloads. Disabling capture, detecting a newer restart on that CLU, or unloading
+the integration cancels the superseded work.
+The existing transfer deadlines and 4 MiB size limit bound each attempt.
+
+Successful nonempty dumps are saved atomically under
+`<HA config>/grenton/debug/<entry>/<controller>/` (directory IDs are hashed),
+keeping the five newest dumps per controller. Failed or empty downloads do not
+evict previous dumps. The sensor's `debug_capture_file` attribute gives the
+config-relative filename. Files are not placed in the public `www` directory.
+Capture status/error metadata remains available on the Last restart sensor even
+when no binary file can be retrieved. A reboot warning is independent of whether
+capture is enabled or succeeds.
+
+#### Debug log capture in Home Assistant
+
+The **Debug log capture** configuration switch (Polish: **Przechwytywanie logów debugowania**) opens
+a native log stream for that CLU. It defaults to off and is not restored after
+HA restart or integration reload. Turning it on first sets native verbosity to
+**DEBUG** and confirms the model-specific log-level attribute, then connects to
+TCP port 23 using the same Telnet negotiation and CRLF keepalives as the CLI.
+The switch becomes on only after the CLU accepts the session.
+
+Only one Telnet client can use a CLU at a time. Stop the Object Manager or CLI
+listener before enabling this switch. A refused, reset, silent or prematurely
+closed connection fails the switch action with an error and a warning; the
+switch remains off. There are no automatic connection retries. If an established
+stream disconnects, the switch turns off and a warning explains how to reconnect.
+
+Received lines use the dedicated logger
+`custom_components.homeassistant_grenton.clu_logs`. Each record identifies the
+CLU by name and ID and preserves the native timestamp and severity. Untagged
+lines use INFO. All native levels, including DEBUG, are enabled on this logger
+while at least one stream is active; its previous level is restored after the
+last stream stops. An explicit Home Assistant `logger:` override takes
+precedence; set this logger to `debug` there if you already override its level.
+Other integration loggers keep their configured levels.
+Look in **Settings → System → Logs → Show full logs** or the HA log output;
+the condensed error view contains warnings/errors rather than every DEBUG line.
+Log retention follows Home Assistant's logging configuration.
+
+Turning the switch off or unloading the integration closes the socket and stops
+its keepalive task, releasing the single Telnet slot. Native verbosity remains
+at the last setting, including when a connection attempt fails after DEBUG was
+enabled; use **Debug mode** to turn it off. **Diagnostic file capture**
+remains independent. Partial lines and fragmented UTF-8 are handled across TCP
+reads, with bounded line buffers for malformed or unterminated output.
+
 The CLU type is detected from its serial number: `221…` is `CLU_Z_WAVE`,
 and `521…` is `CLU_GATE_HTTP`. The detected type is shown as the device model.
 Built-in values use indexed attributes on the CLU object ID imported from the
@@ -539,11 +616,44 @@ the device type.
 | Use cloud | 18 | `switch` | Both types; enable or disable the CLU cloud connector. |
 | Firmware version | 17 | `sensor` | Both types; read-only software version, also shown in the device's firmware metadata. |
 | Bus voltage | 27 | `sensor` | CLU_Z_WAVE only; read-only voltage in V, with measurement statistics. |
+| State | 2 | `sensor` | CLU_Z_WAVE only; native state such as System OK, Emergency or Critical error. |
+| Log level | 31 / 23 | `sensor` | CLU_Z_WAVE / CLU_GATE_HTTP; OFF, ERROR, WARNING, INFO or DEBUG. |
+| Last restart reason | 26 | `sensor` | CLU_GATE_HTTP only; Power on, External reset, Configuration reload or System exception. |
+| Debug mode | 31 / 23 | `switch` | CLU_Z_WAVE / CLU_GATE_HTTP; enable DEBUG (4), or disable native logging with OFF (0). |
+| Debug log capture | — | `switch` | Both types; enable DEBUG verbosity and forward the TCP/23 stream to the dedicated HA logger. |
 
-Read-only values appear under **Diagnostic**; Use cloud appears under
-**Configuration**. They share the existing CLU device and receive values
-through attribute subscriptions. Use cloud writes a boolean to attribute 18
-and reads the CLU state back. Values not yet reported remain unknown.
+Read-only values appear under **Diagnostic**; Use cloud, Debug mode and
+Debug log capture appear under **Configuration**. They share the existing CLU device.
+Native attributes use each CLU's
+configured slow-poll interval (60 seconds by default), without adding realtime
+subscriptions. Values remain unknown until confirmed and expire after two missed
+poll intervals. Existing explicit realtime consumers retain their configured
+precedence for a shared attribute.
+
+Use cloud writes a boolean to attribute 18 and reads the CLU state back. Debug
+logging writes a numeric level to the type-specific attribute and reads just
+that attribute back, updating both the switch and the log-level sensor. The
+switch is on only for DEBUG; ERROR, WARNING and INFO remain visible on the level
+sensor while the switch is off. Enabling it does not open a Telnet connection.
+To listen to native logs, enable **Debug log capture** or use the CLI `debug-logs`
+command after stopping Object Manager's log listener; each CLU supports only one
+Telnet session.
+
+State, level and reset-reason sensors include `raw_value`; unrecognized codes
+remain unknown instead of receiving an invented label. Internal log (attribute 1
+on CLU_Z_WAVE) is currently available through the CLI only; Home Assistant does
+not poll it. Use the CLI's `fetch-values` or `watch-attribute` to inspect it.
+For example, from `examples/cli`:
+
+```bash
+python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
+  --attribute CLU828599.0 --attribute CLU828599.1 --output json
+```
+
+This watches uptime and internal-log changes through subscriptions; it is
+separate from Home Assistant's slow polling. Use the imported CLU object ID
+from your configuration. More examples are in [the CLI README](examples/cli/README.md).
+
 Unrecognized serial prefixes still get a Controller entity for script calls;
 only supported types get built-in attribute entities.
 
