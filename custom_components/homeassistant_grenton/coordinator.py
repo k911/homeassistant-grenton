@@ -17,7 +17,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .clu_settings import subscription_id, validate_subscription_id
 from .const import DOMAIN
-from .domain.action import GrentonAction
+from .domain.action import GrentonAction, GrentonActionAttribute
 from .domain.api.clu import GrentonCluApi
 from .domain.api.clu_health import (
     KEEPALIVE_INTERVAL,
@@ -27,9 +27,14 @@ from .domain.api.clu_health import (
 )
 from .domain.api.clu_messages import GrentonCluApiActionRequest
 from .domain.clu import GrentonClu
-from .domain.device_types import CLU_GATE_HTTP
+from .domain.device_types import CLU_GATE_HTTP, attribute_index
 from .domain.encryption import GrentonEncryption
-from .domain.state_object import GrentonStateObject, GrentonVariableValueObject
+from .domain.enums import GrentonActionEventType
+from .domain.state_object import (
+    GrentonAttributeValueObject,
+    GrentonStateObject,
+    GrentonVariableValueObject,
+)
 from .read_policy import slow_read_interval, validate_slow_read_interval
 from .restarts import CluRestartMonitor
 from .state import (
@@ -42,6 +47,7 @@ from .state import (
     GrentonValue,
     MissingState,
 )
+from .telnet_logging import CluTelnetLogging
 
 StateKey = GrentonCluStateVariableKey | GrentonCluStateAttributeKey
 
@@ -120,6 +126,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
         self.restarts = CluRestartMonitor(
             hass, config_entry, clus, encryption, self._slow_read_intervals,
             self._publish_clu_update,
+        )
+        self.telnet_logs = CluTelnetLogging(
+            clus, self.async_enable_debug_logging, self._publish_clu_update,
         )
 
         # Initialize API instances for each CLU
@@ -380,6 +389,25 @@ class GrentonCoordinator(DataUpdateCoordinator):
             _LOGGER.error("[%s] Error executing action: %s", action.clu_id, e)
         finally:
             self._publish_clu_update(action.clu_id)
+
+    async def async_enable_debug_logging(self, clu_id: str) -> None:
+        """Enable native DEBUG output and confirm only its model-specific attribute."""
+        clu = self.telnet_logs.clus[clu_id]
+        index = attribute_index(clu.device_type, "TelnetLogLevel")
+        if index is None:
+            raise HomeAssistantError(f"CLU {clu.name} has no supported log level")
+        state = GrentonAttributeValueObject(clu.id, clu.object_name, index)
+        await self.execute_action(
+            GrentonActionAttribute(
+                clu_id=clu.id, object_name=clu.object_name, index=index,
+                event=GrentonActionEventType.ON, value="4", lua_value="4",
+            ),
+            raise_on_error=True,
+        )
+        confirmed = await self.async_refresh_clu_state(clu.id, required_states=[state])
+        value = self.get_value_for_component(state)
+        if not confirmed or isinstance(value, bool) or value not in (4, "4"):
+            raise HomeAssistantError(f"Could not confirm DEBUG log level on CLU {clu.name}")
 
     async def _process_report(
         self,
@@ -712,7 +740,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
         await self.async_shutdown()
 
     async def async_shutdown(self) -> None:
-        """Stop work, remove owned subscriptions, and close local UDP sockets."""
+        """Stop collectors and polling, remove subscriptions, and close sockets."""
         async with self._shutdown_lock:
             self._stopping = True
             if self._stop_listener is not None:
@@ -729,6 +757,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
             self._slow_tasks.clear()
+            await self.telnet_logs.async_shutdown()
             await self.restarts.async_shutdown()
             # The API attempts bounded remote removal before local UDP close.
             await asyncio.gather(

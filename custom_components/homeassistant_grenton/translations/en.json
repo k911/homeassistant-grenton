@@ -365,7 +365,7 @@
         "state": {
           "system_starting": "System starting",
           "system_ok": "System OK",
-          "telnet_logging": "Telnet logging",
+          "telnet_logging": "Logging (telnet)",
           "emergency": "Emergency",
           "critical_error": "Critical error",
           "monitor": "Monitor mode",
@@ -456,6 +456,9 @@
       }
     },
     "switch": {
+      "clu_telnet_logging": {
+        "name": "Telnet logging"
+      },
       "clu_debug_capture": {
         "name": "Diagnostic file capture"
       },

@@ -1,4 +1,4 @@
-"""Connection diagnostics derived from existing traffic, with no CLU bindings."""
+"""CLU connection diagnostics and optional diagnostic collection switches."""
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -117,6 +117,23 @@ class CluDebugCapture(CluConnectionDiagnostic, SwitchEntity):
         await self.coordinator.restarts.async_set_capture(self.clu.id, False)
 
 
+class CluTelnetLoggingSwitch(CluConnectionDiagnostic, SwitchEntity):
+    """Own a Telnet stream independently from native verbosity and file capture."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:console-network-outline"
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.telnet_logs.is_on(self.clu.id)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.coordinator.telnet_logs.async_start(self.clu.id)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.coordinator.telnet_logs.async_stop(self.clu.id)
+
+
 def connection_diagnostics(
     coordinator: GrentonCoordinator, clu: GrentonClu
 ) -> list[Entity]:
@@ -133,4 +150,6 @@ def connection_diagnostics(
             CluLastRestart(coordinator, clu, "clu_last_restart"),
             CluDebugCapture(coordinator, clu, "clu_debug_capture"),
         ])
+    if attribute_index(clu.device_type, "TelnetLogLevel") is not None:
+        entities.append(CluTelnetLoggingSwitch(coordinator, clu, "clu_telnet_logging"))
     return entities

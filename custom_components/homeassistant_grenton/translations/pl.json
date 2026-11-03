@@ -365,7 +365,7 @@
         "state": {
           "system_starting": "Uruchamianie systemu",
           "system_ok": "System OK",
-          "telnet_logging": "Logowanie Telnet",
+          "telnet_logging": "Logowanie (telnet)",
           "emergency": "Tryb awaryjny",
           "critical_error": "Błąd krytyczny",
           "monitor": "Tryb monitorowania",
@@ -456,6 +456,9 @@
       }
     },
     "switch": {
+      "clu_telnet_logging": {
+        "name": "Logowanie Telnet"
+      },
       "clu_debug_capture": {
         "name": "Przechwytywanie plików diagnostycznych"
       },

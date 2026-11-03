@@ -72,7 +72,7 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
         reader = SimpleNamespace(read=AsyncMock(side_effect=read))
         output = io.StringIO()
         with (
-            patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))) as connect,
+            patch("homeassistant_grenton.domain.api.telnet.asyncio.open_connection", AsyncMock(return_value=(reader, writer))) as connect,
             contextlib.redirect_stdout(output),
         ):
             await stream_logs("192.0.2.10", 23)
@@ -89,7 +89,7 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
         writer = self.writer()
         reader = SimpleNamespace(read=AsyncMock(side_effect=asyncio.CancelledError))
         with (
-            patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+            patch("homeassistant_grenton.domain.api.telnet.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
             self.assertRaises(asyncio.CancelledError),
         ):
             await stream_logs("192.0.2.10")
@@ -100,7 +100,7 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
         writer = self.writer()
         reader = SimpleNamespace(read=AsyncMock(side_effect=ConnectionResetError("reset")))
         with (
-            patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+            patch("homeassistant_grenton.domain.api.telnet.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
             self.assertRaises(TelnetSessionRejected),
         ):
             await stream_logs("192.0.2.10")
@@ -119,8 +119,8 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
 
                 reader = SimpleNamespace(read=AsyncMock(side_effect=read))
                 with (
-                    patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
-                    patch("clu_logs.CONNECT_TIMEOUT", 0.01),
+                    patch("homeassistant_grenton.domain.api.telnet.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+                    patch("homeassistant_grenton.domain.api.telnet.CONNECT_TIMEOUT", 0.01),
                     self.assertRaises(TelnetSessionRejected),
                 ):
                     await stream_logs("192.0.2.10")
@@ -131,7 +131,7 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
         writer = self.writer()
         reader = SimpleNamespace(read=AsyncMock(side_effect=[b"\xff\xfd\x00", ConnectionResetError("reboot")]))
         with (
-            patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+            patch("homeassistant_grenton.domain.api.telnet.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
             self.assertRaises(ConnectionResetError),
         ):
             await stream_logs("192.0.2.10")
@@ -156,7 +156,7 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
 
         reader = SimpleNamespace(read=AsyncMock(side_effect=read))
         with (
-            patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+            patch("homeassistant_grenton.domain.api.telnet.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
             self.assertRaises(BrokenPipeError),
         ):
             await stream_logs("192.0.2.10")
@@ -170,7 +170,7 @@ class StreamLogsTests(unittest.IsolatedAsyncioTestCase):
         output = Mock()
         output.write.side_effect = BrokenPipeError("consumer exited")
         with (
-            patch("clu_logs.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
+            patch("homeassistant_grenton.domain.api.telnet.asyncio.open_connection", AsyncMock(return_value=(reader, writer))),
             patch("clu_logs.sys.stdout", output),
             self.assertRaises(LogOutputClosed),
         ):
