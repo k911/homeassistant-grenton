@@ -457,13 +457,13 @@
     },
     "switch": {
       "clu_telnet_logging": {
-        "name": "Telnet logging"
+        "name": "Debug log capture"
       },
       "clu_debug_capture": {
         "name": "Diagnostic file capture"
       },
       "clu_debug_logging": {
-        "name": "Enable debugging"
+        "name": "Debug mode"
       },
       "clu_use_cloud": {
         "name": "Use cloud"

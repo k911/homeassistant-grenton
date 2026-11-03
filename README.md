@@ -554,7 +554,7 @@ both fail, one warning explains that no debug file could be captured. A regular
 restart or disabled native debugging may leave no file available.
 
 Diagnostic file capture never reads or changes Telnet log level, opens Telnet, or enables
-the independent **Enable debugging** switch. Normal CLU polling continues during
+the independent **Debug mode** switch. Normal CLU polling continues during
 downloads. Disabling capture, detecting a newer restart on that CLU, or unloading
 the integration cancels the superseded work.
 The existing transfer deadlines and 4 MiB size limit bound each attempt.
@@ -568,9 +568,9 @@ Capture status/error metadata remains available on the Last restart sensor even
 when no binary file can be retrieved. A reboot warning is independent of whether
 capture is enabled or succeeds.
 
-#### Telnet logging in Home Assistant
+#### Debug log capture in Home Assistant
 
-The **Telnet logging** configuration switch (Polish: **Logowanie Telnet**) opens
+The **Debug log capture** configuration switch (Polish: **Przechwytywanie logów debugowania**) opens
 a native log stream for that CLU. It defaults to off and is not restored after
 HA restart or integration reload. Turning it on first sets native verbosity to
 **DEBUG** and confirms the model-specific log-level attribute, then connects to
@@ -598,7 +598,7 @@ Log retention follows Home Assistant's logging configuration.
 Turning the switch off or unloading the integration closes the socket and stops
 its keepalive task, releasing the single Telnet slot. Native verbosity remains
 at the last setting, including when a connection attempt fails after DEBUG was
-enabled; use **Enable debugging** to turn it off. **Diagnostic file capture**
+enabled; use **Debug mode** to turn it off. **Diagnostic file capture**
 remains independent. Partial lines and fragmented UTF-8 are handled across TCP
 reads, with bounded line buffers for malformed or unterminated output.
 
@@ -619,11 +619,11 @@ the device type.
 | State | 2 | `sensor` | CLU_Z_WAVE only; native state such as System OK, Emergency or Critical error. |
 | Log level | 31 / 23 | `sensor` | CLU_Z_WAVE / CLU_GATE_HTTP; OFF, ERROR, WARNING, INFO or DEBUG. |
 | Last restart reason | 26 | `sensor` | CLU_GATE_HTTP only; Power on, External reset, Configuration reload or System exception. |
-| Enable debugging | 31 / 23 | `switch` | CLU_Z_WAVE / CLU_GATE_HTTP; enable DEBUG (4), or disable native logging with OFF (0). |
-| Telnet logging | — | `switch` | Both types; enable DEBUG verbosity and forward the TCP/23 stream to the dedicated HA logger. |
+| Debug mode | 31 / 23 | `switch` | CLU_Z_WAVE / CLU_GATE_HTTP; enable DEBUG (4), or disable native logging with OFF (0). |
+| Debug log capture | — | `switch` | Both types; enable DEBUG verbosity and forward the TCP/23 stream to the dedicated HA logger. |
 
-Read-only values appear under **Diagnostic**; Use cloud, Enable debugging and
-Telnet logging appear under **Configuration**. They share the existing CLU device.
+Read-only values appear under **Diagnostic**; Use cloud, Debug mode and
+Debug log capture appear under **Configuration**. They share the existing CLU device.
 Native attributes use each CLU's
 configured slow-poll interval (60 seconds by default), without adding realtime
 subscriptions. Values remain unknown until confirmed and expire after two missed
@@ -635,7 +635,7 @@ logging writes a numeric level to the type-specific attribute and reads just
 that attribute back, updating both the switch and the log-level sensor. The
 switch is on only for DEBUG; ERROR, WARNING and INFO remain visible on the level
 sensor while the switch is off. Enabling it does not open a Telnet connection.
-To listen to native logs, enable **Telnet logging** or use the CLI `debug-logs`
+To listen to native logs, enable **Debug log capture** or use the CLI `debug-logs`
 command after stopping Object Manager's log listener; each CLU supports only one
 Telnet session.
 

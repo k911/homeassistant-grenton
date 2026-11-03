@@ -457,13 +457,13 @@
     },
     "switch": {
       "clu_telnet_logging": {
-        "name": "Logowanie Telnet"
+        "name": "Przechwytywanie logów debugowania"
       },
       "clu_debug_capture": {
         "name": "Przechwytywanie plików diagnostycznych"
       },
       "clu_debug_logging": {
-        "name": "Włączenie debugowania"
+        "name": "Tryb debugowania"
       },
       "clu_use_cloud": {
         "name": "Używaj chmury"
