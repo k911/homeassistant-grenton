@@ -58,8 +58,8 @@ def test_manual_configuration_is_native_and_only_capability_is_saved_in_options(
                                 'ROLLER1:set(14,24000)', 'ROLLER1:set(15,600000)'}
         commands.clear()
         await entity.apply_configuration({'tilt_enabled': False})
-        assert entity._tilt_enabled is False and values['10'] == 3000
-        assert not commands
+        assert entity._tilt_enabled is False and values['10'] == 0
+        assert commands == ['ROLLER1:set(10,0)']
     asyncio.run(run())
 
 
@@ -90,7 +90,8 @@ def test_settings_require_successful_reads_and_confirmed_readback():
     asyncio.run(run())
 
 
-def test_manual_flow_hides_lamel_time_until_enabled_and_never_offers_legacy_max_time():
+def test_manual_flow_uses_one_native_form_with_conditional_lamel_time():
+    from homeassistant.data_entry_flow import add_visible_conditions_to_serialized_schema, _strip_hidden_fields
     async def run():
         entity, _, _, _ = configured_shutter()
         flow, entry_patch = make_flow(entity.coordinator, entity)
@@ -98,20 +99,22 @@ def test_manual_flow_hides_lamel_time_until_enabled_and_never_offers_legacy_max_
             result = await flow.async_step_entity_list({'entity': entity.entity_id})
             assert result['step_id'] == 'shutter'
             result = await flow.async_step_configure_entity()
-            assert result['step_id'] == 'configure_shutter_tilt'
-            result = await flow.async_step_configure_entity({'tilt_enabled': False})
-            fields = ui_fields(result)
-            assert 'lamel_move_timeout' not in fields
-            assert set(fields) == {'reverse_position', 'mechanical_offset', 'blinds_up_max_time', 'blinds_down_max_time'}
-        entity2, _, _, _ = configured_shutter()
-        flow, entry_patch = make_flow(entity2.coordinator, entity2)
-        with entry_patch:
-            flow.selected_entity_uid = entity2.unique_id
-            await flow.async_step_configure_entity()
-            result = await flow.async_step_configure_entity({'tilt_enabled': True})
-            assert 'lamel_move_timeout' in ui_fields(result)
-            result = await flow.async_step_configure_entity({'lamel_move_timeout': 0, 'reverse_position': False,
-                'mechanical_offset': 0, 'blinds_up_max_time': 0, 'blinds_down_max_time': 0})
+            assert result['step_id'] == 'configure_shutter_settings'
+            assert result['last_step'] is True
+            assert len(entity._get_schema_instance().steps) == 1
+            fields = list(ui_fields(result).values())
+            add_visible_conditions_to_serialized_schema(result['data_schema'], fields)
+            by_name = {field['name']: field for field in fields}
+            assert set(by_name) == {'tilt_enabled', 'lamel_move_timeout', 'reverse_position',
+                                    'mechanical_offset', 'blinds_up_max_time', 'blinds_down_max_time'}
+            assert by_name['lamel_move_timeout']['visible'] == {'field':'tilt_enabled', 'value':True}
+            hidden_schema, _ = _strip_hidden_fields(result['data_schema'], {'tilt_enabled':False})
+            assert all(key.schema != 'lamel_move_timeout' for key in hidden_schema.schema)
+            visible_schema, _ = _strip_hidden_fields(result['data_schema'], {'tilt_enabled':True})
+            assert any(key.schema == 'lamel_move_timeout' for key in visible_schema.schema)
+            result = await flow.async_step_configure_entity({'tilt_enabled':True, 'lamel_move_timeout':0,
+                'reverse_position':False, 'mechanical_offset':0,
+                'blinds_up_max_time':0, 'blinds_down_max_time':0})
             assert result['errors']['lamel_move_timeout'] == 'invalid_configuration'
     asyncio.run(run())
 
@@ -127,251 +130,6 @@ def test_legacy_fallback_and_native_state_meanings():
     values['3'], values['4'] = 1, 0
     assert entity.extra_state_attributes['up_relay_active'] is True
     assert entity.extra_state_attributes['down_relay_active'] is False
-
-
-@pytest.mark.parametrize('direction, opposite_value, measured_value', [('up','0','1'),('down','1','0')])
-def test_direction_stopwatch_subtracts_lamels_restores_limit_and_saves_only_on_confirmation(direction, opposite_value, measured_value):
-    async def run():
-        entity, _, values, commands = configured_shutter(tilt=3000)
-        clock = [100]
-        with patch(CLOCK, side_effect=lambda: clock[0]):
-            session = await entity.create_calibration(direction, 40000, 3000)
-            await session.run(measuring=False)
-            await session.run(measuring=False)
-            assert commands.count(f'ROLLER1:execute(8, {opposite_value})') == 2
-            assert not any(':execute(0,' in x or ':execute(1,' in x for x in commands)
-            await session.edge_ready()
-            original = values['14' if direction=='up' else '15']
-            await session.measure()
-            assert commands[-1] == f'ROLLER1:execute(8, {measured_value})'
-            assert values['14' if direction=='up' else '15'] == 40000
-            clock[0] = 127
-            await session.stop_measurement()
-            assert values['14' if direction=='up' else '15'] == original
-            assert session.elapsed_ms == 27000 and session.suggested_ms == 24000
-            await entity.apply_native_settings({session.key: session.suggested_ms}, calibration=session)
-            session.finished = True
-            assert values['14' if direction=='up' else '15'] == 24000
-    asyncio.run(run())
-
-
-def test_flow_runs_no_motor_until_button_and_requires_save_confirmation():
-    async def run():
-        entity, coord, values, commands = configured_shutter(tilt=3000)
-        flow, entry_patch = make_flow(coord, entity)
-        clock = [100]
-        with entry_patch, patch(CLOCK, side_effect=lambda: clock[0]):
-            flow.selected_entity_uid = entity.unique_id
-            await flow.async_step_shutter_calibration()
-            await flow.async_step_shutter_calibration({'direction': 'up'})
-            result = await flow.async_step_shutter_limits({'limit_ms': 40000, 'lamel_move_timeout': 3000})
-            assert result['step_id'] == 'shutter_position'
-            assert not commands
-            await flow.async_step_shutter_position_motor()
-            await flow.async_step_shutter_edge_ready()
-            result = await flow.async_step_shutter_start_measurement()
-            assert result['step_id'] == 'shutter_measurement'
-            clock[0] = 127
-            result = await flow.async_step_shutter_stop_measurement()
-            assert result['step_id'] == 'shutter_review'
-            assert result['description_placeholders']['suggested_ms'] == '24000'
-            assert values['14'] == 22000
-            result = await flow.async_step_shutter_review({'total_ms': 27000, 'lamel_move_timeout': 3000, 'save': True})
-            assert result['type'] == 'create_entry'
-            assert values['14'] == 24000
-            assert 'blinds_up_max_time' not in result['data'].get('entities', {}).get(entity.unique_id, {})
-    asyncio.run(run())
-
-
-def test_cancel_and_external_stop_restore_temporary_settings_without_a_result():
-    async def run():
-        entity, _, values, commands = configured_shutter()
-        session = await entity.create_calibration('down', 45000)
-        await session.edge_ready()
-        await session.measure()
-        await entity.async_stop_cover()
-        assert session.finished and session.phase == 'cancelled'
-        assert values['15'] == 21500
-        assert session.elapsed_ms is None and not session.running
-        assert 'ROLLER1:execute(3,"")' in commands
-    asyncio.run(run())
-
-
-def test_deadline_stops_abandoned_measurement_and_restores_limit():
-    async def run():
-        entity, _, values, _ = configured_shutter()
-        session = await entity.create_calibration('up', 100)
-        session.MARGIN_MS = 0
-        await session.edge_ready()
-        await session.measure()
-        await asyncio.wait_for(session._guard, timeout=1)
-        assert session.finished and session.phase == 'expired'
-        assert session.elapsed_ms is None and not session.running
-        assert values['14'] == 22000
-    asyncio.run(run())
-
-
-def test_failed_calibration_ack_still_sends_stop_and_restores():
-    async def run():
-        entity, coord, values, commands = configured_shutter()
-        original = coord.execute_action.side_effect
-        async def execute(action, **kwargs):
-            if action.index == '8':
-                raise HomeAssistantError('lost reply')
-            await original(action, **kwargs)
-        coord.execute_action.side_effect = execute
-        session = await entity.create_calibration('up', 45000)
-        await session.edge_ready()
-        with pytest.raises(HomeAssistantError):
-            await session.measure()
-        await session.abort()
-        assert values['14'] == 22000
-        assert 'ROLLER1:execute(3,"")' in commands
-        assert not session.running
-    asyncio.run(run())
-
-
-def test_calibration_locks_other_writes_and_requires_edge_confirmation():
-    async def run():
-        entity, _, _, _ = configured_shutter()
-        session = await entity.create_calibration('up', 45000)
-        with pytest.raises(HomeAssistantError):
-            await session.measure()
-        with pytest.raises(HomeAssistantError):
-            await entity.create_calibration('down', 45000)
-        with pytest.raises(ServiceValidationError):
-            await entity.apply_native_settings({'mechanical_offset': 10})
-        await session.run(measuring=False)
-        with pytest.raises(ServiceValidationError):
-            await entity.async_open_cover()
-        await session.abort()
-    asyncio.run(run())
-
-
-def test_native_options_manager_routes_motor_buttons_and_stops_on_popup_close(tmp_path):
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-    from homeassistant.config_entries import OptionsFlowManager
-    from homeassistant.core import HomeAssistant
-    async def run():
-        entity, coord, values, commands = configured_shutter()
-        flow, entry_patch = make_flow(coord, entity)
-        entry = coord.config_entry
-        entry.entry_id = 'interface1'
-        entry.update_listeners = []
-        hass = HomeAssistant(str(tmp_path))
-        hass.config_entries = SimpleNamespace(async_get_known_entry=Mock(return_value=entry),
-            async_update_entry=Mock(return_value=True), async_schedule_reload=Mock())
-        flow.hass = hass
-        flow.handler = entry.entry_id
-        manager = OptionsFlowManager(hass)
-        manager._async_add_flow_progress(flow)
-        with entry_patch:
-            result = await manager._async_handle_step(flow, 'entity_list', {'entity': entity.entity_id})
-            assert result['step_id'] == 'shutter'
-            result = await manager.async_configure(flow.flow_id, {'next_step_id':'shutter_calibration'})
-            assert result['step_id'] == 'shutter_calibration'
-            await manager.async_configure(flow.flow_id, {'direction':'down'})
-            result = await manager.async_configure(flow.flow_id, {'limit_ms':45000})
-            assert result['step_id'] == 'shutter_position' and not commands
-            await manager.async_configure(flow.flow_id, {'next_step_id':'shutter_edge_ready'})
-            result = await manager.async_configure(flow.flow_id, {'next_step_id':'shutter_start_measurement'})
-            assert result['step_id'] == 'shutter_measurement'
-            assert flow._shutter_session.running and values['15'] == 45000
-            manager.async_abort(flow.flow_id)
-            await hass.async_block_till_done()
-            assert flow._shutter_session.finished and not flow._shutter_session.running
-            assert values['15'] == 21500
-        await hass.async_stop()
-    asyncio.run(run())
-
-
-def test_discard_adjustment_and_invalid_tilt_subtraction_never_save_unconfirmed_result():
-    async def run():
-        entity, coord, values, _ = configured_shutter(tilt=3000)
-        flow, entry_patch = make_flow(coord, entity)
-        with entry_patch, patch(CLOCK, side_effect=[100, 127]):
-            flow.selected_entity_uid = entity.unique_id
-            session = await entity.create_calibration('up', 45000, 3000)
-            flow._shutter_session = session
-            await session.edge_ready()
-            await session.measure()
-            await session.stop_measurement()
-            result = await flow.async_step_shutter_review({'total_ms':2000, 'lamel_move_timeout':3000, 'save':True})
-            assert result['errors'] and values['14'] == 22000
-            result = await flow.async_step_shutter_review({'total_ms':28000, 'lamel_move_timeout':3000, 'save':False})
-            assert result['step_id'] == 'shutter' and values['14'] == 22000
-    asyncio.run(run())
-
-
-def test_a_failed_stop_keeps_the_deadline_and_can_be_retried():
-    async def run():
-        entity, coord, values, _ = configured_shutter()
-        session = await entity.create_calibration('up', 45000)
-        await session.edge_ready()
-        await session.measure()
-        original = coord.execute_action.side_effect
-        async def fail_stop(action, **kwargs):
-            if action.index == '3':
-                raise HomeAssistantError('stop failed')
-            await original(action, **kwargs)
-        coord.execute_action.side_effect = fail_stop
-        with pytest.raises(HomeAssistantError):
-            await session.abort()
-        assert session.running and session._guard is not None
-        coord.execute_action.side_effect = original
-        await session.abort()
-        assert not session.running and values['14'] == 22000
-    asyncio.run(run())
-
-
-def test_expired_measurement_is_never_offered_as_a_successful_time():
-    async def run():
-        entity, _, _, _ = configured_shutter()
-        with patch(CLOCK, side_effect=[100, 150]):
-            session = await entity.create_calibration('up', 1000)
-            await session.edge_ready()
-            await session.measure()
-            with pytest.raises(HomeAssistantError, match='limit'):
-                await session.stop_measurement()
-            assert session.elapsed_ms is None and session.finished
-    asyncio.run(run())
-
-
-def test_repeating_edge_position_keeps_guard_if_previous_stop_fails():
-    async def run():
-        entity, coord, _, _ = configured_shutter()
-        session = await entity.create_calibration('up', 45000)
-        await session.run(measuring=False)
-        guard = session._guard
-        original = coord.execute_action.side_effect
-        coord.execute_action.side_effect = HomeAssistantError('failed stop')
-        with pytest.raises(HomeAssistantError):
-            await session.run(measuring=False)
-        assert session._guard is guard and not guard.cancelled()
-        coord.execute_action.side_effect = original
-        await session.abort()
-    asyncio.run(run())
-
-
-def test_failed_provisional_setting_never_starts_motor_and_can_be_cancelled():
-    async def run():
-        entity, coord, values, commands = configured_shutter()
-        session = await entity.create_calibration('up', 45000)
-        await session.edge_ready()
-        original = coord.execute_action.side_effect
-        async def fail_limit(action, **kwargs):
-            if getattr(action, 'lua_value', None) == '45000':
-                raise HomeAssistantError('write failed')
-            await original(action, **kwargs)
-        coord.execute_action.side_effect = fail_limit
-        with pytest.raises(HomeAssistantError):
-            await session.measure()
-        assert session.phase == 'failed' and not session.running
-        assert not any(':execute(8,' in x for x in commands)
-        await session.abort()
-        assert values['14'] == 22000
-    asyncio.run(run())
 
 
 def test_manual_settings_are_visible_in_native_options_manager_and_saved_without_reload(tmp_path):
@@ -394,9 +152,8 @@ def test_manual_settings_are_visible_in_native_options_manager_and_saved_without
         with entry_patch:
             await manager._async_handle_step(flow, 'entity_list', {'entity': entity.entity_id})
             await manager.async_configure(flow.flow_id, {'next_step_id':'configure_entity'})
-            result = await manager.async_configure(flow.flow_id, {'tilt_enabled':True})
-            assert result['step_id'] == 'configure_shutter_settings'
-            result = await manager.async_configure(flow.flow_id, {'lamel_move_timeout':1000,
+            assert flow.cur_step['step_id'] == 'configure_shutter_settings'
+            result = await manager.async_configure(flow.flow_id, {'tilt_enabled':True, 'lamel_move_timeout':1000,
                 'reverse_position':True, 'mechanical_offset':500,
                 'blinds_up_max_time':24000, 'blinds_down_max_time':25000})
             assert result['type'] == 'create_entry'
@@ -407,61 +164,310 @@ def test_manual_settings_are_visible_in_native_options_manager_and_saved_without
     asyncio.run(run())
 
 
-def test_stop_deadline_retries_after_a_lost_stop_reply():
-    async def run():
-        entity, coord, values, _ = configured_shutter()
-        session = await entity.create_calibration('up', 1)
-        session.MARGIN_MS = 0
-        original = coord.execute_action.side_effect
-        attempts = [0]
-        async def execute(action, **kwargs):
-            if action.index == '3':
-                attempts[0] += 1
-                if attempts[0] == 1:
-                    raise HomeAssistantError('lost stop reply')
-            await original(action, **kwargs)
-        real_sleep = asyncio.sleep
-        async def sleep(delay):
-            await real_sleep(0 if delay == 2 else delay)
-        with patch('custom_components.homeassistant_grenton.domain.entities.roller_shutter_calibration.asyncio.sleep', sleep):
-            await session.edge_ready()
-            await session.measure()
-            coord.execute_action.side_effect = execute
-            await asyncio.wait_for(session._guard, timeout=1)
-        assert attempts[0] == 2 and session.finished
-        assert not session.running and values['14'] == 22000
-    asyncio.run(run())
-
-
-def test_native_entity_unload_stops_motor_and_restores_temporary_limit(tmp_path):
-    import logging
-    from datetime import timedelta
-    from homeassistant.helpers.entity_platform import EntityPlatform
-    from test_clu_scripts import make_entry, make_hass
-    async def run():
-        entry = make_entry()
-        hass = await make_hass(tmp_path, [entry])
-        entity, coord, values, _ = configured_shutter()
-        coord.config_entry = entry
-        platform = EntityPlatform(hass=hass, logger=logging.getLogger(__name__), domain='cover',
-            platform_name='grenton', platform=None, scan_interval=timedelta(seconds=30), entity_namespace=None)
-        platform.config_entry = entry
-        await platform.async_add_entities([entity])
-        session = await entity.create_calibration('up', 45000)
-        await session.edge_ready()
-        await session.measure()
-        assert values['14'] == 45000
-        await platform.async_reset()
-        assert not session.running and session.finished
-        assert values['14'] == 22000
-        await hass.async_stop()
-    asyncio.run(run())
-
-
-def test_explicit_tilt_choice_survives_reload_and_is_independent_of_native_timeout():
+def test_disabling_tilt_zeroes_native_timeout_and_survives_reload():
     async def run():
         entity, coord, values, _ = configured_shutter(tilt=1000)
         coord.config_entry.options = await entity.apply_configuration({'tilt_enabled': False})
         reloaded = DeviceMapper.to_domain(widget(), coord).entities[0]
-        assert reloaded._tilt_enabled is False and values['10'] == 1000
+        assert reloaded._tilt_enabled is False and values['10'] == 0
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('hidden_value', [None, 3000, 'stale invalid hidden input'])
+def test_native_flow_disabling_tilt_ignores_hidden_values_and_writes_zero(tmp_path, hidden_value):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from homeassistant.config_entries import OptionsFlowManager
+    from homeassistant.core import HomeAssistant
+    async def run():
+        entity, coord, values, commands = configured_shutter(tilt=3000)
+        flow, entry_patch = make_flow(coord, entity)
+        entry = coord.config_entry
+        entry.entry_id = 'interface1'
+        entry.update_listeners = []
+        hass = HomeAssistant(str(tmp_path))
+        hass.config_entries = SimpleNamespace(async_get_known_entry=Mock(return_value=entry),
+            async_update_entry=Mock(return_value=True), async_schedule_reload=Mock())
+        flow.hass, flow.handler = hass, entry.entry_id
+        manager = OptionsFlowManager(hass)
+        manager._async_add_flow_progress(flow)
+        with entry_patch:
+            await manager._async_handle_step(flow, 'entity_list', {'entity':entity.entity_id})
+            result = await manager.async_configure(flow.flow_id, {'next_step_id':'configure_entity'})
+            assert result['step_id'] == 'configure_shutter_settings' and result['last_step']
+            submitted = {'tilt_enabled':False, 'reverse_position':False, 'mechanical_offset':0,
+                         'blinds_up_max_time':22000, 'blinds_down_max_time':21500}
+            if hidden_value is not None:
+                submitted['lamel_move_timeout'] = hidden_value
+            result = await manager.async_configure(flow.flow_id, submitted)
+            assert result['type'] == 'create_entry'
+            assert result['data']['entities'][entity.unique_id] == {'tilt_enabled':False}
+            assert values['10'] == 0 and not entity._tilt_enabled
+            assert commands == ['ROLLER1:set(10,0)']
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+def observe_motor(entity, coord, values):
+    original = coord.execute_action.side_effect
+    async def execute(action, **kwargs):
+        await original(action, **kwargs)
+        if action.index == '8':
+            values['0'] = 4
+            values['3'] = int(action.arguments[0] == '1')
+            values['4'] = int(action.arguments[0] == '0')
+    coord.execute_action.side_effect = execute
+
+
+async def finish_motor(session, values):
+    # Allow the observer to see calibration before the idle samples.
+    await asyncio.sleep(.005)
+    values['0'] = values['3'] = values['4'] = 0
+    values['7'] = 100 if session.active_direction == 'up' else 0
+    await asyncio.wait_for(session.wait(), 1)
+
+
+def test_cancel_does_not_stop_motor_and_restores_only_after_stable_idle():
+    async def run():
+        entity, coord, values, commands = configured_shutter(**{'7':0})
+        observe_motor(entity, coord, values)
+        session = await entity.create_calibration('up',45000)
+        session.POLL_SECONDS = .001
+        await session.edge_ready()
+        await session.measure()
+        await session.abort()
+        assert session.running and values['0'] == 4 and values['14'] == 45000
+        assert not any('execute(3' in x for x in commands)
+        await finish_motor(session, values)
+        assert session.finished and values['14'] == 22000
+        assert session.elapsed_ms is None
+    asyncio.run(run())
+
+
+def test_manual_stopwatch_result_can_be_saved_while_calibration_continues():
+    async def run():
+        entity, coord, values, commands = configured_shutter(tilt=3000, **{'7':0})
+        observe_motor(entity, coord, values)
+        clock = [100]
+        with patch(CLOCK,side_effect=lambda:clock[0]):
+            session = await entity.create_calibration('up',45000,3000)
+            session.POLL_SECONDS = .001
+            await session.edge_ready()
+            await session.measure()
+            clock[0] = 127
+            await session.stop_measurement()
+            assert session.elapsed_ms == 27000 and session.suggested_ms == 24000
+            assert session.running and values['0'] == 4
+            async with session._lock:
+                await entity.apply_native_settings({session.key:24000},calibration=session)
+                session._temporary=False
+                session.finished=True
+                session.phase='saved'
+            await finish_motor(session,values)
+            assert values['14'] == 24000 and session.phase == 'saved'
+            assert not any('execute(3' in x for x in commands)
+    asyncio.run(run())
+
+
+def test_start_requires_the_actual_opposite_edge_and_idle_state():
+    async def run():
+        entity, _, values, commands = configured_shutter(**{'7':50})
+        session = await entity.create_calibration('up',30000)
+        with pytest.raises(HomeAssistantError):await session.edge_ready()
+        assert not commands
+        values['7']=0
+        values['0']=4
+        with pytest.raises(HomeAssistantError):await session.edge_ready()
+        values['0']=0
+        await session.edge_ready()
+        assert session.phase == 'ready' and not commands
+    asyncio.run(run())
+
+
+def test_waiting_for_position_does_not_accept_an_initial_stale_idle_sample():
+    async def run():
+        entity, _, values, _ = configured_shutter(**{'7':0})
+        session=await entity.create_calibration('up',30000)
+        session.POLL_SECONDS=.001
+        await session.run(measuring=False)
+        await asyncio.sleep(.005)
+        assert session.running and session.phase=='positioning'
+        values['0']=4
+        await asyncio.sleep(.005)
+        await finish_motor(session,values)
+        assert session.phase=='ready'
+    asyncio.run(run())
+
+
+def test_native_wait_loader_and_measurement_save_while_motor_runs(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from homeassistant.core import HomeAssistant
+    async def run():
+        entity,coord,values,commands=configured_shutter(**{'7':50})
+        observe_motor(entity,coord,values)
+        flow,entry_patch=make_flow(coord,entity)
+        hass=HomeAssistant(str(tmp_path));hass.config.language='pl'
+        flow.hass=hass
+        with entry_patch:
+            flow.selected_entity_uid=entity.unique_id
+            await flow.async_step_shutter_calibration({'direction':'up'})
+            result=await flow.async_step_shutter_limits({'limit_up_ms':45000})
+            assert 'shutter_edge_ready' not in result['menu_options']
+            assert result['step_id'] == 'shutter_position_close_required'
+            session=flow._shutter_session;session.POLL_SECONDS=.001
+            result=await flow.async_step_shutter_position_down()
+            assert result['type']=='progress' and result['progress_action']=='shutter_down'
+            await finish_motor(session,values)
+            await asyncio.wait_for(flow._shutter_wait_task,2)
+            assert (await flow.async_step_shutter_wait())['type']=='progress_done'
+            result=await flow.async_step_shutter_position()
+            assert 'shutter_edge_ready' in result['menu_options']
+            await flow.async_step_shutter_edge_ready()
+            await flow._shutter_edge_task
+            assert (await flow.async_step_shutter_check_position())['step_id'] == 'shutter_ready'
+            clock=[100]
+            with patch(CLOCK,side_effect=lambda:clock[0]):
+                result=await flow.async_step_shutter_start_measurement()
+                assert result['step_id']=='shutter_measurement'
+                clock[0]=127
+                result=await flow.async_step_shutter_stop_measurement()
+                assert result['step_id']=='shutter_review' and values['0']==4
+                result=await flow.async_step_shutter_review({'total_ms':27000,'save':True})
+                assert result['type']=='create_entry' and values['14']==27000
+                flow.async_remove()
+                await finish_motor(session,values)
+                assert session.phase=='saved' and values['14']==27000
+        assert not any('execute(3' in x for x in commands)
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+def test_native_manager_timer_refresh_and_popup_close_keep_firmware_running(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from homeassistant.config_entries import OptionsFlowManager
+    from homeassistant.core import HomeAssistant
+
+    async def run():
+        entity, coord, values, commands = configured_shutter(**{'7': 100})
+        observe_motor(entity, coord, values)
+        flow, entry_patch = make_flow(coord, entity)
+        entry = coord.config_entry
+        entry.entry_id, entry.update_listeners = 'interface1', []
+        hass = HomeAssistant(str(tmp_path))
+        hass.config_entries = SimpleNamespace(async_get_known_entry=Mock(return_value=entry),
+            async_update_entry=Mock(return_value=True), async_schedule_reload=Mock())
+        flow.hass, flow.handler = hass, entry.entry_id
+        manager = OptionsFlowManager(hass)
+        manager._async_add_flow_progress(flow)
+        with entry_patch:
+            await manager._async_handle_step(flow, 'entity_list', {'entity': entity.entity_id})
+            await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_calibration'})
+            await manager.async_configure(flow.flow_id, {'direction': 'down'})
+            await manager.async_configure(flow.flow_id, {'limit_down_ms': 45000})
+            session = flow._shutter_session
+            session.POLL_SECONDS = .001
+            assert not commands
+            result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_edge_ready'})
+            assert result['type'] == 'progress'
+            await flow._shutter_edge_task
+            await asyncio.sleep(.01)  # The native manager advances the completed progress task.
+            result = await manager.async_configure(flow.flow_id)
+            assert result['step_id'] == 'shutter_ready'
+            clock = [100]
+            with patch(CLOCK, side_effect=lambda: clock[0]):
+                result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_start_measurement'})
+                assert result['description_placeholders']['seconds'] == '0'
+                clock[0] = 102.875
+                result = await manager.async_configure(flow.flow_id)
+                assert result['description_placeholders']['seconds'] == '2'
+                manager.async_abort(flow.flow_id)
+                await asyncio.sleep(.01)
+                assert session.running and values['0'] == 4
+                assert session.elapsed_ms is None and flow._shutter_clock.cancelled()
+                await finish_motor(session, values)
+                assert session.finished and values['15'] == 21500
+        assert not any('execute(3' in command for command in commands)
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+def test_close_during_initial_loader_cancels_ui_but_keeps_motor_observation(tmp_path):
+    from homeassistant.core import HomeAssistant
+
+    async def run():
+        entity, coord, values, commands = configured_shutter(**{'7': 50})
+        observe_motor(entity, coord, values)
+        flow, entry_patch = make_flow(coord, entity)
+        hass = HomeAssistant(str(tmp_path))
+        flow.hass = hass
+        with entry_patch:
+            flow.selected_entity_uid = entity.unique_id
+            session = await entity.create_calibration('up', 30000)
+            session.POLL_SECONDS = .001
+            flow._shutter_session = session
+            await flow.async_step_shutter_position_down()
+            await asyncio.sleep(.005)
+            flow._shutter_wait_task.cancel()
+            flow.async_remove()
+            await asyncio.sleep(.005)
+            assert session.running and not session._guard.cancelled()
+            await finish_motor(session, values)
+            assert session.phase == 'cancelled' and session.finished
+        assert not any('execute(3' in command for command in commands)
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('direction,position,index,argument', [('up', 0, '14', '1'), ('down', 100, '15', '0')])
+def test_failed_calibration_ack_keeps_observer_and_excludes_other_commands(direction, position, index, argument):
+    async def run():
+        entity, coord, values, commands = configured_shutter(**{'7': position})
+        observe_motor(entity, coord, values)
+        session = await entity.create_calibration(direction, 45000)
+        session.POLL_SECONDS = .001
+        with pytest.raises(HomeAssistantError):
+            await session.measure()
+        await session.edge_ready()
+        original = coord.execute_action.side_effect
+        async def lost_reply(action, **kwargs):
+            await original(action, **kwargs)
+            if action.index == '8':
+                raise HomeAssistantError('Lost reply')
+        coord.execute_action.side_effect = lost_reply
+        with pytest.raises(HomeAssistantError, match='Lost reply'):
+            await session.measure()
+        assert f'ROLLER1:execute(8, {argument})' in commands
+        assert session.running and values[index] == 45000
+        with pytest.raises(HomeAssistantError):
+            await entity.create_calibration(direction, 30000)
+        with pytest.raises(ServiceValidationError):
+            await entity.apply_native_settings({'mechanical_offset': 100})
+        with pytest.raises(ServiceValidationError):
+            await entity.async_open_cover()
+        await session.abort()
+        await finish_motor(session, values)
+        assert values[index] == (22000 if direction == 'up' else 21500)
+    asyncio.run(run())
+
+
+def test_failed_provisional_setting_never_starts_motor_and_can_be_cancelled():
+    async def run():
+        entity, coord, values, commands = configured_shutter(**{'7': 0})
+        session = await entity.create_calibration('up', 45000)
+        session.POLL_SECONDS = .001
+        await session.edge_ready()
+        original = coord.execute_action.side_effect
+        async def fail_limit(action, **kwargs):
+            if getattr(action, 'lua_value', None) == '45000':
+                raise HomeAssistantError('Write failed')
+            await original(action, **kwargs)
+        coord.execute_action.side_effect = fail_limit
+        with pytest.raises(HomeAssistantError):
+            await session.measure()
+        assert not session.running
+        assert not any(':execute(8,' in command for command in commands)
+        await session.abort()
+        assert session.finished and values['14'] == 22000
     asyncio.run(run())

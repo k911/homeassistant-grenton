@@ -184,7 +184,7 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         if self._calibration is not None and self._calibration.running:
-            raise ServiceValidationError('Stop calibration before moving the shutter')
+            raise ServiceValidationError('Wait for calibration to finish')
         position = self._percentage(kwargs.get(ATTR_POSITION))
         reverse = self._reversed
         if reverse is None:
@@ -203,7 +203,7 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
 
     def _require_tilt(self) -> GrentonAction:
         if self._calibration is not None and self._calibration.running:
-            raise ServiceValidationError('Stop calibration before moving the slats')
+            raise ServiceValidationError('Wait for calibration to finish')
         if not self._tilt_enabled or self.set_tilt_position is None:
             raise ServiceValidationError("Slat control is not enabled for this shutter")
         return self.set_tilt_position
@@ -260,7 +260,7 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
 
     @property
     def calibration_available(self):
-        return self.calibration_action is not None and self.stop is not None and all(
+        return self.calibration_action is not None and all(
             key in self.setting_actions and key in self.setting_states
             for key in ('blinds_up_max_time', 'blinds_down_max_time')
         )
@@ -320,7 +320,7 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
                 active is not calibration or calibration.phase != 'review' or calibration.finished
             ):
                 raise ServiceValidationError('This calibration result is no longer available')
-            if active is not None and (active.running or (not active.finished and active is not calibration)):
+            if active is not None and active is not calibration and (active.running or not active.finished):
                 raise ServiceValidationError('Finish or cancel calibration before saving settings')
             for key, value in validated.items():
                 if self.setting_values.get(key) != value:
@@ -341,6 +341,8 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
         if enabled and (self.cover_tilt_position is None or self.set_tilt_position is None):
             raise ServiceValidationError('Slat bindings are unavailable')
         settings = {key: value for key, value in user_input.items() if key != 'tilt_enabled'}
+        if not enabled and 'lamel_move_timeout' in self.setting_actions:
+            settings['lamel_move_timeout'] = 0
         if enabled and 'lamel_move_timeout' in self.setting_actions:
             timeout = settings.get('lamel_move_timeout', self.setting_values.get('lamel_move_timeout', 0))
             try:
