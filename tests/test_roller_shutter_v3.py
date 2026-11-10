@@ -56,7 +56,7 @@ def test_office_widget_maps_to_one_cover_without_tilt_for_zero_lamel_timeout():
     assert {x.index for x in entity.state_sources} == {'0', '7'}
     slow = {call.args[0].index for call in coord.register_component_state.call_args_list
             if call.kwargs.get('read_mode') == 'slow'}
-    assert slow == {'10', '13'}
+    assert slow == {'9', '10', '13'}
     values['10'] = 1000
     assert entity.supported_features & CoverEntityFeature.SET_TILT_POSITION
     assert entity.current_cover_tilt_position == 100

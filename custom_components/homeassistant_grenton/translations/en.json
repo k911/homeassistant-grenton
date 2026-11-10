@@ -235,12 +235,96 @@
           "slow_read_interval": "Polling interval (seconds)",
           "subscription_id": "Initial subscription ID"
         }
+      },
+      "shutter": {
+        "title": "Configure {entity_name}",
+        "menu_options": {
+          "configure_entity": "Tilt support and device settings",
+          "shutter_calibration": "Measure opening or closing time"
+        }
+      },
+      "configure_shutter_tilt": {
+        "title": "Slat support",
+        "description": "Choose explicitly whether this shutter supports slat control. The initial default follows the CLU slat movement time. This choice controls HA features; disabling it does not change native timing.",
+        "data": {
+          "tilt_enabled": "Supports slat control"
+        }
+      },
+      "configure_shutter_settings": {
+        "title": "Shutter timing and direction",
+        "description": "Values are read from and saved to the CLU, with readback confirmation. Reverse position changes the device range and its reported position; HA keeps 0% closed and 100% open.",
+        "data": {
+          "lamel_move_timeout": "Slat movement time (ms)",
+          "reverse_position": "Reverse native position range",
+          "mechanical_offset": "Motor startup compensation time (ms)",
+          "blinds_up_max_time": "Full opening time (ms)",
+          "blinds_down_max_time": "Full closing time (ms)"
+        }
+      },
+      "shutter_calibration": {
+        "title": "Choose measurement direction",
+        "description": "Choose the travel time to measure. The wizard only moves the shutter when you press a motor button.",
+        "data": {
+          "direction": "Direction"
+        }
+      },
+      "shutter_limits": {
+        "title": "Prepare measurement",
+        "description": "Adjust the initial travel-time limit before measurement (current direction time, legacy MaxTime, or 30000 ms). The wizard requests Stop after this time plus 10000 ms, including if the dialog is abandoned. During measurement the selected limit is provisional and restored before review. Slat time is not measured: enter it manually; it will be subtracted from the total before saving.",
+        "data": {
+          "limit_ms": "Initial travel-time limit (ms)",
+          "lamel_move_timeout": "Manually measured slat time (ms)"
+        }
+      },
+      "shutter_position": {
+        "title": "Reach the opposite end position",
+        "description": "Before measuring upward travel, fully close the shutter; before measuring downward travel, fully open it. The positioning button calls Calibration (method 8), not ordinary movement. You can repeat it if needed. Confirm only once the opposite edge is reached.",
+        "menu_options": {
+          "shutter_edge_ready": "Opposite edge reached — stop and continue",
+          "shutter_cancel": "Stop motor and cancel",
+          "shutter_position_up": "Calibration UP — fully open (repeat if needed)",
+          "shutter_position_down": "Calibration DOWN — fully close (repeat if needed)"
+        }
+      },
+      "shutter_ready": {
+        "title": "Ready to measure",
+        "description": "Start measurement runs Calibration in the selected direction and starts the timer. Stop immediately when the shutter reaches the end and the motor is no longer making noise.",
+        "menu_options": {
+          "shutter_start_measurement": "Start measurement",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_measurement": {
+        "title": "Measurement running",
+        "description": "The server timer is running. Press Stop measurement immediately when the shutter is fully open/closed and the motor is no longer making noise. Stop also sends the motor stop command. Closing this dialog does not save any timing.",
+        "menu_options": {
+          "shutter_stop_measurement": "Stop measurement and motor",
+          "shutter_cancel": "Stop motor and cancel"
+        }
+      },
+      "shutter_review": {
+        "title": "Review measured time",
+        "description": "Measured total: {measured_ms} ms. Proposed travel time after subtracting slat time: {suggested_ms} ms. Adjust the total or the manually provided slat time if needed. For example, 27000 − 3000 = 24000 ms. Enable Save to write the selected direction time; otherwise the result is discarded. Manual reaction and command latency affect this measurement.",
+        "data": {
+          "total_ms": "Measured total time (ms)",
+          "lamel_move_timeout": "Manual slat movement time to subtract (ms)",
+          "save": "Save this measurement to the CLU"
+        }
+      },
+      "shutter_error": {
+        "title": "Motor operation failed",
+        "description": "The motor operation or timing restoration could not be confirmed. Press Stop/cancel to retry stopping the motor and restoring the previous limit.",
+        "menu_options": {
+          "shutter_cancel": "Stop motor and cancel"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
-      "entity_not_configurable": "This entity cannot be configured."
+      "entity_not_configurable": "This entity cannot be configured.",
+      "calibration_unavailable": "This shutter has no compatible calibration, stop or travel-time bindings.",
+      "calibration_expired": "Calibration expired or was cancelled. No measured time was saved."
     },
     "error": {
       "invalid_configuration": "Select valid options and enter valid values.",
@@ -376,14 +460,26 @@
           "zwave_error": "Z-Wave operation failed",
           "zwave_success": "Z-Wave operation successful"
         },
-        "state_attributes": {"raw_value": {"name": "Raw value"}}
+        "state_attributes": {
+          "raw_value": {
+            "name": "Raw value"
+          }
+        }
       },
       "clu_telnet_log_level": {
         "name": "Log level",
         "state": {
-          "off": "OFF", "error": "ERROR", "warning": "WARNING", "info": "INFO", "debug": "DEBUG"
+          "off": "OFF",
+          "error": "ERROR",
+          "warning": "WARNING",
+          "info": "INFO",
+          "debug": "DEBUG"
         },
-        "state_attributes": {"raw_value": {"name": "Raw value"}}
+        "state_attributes": {
+          "raw_value": {
+            "name": "Raw value"
+          }
+        }
       },
       "clu_reset_reason": {
         "name": "Last restart reason",
@@ -393,7 +489,11 @@
           "configuration_reload": "Configuration reload",
           "system_exception": "System exception"
         },
-        "state_attributes": {"raw_value": {"name": "Raw value"}}
+        "state_attributes": {
+          "raw_value": {
+            "name": "Raw value"
+          }
+        }
       },
       "thermostat_schedule": {
         "name": "Schedule",
@@ -876,6 +976,12 @@
         "cover": "Covers",
         "camera": "Cameras",
         "climate": "Thermostats"
+      }
+    },
+    "shutter_directions": {
+      "options": {
+        "up": "Opening (up)",
+        "down": "Closing (down)"
       }
     }
   }

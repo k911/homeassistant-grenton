@@ -23,6 +23,7 @@ from .domain.entities.clu_variables import (
 )
 from .entity_picker import GrentonEntitySelector
 from .frontend import async_register_scene_editor
+from .roller_shutter_options import RollerShutterOptionsMixin
 from .read_policy import (
     CONF_CLU_READ_SETTINGS,
     CONF_SLOW_READ_INTERVAL,
@@ -33,7 +34,7 @@ from .read_policy import (
 )
 
 
-class GrentonOptionsFlow(OptionsFlowWithReload):
+class GrentonOptionsFlow(RollerShutterOptionsMixin, OptionsFlowWithReload):
     """Handle options flow for Grenton integration."""
 
     automatic_reload = False
@@ -212,6 +213,9 @@ class GrentonOptionsFlow(OptionsFlowWithReload):
                 if not matched:
                     return self.async_abort(reason="entity_not_found")
                 self.selected_entity_uid = matched.unique_id
+                from .domain.entities.roller_shutter_v3 import GrentonEntityRollerShutterV3
+                if isinstance(matched, GrentonEntityRollerShutterV3):
+                    return await self.async_step_shutter()
                 return await self.async_step_configure_entity()
 
         # The selector filters locally while retaining HA's native entity search.

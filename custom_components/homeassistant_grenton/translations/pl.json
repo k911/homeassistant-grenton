@@ -235,12 +235,96 @@
           "slow_read_interval": "Interwał odpytywania (sekundy)",
           "subscription_id": "Początkowy identyfikator subskrypcji"
         }
+      },
+      "shutter": {
+        "title": "Konfiguracja: {entity_name}",
+        "menu_options": {
+          "configure_entity": "Obsługa lameli i ustawienia urządzenia",
+          "shutter_calibration": "Pomiar czasu otwierania lub zamykania"
+        }
+      },
+      "configure_shutter_tilt": {
+        "title": "Obsługa lameli",
+        "description": "Wybierz, czy roleta obsługuje lamele. Wartość domyślna wynika z czasu ruchu lameli odczytanego z CLU. Wybór zmienia funkcje HA; wyłączenie nie zmienia czasu zapisanego w urządzeniu.",
+        "data": {
+          "tilt_enabled": "Obsługa sterowania lamelami"
+        }
+      },
+      "configure_shutter_settings": {
+        "title": "Czasy i kierunek pozycji rolety",
+        "description": "Wartości są odczytywane i zapisywane w CLU, a zapis potwierdzany ponownym odczytem. Odwrócenie pozycji zmienia zakres urządzenia i odczyt pozycji; w HA nadal 0% oznacza zamknięcie, a 100% otwarcie.",
+        "data": {
+          "lamel_move_timeout": "Czas ruchu lameli (ms)",
+          "reverse_position": "Odwróć zakres pozycji urządzenia",
+          "mechanical_offset": "Czas kompensacji rozruchu napędu (ms)",
+          "blinds_up_max_time": "Czas pełnego otwarcia rolety (ms)",
+          "blinds_down_max_time": "Czas pełnego zamknięcia rolety (ms)"
+        }
+      },
+      "shutter_calibration": {
+        "title": "Wybierz kierunek pomiaru",
+        "description": "Wybierz czas przejazdu do zmierzenia. Kreator uruchamia napęd wyłącznie po naciśnięciu przycisku sterowania.",
+        "data": {
+          "direction": "Kierunek"
+        }
+      },
+      "shutter_limits": {
+        "title": "Przygotuj pomiar",
+        "description": "Przed pomiarem dostosuj limit czasu przejazdu (bieżący czas kierunku, starszy MaxTime lub 30000 ms). Kreator wysyła Stop po tym czasie i dodatkowych 10000 ms, także po zamknięciu okna. Na czas pomiaru limit jest tymczasowy; poprzednia wartość zostaje przywrócona przed przeglądem wyniku. Czas lameli nie jest mierzony: podaj go ręcznie; zostanie odjęty od łącznego czasu przed zapisem.",
+        "data": {
+          "limit_ms": "Początkowy limit czasu przejazdu (ms)",
+          "lamel_move_timeout": "Ręcznie zmierzony czas ruchu lameli (ms)"
+        }
+      },
+      "shutter_position": {
+        "title": "Ustaw roletę w przeciwnym położeniu skrajnym",
+        "description": "Przed pomiarem otwierania całkowicie zamknij roletę; przed pomiarem zamykania całkowicie ją otwórz. Przycisk ustawiania wywołuje Calibration (metoda 8), a nie zwykły ruch. W razie potrzeby można nacisnąć go ponownie. Potwierdź dopiero po osiągnięciu przeciwnego położenia skrajnego.",
+        "menu_options": {
+          "shutter_edge_ready": "Osiągnięto przeciwny koniec — zatrzymaj i kontynuuj",
+          "shutter_cancel": "Zatrzymaj napęd i anuluj",
+          "shutter_position_up": "Calibration w górę — całkowicie otwórz (można powtórzyć)",
+          "shutter_position_down": "Calibration w dół — całkowicie zamknij (można powtórzyć)"
+        }
+      },
+      "shutter_ready": {
+        "title": "Gotowość do pomiaru",
+        "description": "Rozpoczęcie pomiaru wywołuje Calibration w wybranym kierunku i uruchamia stoper. Zatrzymaj pomiar natychmiast po osiągnięciu końca przejazdu i ustaniu odgłosu napędu.",
+        "menu_options": {
+          "shutter_start_measurement": "Rozpocznij pomiar",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_measurement": {
+        "title": "Trwa pomiar",
+        "description": "Stoper na serwerze odmierza czas. Naciśnij Zatrzymaj pomiar natychmiast po pełnym otwarciu/zamknięciu i ustaniu odgłosu napędu. Przycisk wysyła również polecenie zatrzymania napędu. Zamknięcie okna nie zapisuje zmierzonego czasu.",
+        "menu_options": {
+          "shutter_stop_measurement": "Zatrzymaj pomiar i napęd",
+          "shutter_cancel": "Zatrzymaj napęd i anuluj"
+        }
+      },
+      "shutter_review": {
+        "title": "Sprawdź zmierzony czas",
+        "description": "Zmierzony łączny czas: {measured_ms} ms. Proponowany czas przejazdu po odjęciu czasu lameli: {suggested_ms} ms. W razie potrzeby popraw łączny czas lub ręcznie podany czas lameli. Na przykład 27000 − 3000 = 24000 ms. Zaznacz Zapisz, aby zapisać czas wybranego kierunku; w przeciwnym razie wynik zostanie odrzucony. Pomiar zależy od czasu reakcji użytkownika i opóźnień poleceń.",
+        "data": {
+          "total_ms": "Zmierzony łączny czas (ms)",
+          "lamel_move_timeout": "Ręczny czas ruchu lameli do odjęcia (ms)",
+          "save": "Zapisz wynik w CLU"
+        }
+      },
+      "shutter_error": {
+        "title": "Błąd polecenia napędu",
+        "description": "Nie potwierdzono polecenia napędu lub przywrócenia czasu. Naciśnij Zatrzymaj/anuluj, aby ponowić zatrzymanie napędu i przywrócenie poprzedniego limitu.",
+        "menu_options": {
+          "shutter_cancel": "Zatrzymaj napęd i anuluj"
+        }
       }
     },
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
-      "entity_not_configurable": "Ta encja nie może być skonfigurowana."
+      "entity_not_configurable": "Ta encja nie może być skonfigurowana.",
+      "calibration_unavailable": "Roleta nie ma zgodnych powiązań kalibracji, zatrzymania lub czasów przejazdu.",
+      "calibration_expired": "Kalibracja wygasła lub została anulowana. Zmierzony czas nie został zapisany."
     },
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości.",
@@ -376,14 +460,26 @@
           "zwave_error": "Błąd operacji Z-Wave",
           "zwave_success": "Operacja Z-Wave zakończona"
         },
-        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+        "state_attributes": {
+          "raw_value": {
+            "name": "Wartość surowa"
+          }
+        }
       },
       "clu_telnet_log_level": {
         "name": "Poziom logowania",
         "state": {
-          "off": "OFF", "error": "ERROR", "warning": "WARNING", "info": "INFO", "debug": "DEBUG"
+          "off": "OFF",
+          "error": "ERROR",
+          "warning": "WARNING",
+          "info": "INFO",
+          "debug": "DEBUG"
         },
-        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+        "state_attributes": {
+          "raw_value": {
+            "name": "Wartość surowa"
+          }
+        }
       },
       "clu_reset_reason": {
         "name": "Przyczyna ostatniego restartu",
@@ -393,7 +489,11 @@
           "configuration_reload": "Przeładowanie konfiguracji",
           "system_exception": "Wyjątek systemowy"
         },
-        "state_attributes": {"raw_value": {"name": "Wartość surowa"}}
+        "state_attributes": {
+          "raw_value": {
+            "name": "Wartość surowa"
+          }
+        }
       },
       "thermostat_schedule": {
         "name": "Harmonogram",
@@ -876,6 +976,12 @@
         "cover": "Osłony",
         "camera": "Kamery",
         "climate": "Termostaty"
+      }
+    },
+    "shutter_directions": {
+      "options": {
+        "up": "Otwieranie (w górę)",
+        "down": "Zamykanie (w dół)"
       }
     }
   }

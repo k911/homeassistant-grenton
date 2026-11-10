@@ -509,12 +509,57 @@ Home Assistant uses 0% for closed and 100% for open; the imported
 and position commands. Open/close use the configured position action with the
 appropriate endpoint, while stop uses the imported stop action.
 
-Slat controls are enabled only when the imported `lamelMoveTimeout` reports a
-positive value. Zero means a shutter without slats. Native slat angles of
-0–90 degrees map to HA's 100–0% tilt range. Timeout and direction settings use
-slow polling; shutter state, position and bound slat position use realtime
-updates. Missing or invalid positions remain unknown, and missing slat feedback
-does not make a shutter without slats unavailable.
+Open **Configure → Configure entities**, select the cover, and choose **Tilt
+support and device settings** or **Measure opening or closing time**.
+Tilt support is an explicit HA setting, initially inferred from a positive
+`LamelMoveTimeout`. Disabling it hides the controls without changing the native
+slat timing. Slat angles of 0–90 degrees map to HA's 100–0% tilt range.
+
+The settings form reads current values from the CLU and saves only the native
+values which changed, with readback confirmation:
+
+| Setting | Native attribute | Range |
+| --- | --- | --- |
+| Slat movement time (shown when tilt is enabled) | 10 | Positive whole milliseconds, up to 600000 |
+| Reverse position | 13 | Boolean, written as numeric 0/1 |
+| Motor startup compensation | 16 | 0–1000 ms |
+| Full opening time | 14 | 0–600000 ms |
+| Full closing time | 15 | 0–600000 ms |
+
+For native ROL objects, legacy **MaxTime / attribute 9** is read as the fallback
+when a direction's travel time is zero. It is not exposed as an editable setting.
+Only tilt support is stored in HA options; timing and direction remain on the CLU.
+Settings use slow polling; state, position, relay states and bound slat position
+use realtime updates. Missing or invalid positions remain unknown; missing slat
+feedback does not make a shutter without slats unavailable. `grenton_state`
+reports stopped, opening, closing, blocked (3), or calibrating (4), and the cover
+also exposes `up_relay_active` / `down_relay_active` from attributes 3/4.
+
+The calibration wizard uses the imported **Calibration / method 8** action with
+**1 for up and 0 for down**, rather than ordinary movement actions:
+
+1. Select the direction to measure and adjust the initial travel-time limit. It
+   defaults to the current direction time, legacy MaxTime, or 30000 ms.
+2. Fully reach the opposite edge using the repeatable Calibration UP/DOWN button,
+   or confirm the shutter is already there. Confirmation also sends Stop.
+3. Press **Start measurement**, then **Stop measurement and motor** immediately
+   when travel completes and the motor is no longer making noise. The elapsed
+   time is measured on the server, so it includes command latency and user reaction.
+4. Review and optionally edit the total time, then explicitly enable saving.
+   The original limit is restored before this review; cancelling saves no result.
+
+For a tilt-capable shutter, slat time must be entered manually: the wizard does
+not measure it. It subtracts that time from the measured total before saving the
+selected direction, e.g. **27000 − 3000 = 24000 ms**, and saves the manual slat time.
+A nonpositive or out-of-range result is rejected.
+
+The selected limit is written temporarily during measurement. A backend guard
+requests Stop after that limit plus **10000 ms**. Cancel, closing the popup,
+and unloading the entity also request Stop and restoration. Failed operations
+retain a retry path; no failed or expired measurement is saved. The limit bounds
+this wizard's stop request; firmware can end its own Calibration run earlier.
+Motor movement and settings changes occur only through explicit wizard actions;
+this flow has automated tests with mocked motors and still needs physical validation.
 
 Position commands preserve imported script parameters and action templates,
 validate the requested percentage, and report command failures to the caller.
