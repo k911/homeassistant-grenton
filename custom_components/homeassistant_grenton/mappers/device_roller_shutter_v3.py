@@ -1,4 +1,4 @@
-"""Mapper for converting ValueDouble widget DTO to domain device."""
+"""Map the roller shutter's imported state and action bindings."""
 
 from ..coordinator import GrentonCoordinator
 from ..domain.devices.roller_shutter_v3 import GrentonDeviceRollerShutterV3
@@ -30,6 +30,8 @@ class DeviceRollerShutterV3Mapper:
             cover_tilt_position=GrentonStateObject.from_dto(dto.object.lamelPosition) if dto.object.lamelMoveTimeout else None,
             set_tilt_position=GrentonAction.from_dto(dto.object.setLamelPositionAction) if dto.object.lamelMoveTimeout else None,
             stop=GrentonAction.from_dto(dto.object.stopAction) if dto.object.stopAction else None,
+            lamel_move_timeout=GrentonStateObject.from_dto(dto.object.lamelMoveTimeout) if dto.object.lamelMoveTimeout else None,
+            reverse_position=GrentonStateObject.from_dto(dto.object.reversePosition) if dto.object.reversePosition else None,
             device_info=device.device_info,
         )
 

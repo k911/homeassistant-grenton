@@ -501,6 +501,24 @@ the first four and regenerate the final pair as rounded `8100 / M`, together wit
 all temperature slots from the displayed half-degree targets. Captures validate the codec; the save path also checks
 readback, but limit changes still need confirmation on physical hardware.
 
+### Roller shutters V3
+
+`ROLLER_SHUTTER_V3` imports as one cover with the widget's stable ID and name.
+Home Assistant uses 0% for closed and 100% for open; the imported
+`reversePosition` binding normalizes reversed device ranges for both feedback
+and position commands. Open/close use the configured position action with the
+appropriate endpoint, while stop uses the imported stop action.
+
+Slat controls are enabled only when the imported `lamelMoveTimeout` reports a
+positive value. Zero means a shutter without slats. Native slat angles of
+0–90 degrees map to HA's 100–0% tilt range. Timeout and direction settings use
+slow polling; shutter state, position and bound slat position use realtime
+updates. Missing or invalid positions remain unknown, and missing slat feedback
+does not make a shutter without slats unavailable.
+
+Position commands preserve imported script parameters and action templates,
+validate the requested percentage, and report command failures to the caller.
+
 ### CLU Controllers and Scripts
 
 Each CLU in the imported configuration is automatically added as a Home
