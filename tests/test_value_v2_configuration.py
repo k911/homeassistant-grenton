@@ -186,6 +186,7 @@ def test_integration_options_flow_switches_domains_and_clears_incompatible_setti
         entry.runtime_data = SimpleNamespace(devices=[device])
         hass = HomeAssistant(str(tmp_path))
         hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
             async_get_known_entry=Mock(return_value=entry),
             async_update_entry=Mock(return_value=True),
             async_schedule_reload=Mock(),
@@ -284,7 +285,10 @@ def test_native_ha_registration_round_trip_and_enum_has_no_measurement_warning(
     async def run():
         hass = HomeAssistant(str(tmp_path))
         entry = make_entry()
-        hass.config_entries = SimpleNamespace(async_get_entry=lambda entry_id: entry)
+        hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
+            async_get_entry=lambda entry_id: entry,
+        )
         dr.async_setup(hass)
         await asyncio.gather(
             dr.async_load(hass, load_empty=True), er.async_load(hass, load_empty=True)
@@ -450,7 +454,10 @@ def test_double_domain_cleanup_keeps_the_other_channel_registration(tmp_path):
     async def run():
         hass = HomeAssistant(str(tmp_path))
         entry = make_entry()
-        hass.config_entries = SimpleNamespace(async_get_entry=lambda entry_id: entry)
+        hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
+            async_get_entry=lambda entry_id: entry,
+        )
         dr.async_setup(hass)
         await dr.async_load(hass, load_empty=True)
         await er.async_load(hass, load_empty=True)

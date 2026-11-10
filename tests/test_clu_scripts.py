@@ -79,6 +79,7 @@ async def make_hass(tmp_path, entries):
     hass = HomeAssistant(str(tmp_path))
     by_id = {entry.entry_id: entry for entry in entries}
     hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
         async_get_entry=by_id.get,
         async_entries=lambda *args, **kwargs: list(by_id.values()),
     )

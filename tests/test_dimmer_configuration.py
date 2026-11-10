@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 import pytest
 from homeassistant.components.light import ColorMode, LightEntity
@@ -268,6 +268,7 @@ def test_options_flow_shows_drafts_validates_saves_and_reloads(tmp_path):
         entry.runtime_data = SimpleNamespace(devices=[device])
         hass = HomeAssistant(str(tmp_path))
         hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
             async_get_known_entry=Mock(return_value=entry),
             async_update_entry=Mock(return_value=True),
             async_schedule_reload=Mock(),

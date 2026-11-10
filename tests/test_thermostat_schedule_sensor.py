@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -49,7 +49,7 @@ def test_schedule_is_discovered_on_the_existing_device_without_extra_subscriptio
     assert climate.unique_id == "thermostat1_climate"
     assert climate.name is None
     assert schedule.unique_id == "thermostat1_schedule"
-    assert schedule.device_info["identifiers"] == climate.device_info["identifiers"]
+    assert schedule.device_info.identifiers == climate.device_info.identifiers
     assert device.name == "Living room"
     assert coord.register_component_state.call_count == 9
     coord.execute_action.assert_not_called()
@@ -209,7 +209,10 @@ def test_native_sensor_registration_shares_device_preserves_climate_id_and_remov
         hass = HomeAssistant(str(tmp_path))
         hass.config.language = language
         entry = make_entry()
-        hass.config_entries = SimpleNamespace(async_get_entry=lambda entry_id: entry)
+        hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
+            async_get_entry=lambda entry_id: entry,
+        )
         dr.async_setup(hass)
         await asyncio.gather(
             dr.async_load(hass, load_empty=True), er.async_load(hass, load_empty=True)
@@ -282,6 +285,16 @@ def test_native_sensor_registration_shares_device_preserves_climate_id_and_remov
             track.assert_called_once_with(
                 hass, schedule._refresh_time, minute=[0, 15, 30, 45], second=0
             )
+            old_id = schedule.entity_id
+            registry.async_update_entity(
+                old_id, new_entity_id="sensor.living_room_schedule_renamed"
+            )
+            await hass.async_block_till_done()
+            assert schedule.entity_id == "sensor.living_room_schedule_renamed"
+            assert hass.states.get(old_id) is None
+            assert hass.states.get(schedule.entity_id) is not None
+            track.assert_called_once()
+            cancel.assert_not_called()
             schedule._now.return_value = datetime(2026, 10, 19, 20, tzinfo=WARSAW)
             track.call_args.args[1](schedule._now.return_value)
             assert (

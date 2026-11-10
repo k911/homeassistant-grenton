@@ -187,6 +187,14 @@ def test_diagnostics_add_no_reads_remain_available_offline_and_remove_their_list
                 seen = api.health.last_seen
                 assert connection.is_on is True and seen.tzinfo is not None
                 assert hass.states.get(connection.entity_id).state == "on"
+                old_id = connection.entity_id
+                registry.async_update_entity(
+                    old_id, new_entity_id="binary_sensor.renamed_clu_connection"
+                )
+                await hass.async_block_till_done()
+                assert connection.entity_id == "binary_sensor.renamed_clu_connection"
+                assert hass.states.get(old_id) is None
+                assert hass.states.get(connection.entity_id).state == "on"
                 changes = []
                 remove_listener = hass.bus.async_listen(
                     EVENT_STATE_CHANGED, changes.append

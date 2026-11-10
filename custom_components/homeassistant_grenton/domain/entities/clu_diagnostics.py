@@ -48,6 +48,11 @@ class CluConnectionDiagnostic(Entity):
         )
 
     @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Keep the health listener, which is keyed by CLU ID, on rename."""
+        super().async_entity_id_changed(old_entity_id)
+
+    @callback
     def _update(self) -> None:
         self.async_write_ha_state()
 

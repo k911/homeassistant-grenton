@@ -1,4 +1,4 @@
-homeassistant==2026.9.4
+homeassistant==2026.11.1
 pytest>=8
 # Integration requirements.
 pydantic>=2.12.2

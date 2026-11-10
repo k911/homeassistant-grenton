@@ -104,7 +104,7 @@ def test_discovery_limits_native_entities_to_supported_controller_families(tmp_p
                 actual.append({type(entity) for entity in group})
                 assert len({entity.unique_id for entity in group}) == len(group)
                 for entity in group:
-                    assert entity.device_info["identifiers"] == {("grenton", f"clu_{clu.id}")}
+                    assert entity.device_info.identifiers == {("grenton", f"clu_{clu.id}")}
                     assert entity.entity_category == (
                         EntityCategory.CONFIG if isinstance(entity, GrentonCluDebugLogging)
                         else EntityCategory.DIAGNOSTIC

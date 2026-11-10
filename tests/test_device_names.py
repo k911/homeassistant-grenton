@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.components.config.device_registry import websocket_update_device
@@ -39,9 +39,9 @@ def test_widget_devices_use_entity_labels_and_keep_the_type_as_model(dto, expect
     device = DeviceMapper.to_domain(dto, coordinator())
     assert device.name == expected
     for entity in device.entities:
-        assert entity.device_info["name"] == expected
-        assert entity.device_info["model"] == dto.type
-        assert entity.device_info["identifiers"] == {("grenton", dto.id)}
+        assert entity.device_info.name == expected
+        assert entity.device_info.model == dto.type
+        assert entity.device_info.identifiers == {("grenton", dto.id)}
         assert "translation_key" not in entity.device_info
         assert entity.has_entity_name is True
         assert entity.name == (None if len(device.entities) == 1 else entity.label)
@@ -72,7 +72,10 @@ def test_native_device_name_migration_and_rename_preserve_ids_rooms_and_entity_n
     async def run():
         hass = HomeAssistant(str(tmp_path))
         entry = make_entry()
-        hass.config_entries = SimpleNamespace(async_get_entry=lambda entry_id: entry)
+        hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
+            async_get_entry=lambda entry_id: entry,
+        )
         dr.async_setup(hass)
         await asyncio.gather(
             dr.async_load(hass, load_empty=True), er.async_load(hass, load_empty=True)
@@ -91,7 +94,7 @@ def test_native_device_name_migration_and_rename_preserve_ids_rooms_and_entity_n
             device = DeviceMapper.to_domain(dto, coord)
             if phase == "legacy":
                 for entity in device.entities:
-                    entity.device_info["name"] = "ON_OFF_DOUBLE"
+                    entity.device_info.name = "ON_OFF_DOUBLE"
                     entity._attr_has_entity_name = True
                     entity._use_device_name = False
             else:
@@ -119,7 +122,7 @@ def test_native_device_name_migration_and_rename_preserve_ids_rooms_and_entity_n
                 assert devices.async_get(device_id).area_id == room.id
                 assert (
                     hass.states.get(entity_ids[0]).attributes["friendly_name"]
-                    == "Desk light"
+                    == f"{devices.async_get(device_id).name_by_user or device.name} Desk light"
                 )
                 if double:
                     assert hass.states.get(entity_ids[1]).attributes[
@@ -189,7 +192,10 @@ def test_single_value_entity_uses_device_name_without_repeating_label(tmp_path):
     async def run():
         hass = HomeAssistant(str(tmp_path))
         entry = make_entry()
-        hass.config_entries = SimpleNamespace(async_get_entry=lambda entry_id: entry)
+        hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
+            async_get_entry=lambda entry_id: entry,
+        )
         dr.async_setup(hass)
         await asyncio.gather(
             dr.async_load(hass, load_empty=True), er.async_load(hass, load_empty=True)

@@ -145,7 +145,7 @@ class GrentonCluFirmwareVersion(GrentonCluStateEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         info = clu_device_info(self.clu)
         if version := self.native_value:
-            info["sw_version"] = version
+            info.sw_version = version
         return info
 
     @callback

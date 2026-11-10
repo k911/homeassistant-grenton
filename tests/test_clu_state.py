@@ -390,7 +390,7 @@ def test_firmware_strings_survive_polled_responses_and_notification_parsing(
             GrentonCluApiFetchValuesRequest,
         )
         assert firmware.native_value == "1.20"
-        assert firmware.device_info["sw_version"] == "1.20"
+        assert firmware.device_info.sw_version == "1.20"
         protocol = GrentonCluApiProtocol(api)
         protocol.subscription_keys = keys
 
@@ -427,7 +427,7 @@ def test_serial_detection_and_unknown_type_preserves_controller(
         assert clu.device_type == expected
         assert clu.object_name == clu.id
         assert entities[0].unique_id == "clu_clu1"
-        assert entities[0].device_info["model"] == (expected or "CLU")
+        assert entities[0].device_info.model == (expected or "CLU")
         if expected is None:
             assert len(entities) == 4
             assert not coord.state.clus[clu.id].get_subscription_order()

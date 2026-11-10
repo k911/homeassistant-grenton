@@ -43,7 +43,7 @@ See [Device specifications](#device-specifications) for detailed behavior and se
 
 ## 🚀 Installation
 
-Requires **Home Assistant 2026.9.4 or newer**, the tested baseline.
+Requires **Home Assistant 2026.11.0 or newer**; tested with **2026.11.1**.
 
 ### Option 1: HACS (Recommended)
 

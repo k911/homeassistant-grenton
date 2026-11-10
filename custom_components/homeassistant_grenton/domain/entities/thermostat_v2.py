@@ -42,7 +42,7 @@ class GrentonEntityThermostatV2(
 ):
     """A thermostat with manual heating/cooling and CLU schedule operation."""
 
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
     _attr_supported_features = (
         ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
@@ -167,6 +167,11 @@ class GrentonEntityThermostatV2(
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._analyse_schedule()
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Keep schedule state and coordinator listeners when renamed in place."""
+        super().async_entity_id_changed(old_entity_id)
 
     async def async_prepare_configuration(self) -> None:
         """Read a fresh schedule and limits only when opening the editor."""
@@ -304,11 +309,11 @@ class GrentonEntityThermostatV2(
         return number if math.isfinite(number) else None
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         return self._number("currentTemperature")
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         # TargetTemp is the effective target in either manual or schedule mode.
         # PointValue (the write binding) is only the manual target.
         return self._number("targetTemperature")
@@ -376,7 +381,7 @@ class GrentonEntityThermostatV2(
             "control_direction_name": self.control_direction_name,
         }
         if self._number("mode") == 2:
-            attributes["scheduled_target_temperature_celsius"] = self.target_temperature
+            attributes["scheduled_target_temperature_celsius"] = self.native_target_temperature
         if schedule := self.decoded_schedule:
             attributes["weekly_schedule"] = schedule.periods()
         return attributes
@@ -528,7 +533,7 @@ class GrentonEntityThermostatV2(
                 validate_limits(new_minimum, new_maximum)
                 if (
                     self._number("mode") == 0
-                    and (target := self.target_temperature) is not None
+                    and (target := self.native_target_temperature) is not None
                     and not new_minimum <= target <= new_maximum
                 ):
                     raise ValueError(
