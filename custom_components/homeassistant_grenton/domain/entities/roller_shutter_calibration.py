@@ -16,19 +16,23 @@ class ShutterCalibration:
     POLL_SECONDS = 1
     STABLE_SAMPLES = 2
 
-    def __init__(self, entity, direction: str, limit_ms: int, lamel_ms: int = 0):
+    def __init__(self, entity, direction: str, limit_ms: int):
         if direction not in ('up', 'down'):
             raise ValueError('Choose up or down')
         self.entity, self.direction = entity, direction
-        self.limit_ms, self.lamel_ms = milliseconds(limit_ms), milliseconds(lamel_ms)
+        self.limit_ms, self.lamel_ms = milliseconds(limit_ms), 0
         self.tilt_enabled = entity._tilt_enabled
-        if self.limit_ms <= 0 or (self.tilt_enabled and self.lamel_ms <= 0):
+        if self.limit_ms <= 0:
             raise ValueError('Provide a positive movement time')
+        if self.tilt_enabled and not all('lamel_move_timeout' in bindings
+                                        for bindings in (entity.setting_actions, entity.setting_states)):
+            raise HomeAssistantError('Slat movement time cannot be saved')
         self.key = f'blinds_{direction}_max_time'
         self.original = entity.setting_values.get(self.key)
         if self.original is None or self.key not in entity.setting_actions:
             raise HomeAssistantError('Travel time is unavailable')
         self.started = self.elapsed_ms = None
+        self.tilt_started_ms = None
         self.phase, self.running, self.finished = 'prepare', False, False
         self._guard = None
         self._temporary = self.cancelled = False
@@ -40,10 +44,13 @@ class ShutterCalibration:
         self._measuring = False
 
     @property
-    def seconds(self):
-        elapsed = self.elapsed_ms / 1000 if self.elapsed_ms is not None else (
+    def elapsed_seconds(self):
+        return self.elapsed_ms / 1000 if self.elapsed_ms is not None else (
             monotonic() - self.started if self.started is not None else 0)
-        return str(int(elapsed))
+
+    @property
+    def seconds(self):
+        return str(int(self.elapsed_seconds))
 
     @property
     def edge_position(self):
@@ -133,6 +140,7 @@ class ShutterCalibration:
             self._measuring = measuring
             self.active_direction = self.direction if measuring else ('down' if self.direction == 'up' else 'up')
             self.started, self.elapsed_ms = monotonic(), None
+            self.tilt_started_ms, self.lamel_ms = None, 0
             self._initial_position = self.entity.current_cover_position
             self._saw_motion = False
             self.phase = 'measuring' if measuring else 'positioning'
@@ -159,24 +167,44 @@ class ShutterCalibration:
     async def measure(self):
         await self.run(measuring=True)
 
+    async def mark_tilt_started(self):
+        async with self._lock:
+            if not self.tilt_enabled or self.phase != 'measuring' or self.started is None or self.cancelled:
+                raise HomeAssistantError('No slat measurement is running')
+            elapsed = milliseconds(round((monotonic() - self.started) * 1000))
+            if elapsed <= 0:
+                raise HomeAssistantError('Movement time must be positive')
+            self.tilt_started_ms = elapsed
+            self.phase = 'tilting'
+
     async def stop_measurement(self):
         async with self._lock:
-            if self.phase != 'measuring' or self.started is None or self.cancelled:
+            expected_phase = 'tilting' if self.tilt_enabled else 'measuring'
+            if self.phase != expected_phase or self.started is None or self.cancelled:
                 raise HomeAssistantError('No measurement is running')
-            self.elapsed_ms = milliseconds(round((monotonic() - self.started) * 1000), 610000)
+            elapsed = milliseconds(round((monotonic() - self.started) * 1000), 1200000)
+            if self.tilt_enabled:
+                lamel_ms = milliseconds(elapsed - self.tilt_started_ms)
+                if lamel_ms <= 0:
+                    raise HomeAssistantError('Slat movement time must be positive')
+                self.lamel_ms = lamel_ms
+            else:
+                milliseconds(elapsed)
+            self.elapsed_ms = elapsed
             self.phase = 'review'
 
     @property
     def suggested_ms(self):
         if self.elapsed_ms is None or self.elapsed_ms <= self.lamel_ms:
             raise HomeAssistantError('Measured time must exceed slat time')
-        return milliseconds(self.elapsed_ms - self.lamel_ms)
+        return milliseconds(self.tilt_started_ms if self.tilt_enabled else self.elapsed_ms)
 
     async def abort(self):
         async with self._lock:
             if self.phase == 'saved':
                 return
             self.cancelled, self.elapsed_ms = True, None
+            self.tilt_started_ms, self.lamel_ms = None, 0
             if self.running:
                 self.phase = 'cancelling'
                 if self._guard is None or self._guard.done():

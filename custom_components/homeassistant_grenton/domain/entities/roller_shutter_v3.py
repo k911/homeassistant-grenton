@@ -30,6 +30,7 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
     """Expose native open percentage and optional blind slats as a HA cover."""
 
     _attr_device_class = CoverDeviceClass.SHUTTER
+    _attr_translation_key = 'roller_shutter'
 
     def __init__(
         self,
@@ -215,9 +216,17 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
         await self._execute(self._require_tilt(), "90")
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
-        action = self._require_tilt()
         position = self._percentage(kwargs.get(ATTR_TILT_POSITION))
-        await self._execute(action, str(round(90 - position * 90 / 100)))
+        await self.async_set_lamel_position(round(90 - position * 90 / 100))
+
+    async def async_set_lamel_position(self, degrees: int) -> None:
+        """Set the native angle directly: 0 open, 90 closed."""
+        action = self._require_tilt()
+        try:
+            degrees = milliseconds(degrees, 90)
+        except vol.Invalid as error:
+            raise ServiceValidationError('Slat angle must be between 0 and 90 degrees') from error
+        await self._execute(action, str(degrees))
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
         self._require_tilt()
@@ -356,7 +365,7 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
             self.async_write_ha_state()
         return options
 
-    async def create_calibration(self, direction, limit_ms, lamel_ms=0):
+    async def create_calibration(self, direction, limit_ms):
         async with self._settings_lock:
             if not self.calibration_available:
                 raise HomeAssistantError('Calibration bindings are unavailable')
@@ -364,7 +373,7 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
                 raise HomeAssistantError('A calibration is already active')
             if self._number(self.cover_state) in (3, 4):
                 raise HomeAssistantError('The shutter is blocked or already calibrating')
-            self._calibration = ShutterCalibration(self, direction, limit_ms, lamel_ms)
+            self._calibration = ShutterCalibration(self, direction, limit_ms)
             return self._calibration
 
     async def async_will_remove_from_hass(self):

@@ -240,7 +240,7 @@
         "title": "Configure {entity_name}",
         "menu_options": {
           "configure_entity": "Shutter settings",
-          "shutter_calibration": "Measure opening or closing time"
+          "shutter_calibration": "Opening and closing time calibration"
         }
       },
       "configure_shutter_settings": {
@@ -256,7 +256,7 @@
         }
       },
       "shutter_calibration": {
-        "title": "Choose measurement direction",
+        "title": "Choose calibration direction",
         "description": "",
         "data": {
           "direction": "Direction"
@@ -267,11 +267,7 @@
         "description": "",
         "data": {
           "limit_up_ms": "Opening movement time",
-          "limit_down_ms": "Closing movement time",
-          "lamel_move_timeout": "Slat movement time"
-        },
-        "data_description": {
-          "lamel_move_timeout": "Enter this time manually; it will be subtracted from the measurement."
+          "limit_down_ms": "Closing movement time"
         }
       },
       "shutter_ready": {
@@ -284,20 +280,20 @@
       },
       "shutter_measurement": {
         "title": "Measurement",
-        "description": "{icon} {seconds} s",
-        "menu_options": {
-          "shutter_stop_measurement": "Finish measurement",
-          "shutter_cancel": "Cancel"
-        }
+        "description": "",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Finish measurement"
       },
       "shutter_review": {
         "title": "Measurement result",
         "description": "Movement time: {suggested_ms} ms.",
         "data": {
           "total_ms": "Measured time",
-          "lamel_move_timeout": "Slat movement time to subtract",
           "save": "Save result"
-        }
+        },
+        "submit": "Save"
       },
       "shutter_error": {
         "title": "Motor operation failed",
@@ -315,7 +311,7 @@
       },
       "shutter_position_closed": {
         "title": "Starting position",
-        "description": "The shutter is closed.",
+        "description": "If the shutter is not fully closed, choose Close shutter.",
         "menu_options": {
           "shutter_position_up": "Open shutter",
           "shutter_position_down": "Close shutter",
@@ -325,7 +321,7 @@
       },
       "shutter_position_open": {
         "title": "Starting position",
-        "description": "The shutter is open.",
+        "description": "If the shutter is not fully open, choose Open shutter.",
         "menu_options": {
           "shutter_position_up": "Open shutter",
           "shutter_position_down": "Close shutter",
@@ -352,6 +348,65 @@
           "shutter_edge_ready": "Continue",
           "shutter_cancel": "Cancel"
         }
+      },
+      "shutter_ready_tilt": {
+        "title": "Shutter and slat measurement",
+        "description": "Click when the shutter reaches the end of its travel and the slats start turning. Click again when the slats finish moving.",
+        "menu_options": {
+          "shutter_start_measurement": "Start measurement",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_measurement_tilt_start": {
+        "title": "Measuring travel time",
+        "description": "Click when the slats start turning.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Slats started moving"
+      },
+      "shutter_measurement_tilt_end": {
+        "title": "Measuring slat time",
+        "description": "Finish the measurement when the slats finish moving.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Slats finished moving"
+      },
+      "shutter_tilt_review": {
+        "title": "Calibration result",
+        "description": "Shutter travel time: {travel_ms} ms. Slat movement time: {lamel_ms} ms.",
+        "data": {
+          "travel_ms": "Shutter travel time",
+          "lamel_move_timeout": "Slat movement time",
+          "save": "Save result"
+        },
+        "submit": "Save"
+      },
+      "shutter_calibrated": {
+        "title": "Calibration saved",
+        "menu_options": {
+          "shutter_tilt_test": "Test slat position",
+          "shutter_tilt_adjust": "Adjust movement times",
+          "shutter_done": "Finish"
+        }
+      },
+      "shutter_tilt_test": {
+        "title": "Slat position test",
+        "description": "0° — open, 90° — closed.",
+        "data": {
+          "lamel_position": "Slat position"
+        },
+        "submit": "Set position"
+      },
+      "shutter_tilt_adjust": {
+        "title": "Movement times",
+        "data": {
+          "blinds_up_max_time": "Opening travel time",
+          "blinds_down_max_time": "Closing travel time",
+          "lamel_move_timeout": "Slat movement time"
+        },
+        "submit": "Save"
       }
     },
     "abort": {
@@ -365,11 +420,12 @@
     "error": {
       "invalid_configuration": "Select valid options and enter valid values.",
       "cannot_apply_configuration": "Could not save settings. Check the connection and entered values.",
-      "cannot_read_configuration": "Could not read the current settings from the CLU. Check the connection and reopen configuration."
+      "cannot_read_configuration": "Could not read the current settings from the CLU. Check the connection and reopen configuration.",
+      "cannot_test_tilt": "Could not set the slat position. Wait for movement to finish and try again."
     },
     "progress": {
-      "shutter_up": "↑ Opening · {seconds} s",
-      "shutter_down": "↓ Closing · {seconds} s",
+      "shutter_up": "↑ Opening",
+      "shutter_down": "↓ Closing",
       "shutter_check_position": "Checking position…"
     }
   },
@@ -608,6 +664,11 @@
       },
       "clu_use_cloud": {
         "name": "Use cloud"
+      }
+    },
+    "cover": {
+      "roller_shutter": {
+        "name": "Roller shutter"
       }
     }
   },
@@ -1024,6 +1085,11 @@
         "up": "Opening (up)",
         "down": "Closing (down)"
       }
+    },
+    "shutter_measurement": {
+      "elapsed": "Elapsed time",
+      "cancel": "Cancel",
+      "slat_elapsed": "Slat movement"
     }
   }
 }

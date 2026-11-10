@@ -147,6 +147,7 @@ def test_manual_settings_are_visible_in_native_options_manager_and_saved_without
         hass.config_entries = SimpleNamespace(async_get_known_entry=Mock(return_value=entry),
             async_update_entry=Mock(return_value=True), async_schedule_reload=Mock())
         flow.hass, flow.handler = hass, entry.entry_id
+        flow.flow_id = 'shutter-flow'
         manager = OptionsFlowManager(hass)
         manager._async_add_flow_progress(flow)
         with entry_patch:
@@ -189,6 +190,7 @@ def test_native_flow_disabling_tilt_ignores_hidden_values_and_writes_zero(tmp_pa
         hass.config_entries = SimpleNamespace(async_get_known_entry=Mock(return_value=entry),
             async_update_entry=Mock(return_value=True), async_schedule_reload=Mock())
         flow.hass, flow.handler = hass, entry.entry_id
+        flow.flow_id = 'shutter-flow'
         manager = OptionsFlowManager(hass)
         manager._async_add_flow_progress(flow)
         with entry_patch:
@@ -250,10 +252,12 @@ def test_manual_stopwatch_result_can_be_saved_while_calibration_continues():
         observe_motor(entity, coord, values)
         clock = [100]
         with patch(CLOCK,side_effect=lambda:clock[0]):
-            session = await entity.create_calibration('up',45000,3000)
+            session = await entity.create_calibration('up',45000)
             session.POLL_SECONDS = .001
             await session.edge_ready()
             await session.measure()
+            clock[0] = 124
+            await session.mark_tilt_started()
             clock[0] = 127
             await session.stop_measurement()
             assert session.elapsed_ms == 27000 and session.suggested_ms == 24000
@@ -309,6 +313,7 @@ def test_native_wait_loader_and_measurement_save_while_motor_runs(tmp_path):
         flow,entry_patch=make_flow(coord,entity)
         hass=HomeAssistant(str(tmp_path));hass.config.language='pl'
         flow.hass=hass
+        flow.flow_id = 'shutter-flow'
         with entry_patch:
             flow.selected_entity_uid=entity.unique_id
             await flow.async_step_shutter_calibration({'direction':'up'})
@@ -343,7 +348,7 @@ def test_native_wait_loader_and_measurement_save_while_motor_runs(tmp_path):
     asyncio.run(run())
 
 
-def test_native_manager_timer_refresh_and_popup_close_keep_firmware_running(tmp_path):
+def test_native_manager_frontend_timer_and_popup_close_keep_firmware_running(tmp_path):
     from types import SimpleNamespace
     from unittest.mock import Mock
     from homeassistant.config_entries import OptionsFlowManager
@@ -359,6 +364,7 @@ def test_native_manager_timer_refresh_and_popup_close_keep_firmware_running(tmp_
         hass.config_entries = SimpleNamespace(async_get_known_entry=Mock(return_value=entry),
             async_update_entry=Mock(return_value=True), async_schedule_reload=Mock())
         flow.hass, flow.handler = hass, entry.entry_id
+        flow.flow_id = 'shutter-flow'
         manager = OptionsFlowManager(hass)
         manager._async_add_flow_progress(flow)
         with entry_patch:
@@ -378,14 +384,17 @@ def test_native_manager_timer_refresh_and_popup_close_keep_firmware_running(tmp_
             clock = [100]
             with patch(CLOCK, side_effect=lambda: clock[0]):
                 result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_start_measurement'})
-                assert result['description_placeholders']['seconds'] == '0'
+                assert result['type'] == 'form'
+                timer = ui_fields(result)['measurement']['selector']['grenton_shutter_measurement']
+                assert timer['elapsed_ms'] == 0 and timer['direction'] == 'down'
                 clock[0] = 102.875
                 result = await manager.async_configure(flow.flow_id)
-                assert result['description_placeholders']['seconds'] == '2'
+                timer = ui_fields(result)['measurement']['selector']['grenton_shutter_measurement']
+                assert timer['elapsed_ms'] == 2875
                 manager.async_abort(flow.flow_id)
                 await asyncio.sleep(.01)
                 assert session.running and values['0'] == 4
-                assert session.elapsed_ms is None and flow._shutter_clock.cancelled()
+                assert session.elapsed_ms is None
                 await finish_motor(session, values)
                 assert session.finished and values['15'] == 21500
         assert not any('execute(3' in command for command in commands)
@@ -402,6 +411,7 @@ def test_close_during_initial_loader_cancels_ui_but_keeps_motor_observation(tmp_
         flow, entry_patch = make_flow(coord, entity)
         hass = HomeAssistant(str(tmp_path))
         flow.hass = hass
+        flow.flow_id = 'shutter-flow'
         with entry_patch:
             flow.selected_entity_uid = entity.unique_id
             session = await entity.create_calibration('up', 30000)
@@ -470,4 +480,105 @@ def test_failed_provisional_setting_never_starts_motor_and_can_be_cancelled():
         assert not any(':execute(8,' in command for command in commands)
         await session.abort()
         assert session.finished and values['14'] == 22000
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('direction,position,button', [
+    ('up', 0, 'shutter_position_down'), ('down', 100, 'shutter_position_up'),
+])
+def test_positioning_remains_optional_at_the_reported_edge(tmp_path, direction, position, button):
+    from homeassistant.core import HomeAssistant
+
+    async def run():
+        entity, coord, values, commands = configured_shutter(**{'7': position})
+        observe_motor(entity, coord, values)
+        flow, entry_patch = make_flow(coord, entity)
+        hass = HomeAssistant(str(tmp_path))
+        flow.hass = hass
+        flow.flow_id = 'shutter-flow'
+        with entry_patch:
+            flow.selected_entity_uid = entity.unique_id
+            session = await entity.create_calibration(direction, 30000)
+            session.POLL_SECONDS = .001
+            flow._shutter_session = session
+            for _ in range(2):
+                result = await flow.async_step_shutter_position()
+                assert result['menu_options'] == ['shutter_edge_ready', button, 'shutter_cancel']
+                result = await getattr(flow, f'async_step_{button}')()
+                assert result['type'] == 'progress'
+                assert session.running
+                with pytest.raises(HomeAssistantError):
+                    await session.edge_ready()
+                await finish_motor(session, values)
+                await flow._shutter_wait_task
+                assert (await flow.async_step_shutter_wait())['type'] == 'progress_done'
+            await session.abort()
+        argument = '0' if direction == 'up' else '1'
+        assert commands == [f'ROLLER1:execute(8, {argument})'] * 2
+        assert not any('execute(3' in command for command in commands)
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('direction,position,allowed,blocked', [
+    ('down', 100, 'shutter_position_up', 'shutter_position_down'),
+    ('down', 50, 'shutter_position_up', 'shutter_position_down'),
+    ('up', 0, 'shutter_position_down', 'shutter_position_up'),
+    ('up', 50, 'shutter_position_down', 'shutter_position_up'),
+])
+def test_only_opposite_direction_is_offered_and_wrong_handler_cannot_move(
+    direction, position, allowed, blocked,
+):
+    async def run():
+        entity, coord, _, commands = configured_shutter(**{'7': position})
+        flow, entry_patch = make_flow(coord, entity)
+        with entry_patch:
+            flow.selected_entity_uid = entity.unique_id
+            session = await entity.create_calibration(direction, 30000)
+            flow._shutter_session = session
+            result = await flow.async_step_shutter_position()
+            assert allowed in result['menu_options']
+            assert blocked not in result['menu_options']
+            result = await getattr(flow, f'async_step_{blocked}')()
+            assert result['step_id'] == 'shutter_error'
+            assert not commands and not session.running
+            await session.abort()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('action', ['finish', 'cancel'])
+def test_measurement_form_records_backend_time_or_cancels_without_stopping_motor(tmp_path, action):
+    from homeassistant.core import HomeAssistant
+
+    async def run():
+        entity, coord, values, commands = configured_shutter(**{'7': 0})
+        observe_motor(entity, coord, values)
+        flow, entry_patch = make_flow(coord, entity)
+        hass = HomeAssistant(str(tmp_path))
+        flow.hass = hass
+        flow.flow_id = 'shutter-flow'
+        with entry_patch:
+            flow.selected_entity_uid = entity.unique_id
+            session = await entity.create_calibration('up', 30000)
+            session.POLL_SECONDS = .001
+            flow._shutter_session = session
+            await session.edge_ready()
+            clock = [100]
+            with patch(CLOCK, side_effect=lambda: clock[0]):
+                result = await flow.async_step_shutter_start_measurement()
+                schema = result['data_schema']
+                assert schema({}) == {'measurement': 'finish'}
+                clock[0] = 127.321
+                result = await flow.async_step_shutter_measurement(schema({'measurement': action}))
+                if action == 'finish':
+                    assert result['step_id'] == 'shutter_review'
+                    assert session.elapsed_ms == 27321
+                else:
+                    assert result['type'] == 'abort'
+                    assert session.elapsed_ms is None
+                assert session.running and values['0'] == 4
+                await session.abort()
+                await finish_motor(session, values)
+        assert not any('execute(3' in command for command in commands)
+        await hass.async_stop()
     asyncio.run(run())

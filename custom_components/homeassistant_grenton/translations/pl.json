@@ -240,7 +240,7 @@
         "title": "Konfiguracja: {entity_name}",
         "menu_options": {
           "configure_entity": "Ustawienia żaluzji",
-          "shutter_calibration": "Pomiar czasu otwierania lub zamykania"
+          "shutter_calibration": "Kalibracja czasu otwierania i zamykania"
         }
       },
       "configure_shutter_settings": {
@@ -256,7 +256,7 @@
         }
       },
       "shutter_calibration": {
-        "title": "Wybierz kierunek pomiaru",
+        "title": "Wybierz kierunek kalibracji",
         "description": "",
         "data": {
           "direction": "Kierunek"
@@ -267,11 +267,7 @@
         "description": "",
         "data": {
           "limit_up_ms": "Czas ruchu rolety w górę",
-          "limit_down_ms": "Czas ruchu rolety w dół",
-          "lamel_move_timeout": "Czas ruchu lameli"
-        },
-        "data_description": {
-          "lamel_move_timeout": "Podaj ręcznie; ten czas zostanie odjęty od wyniku pomiaru."
+          "limit_down_ms": "Czas ruchu rolety w dół"
         }
       },
       "shutter_ready": {
@@ -284,20 +280,20 @@
       },
       "shutter_measurement": {
         "title": "Pomiar",
-        "description": "{icon} {seconds} s",
-        "menu_options": {
-          "shutter_stop_measurement": "Zakończ pomiar",
-          "shutter_cancel": "Anuluj"
-        }
+        "description": "",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Zakończ pomiar"
       },
       "shutter_review": {
         "title": "Wynik pomiaru",
         "description": "Czas ruchu: {suggested_ms} ms.",
         "data": {
           "total_ms": "Zmierzony czas",
-          "lamel_move_timeout": "Czas ruchu lameli do odjęcia",
           "save": "Zapisz wynik"
-        }
+        },
+        "submit": "Zapisz"
       },
       "shutter_error": {
         "title": "Błąd polecenia napędu",
@@ -315,7 +311,7 @@
       },
       "shutter_position_closed": {
         "title": "Pozycja początkowa",
-        "description": "Roleta jest zamknięta.",
+        "description": "Jeśli roleta nie jest całkowicie zamknięta, wybierz „Zamknij roletę”.",
         "menu_options": {
           "shutter_position_up": "Otwórz roletę",
           "shutter_position_down": "Zamknij roletę",
@@ -325,7 +321,7 @@
       },
       "shutter_position_open": {
         "title": "Pozycja początkowa",
-        "description": "Roleta jest otwarta.",
+        "description": "Jeśli roleta nie jest całkowicie otwarta, wybierz „Otwórz roletę”.",
         "menu_options": {
           "shutter_position_up": "Otwórz roletę",
           "shutter_position_down": "Zamknij roletę",
@@ -352,6 +348,65 @@
           "shutter_edge_ready": "Dalej",
           "shutter_cancel": "Anuluj"
         }
+      },
+      "shutter_ready_tilt": {
+        "title": "Pomiar czasu rolety i lameli",
+        "description": "Kliknij, gdy roleta osiągnie koniec przejazdu i lamele zaczną się obracać. Kliknij ponownie, gdy lamele zakończą ruch.",
+        "menu_options": {
+          "shutter_start_measurement": "Rozpocznij pomiar",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_measurement_tilt_start": {
+        "title": "Pomiar czasu przejazdu",
+        "description": "Kliknij, gdy lamele zaczną się obracać.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Lamele zaczęły ruch"
+      },
+      "shutter_measurement_tilt_end": {
+        "title": "Pomiar czasu lameli",
+        "description": "Zakończ pomiar, gdy lamele zakończą ruch.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Lamele zakończyły ruch"
+      },
+      "shutter_tilt_review": {
+        "title": "Wynik kalibracji",
+        "description": "Czas przejazdu rolety: {travel_ms} ms. Czas ruchu lameli: {lamel_ms} ms.",
+        "data": {
+          "travel_ms": "Czas przejazdu rolety",
+          "lamel_move_timeout": "Czas ruchu lameli",
+          "save": "Zapisz wynik"
+        },
+        "submit": "Zapisz"
+      },
+      "shutter_calibrated": {
+        "title": "Kalibracja zapisana",
+        "menu_options": {
+          "shutter_tilt_test": "Przetestuj pozycję lameli",
+          "shutter_tilt_adjust": "Dostosuj czasy ruchu",
+          "shutter_done": "Zakończ"
+        }
+      },
+      "shutter_tilt_test": {
+        "title": "Test pozycji lameli",
+        "description": "0° — otwarte, 90° — zamknięte.",
+        "data": {
+          "lamel_position": "Pozycja lameli"
+        },
+        "submit": "Ustaw pozycję"
+      },
+      "shutter_tilt_adjust": {
+        "title": "Czasy ruchu",
+        "data": {
+          "blinds_up_max_time": "Czas ruchu rolety w górę",
+          "blinds_down_max_time": "Czas ruchu rolety w dół",
+          "lamel_move_timeout": "Czas ruchu lameli"
+        },
+        "submit": "Zapisz"
       }
     },
     "abort": {
@@ -365,11 +420,12 @@
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości.",
       "cannot_apply_configuration": "Nie udało się zapisać ustawień. Sprawdź połączenie i wprowadzone wartości.",
-      "cannot_read_configuration": "Nie udało się odczytać aktualnych ustawień z CLU. Sprawdź połączenie i otwórz konfigurację ponownie."
+      "cannot_read_configuration": "Nie udało się odczytać aktualnych ustawień z CLU. Sprawdź połączenie i otwórz konfigurację ponownie.",
+      "cannot_test_tilt": "Nie udało się ustawić pozycji lameli. Poczekaj na zakończenie ruchu i spróbuj ponownie."
     },
     "progress": {
-      "shutter_up": "↑ Otwieranie · {seconds} s",
-      "shutter_down": "↓ Zamykanie · {seconds} s",
+      "shutter_up": "↑ Otwieranie",
+      "shutter_down": "↓ Zamykanie",
       "shutter_check_position": "Sprawdzanie pozycji…"
     }
   },
@@ -608,6 +664,11 @@
       },
       "clu_use_cloud": {
         "name": "Używaj chmury"
+      }
+    },
+    "cover": {
+      "roller_shutter": {
+        "name": "Roleta"
       }
     }
   },
@@ -1024,6 +1085,11 @@
         "up": "Otwieranie (w górę)",
         "down": "Zamykanie (w dół)"
       }
+    },
+    "shutter_measurement": {
+      "elapsed": "Czas pomiaru",
+      "cancel": "Anuluj",
+      "slat_elapsed": "Ruch lameli"
     }
   }
 }

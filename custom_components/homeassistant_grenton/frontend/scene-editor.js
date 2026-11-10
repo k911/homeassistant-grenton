@@ -36,6 +36,8 @@ const STYLE = `
   .schedule-time select { padding-inline: 4px; }
   .schedule-period-remove { width: 42px; height: 42px; padding: 0; font-size: 22px; }
   .hint { font-size: 13px; color: var(--secondary-text-color, #666); margin: 0; }
+  .shutter-timer { display: block; min-height: 56px; font-size: 32px;
+    font-variant-numeric: tabular-nums; line-height: 56px; white-space: nowrap; }
   .add { justify-self: start; color: var(--primary-color, #03a9f4); }
   .arguments { margin-top: 16px; }
   @media (max-width: 400px) { .inputs { grid-template-columns: 1fr; } }
@@ -641,4 +643,67 @@ class GrentonThermostatEditor extends GrentonEditor {
 
 if (!customElements.get("ha-selector-grenton_thermostat")) {
   customElements.define("ha-selector-grenton_thermostat", GrentonThermostatEditor);
+}
+
+class GrentonShutterMeasurement extends GrentonEditor {
+  disconnectedCallback() {
+    clearInterval(this._timer);
+    this._timer = undefined;
+  }
+
+  _render() {
+    const settings = this.selector?.grenton_shutter_measurement;
+    if (!settings) return;
+    const signature = JSON.stringify(settings);
+    if (this._clockSignature !== signature) {
+      this._clockSignature = signature;
+      this._clockStarted = performance.now();
+      this._initialElapsed = settings.elapsed_ms;
+    }
+    clearInterval(this._timer);
+    const parent = this._container();
+    const counter = document.createElement("output");
+    counter.className = "shutter-timer";
+    counter.setAttribute("role", "timer");
+    counter.setAttribute("aria-live", "off");
+    counter.setAttribute("aria-label", this._text("shutter_measurement.elapsed", "Elapsed time"));
+    let tiltCounter;
+    if (settings.tilt_started_ms != null) {
+      tiltCounter = document.createElement("output");
+      tiltCounter.className = "shutter-timer";
+      tiltCounter.setAttribute("role", "timer");
+      tiltCounter.setAttribute("aria-live", "off");
+      tiltCounter.setAttribute("aria-label", this._text("shutter_measurement.slat_elapsed", "Slat movement"));
+    }
+    const update = () => {
+      const elapsed = this._initialElapsed + performance.now() - this._clockStarted;
+      const seconds = Math.floor(elapsed / 1000);
+      counter.textContent = `${settings.direction === "up" ? "↑" : "↓"} ${seconds} s`;
+      if (tiltCounter) tiltCounter.textContent = `↻ ${Math.floor(Math.max(0, elapsed - settings.tilt_started_ms) / 1000)} s`;
+    };
+    update();
+    if (this.isConnected) this._timer = setInterval(update, 250);
+    parent.append(counter);
+    if (tiltCounter) {
+      const label = document.createElement("span");
+      label.textContent = this._text("shutter_measurement.slat_elapsed", "Slat movement");
+      parent.append(label, tiltCounter);
+    }
+    parent.append(this._button(this._text("shutter_measurement.cancel", "Cancel"), () => {
+      if (this.disabled || this._cancelling) return;
+      this._cancelling = true;
+      this._render();
+      // Use the same options-flow API and transition event as HA's flow controls.
+      const stepPromise = this.hass.callApi("POST",
+        `config/config_entries/options/flow/${encodeURIComponent(settings.flow_id)}`,
+        { measurement: "cancel" });
+      this.dispatchEvent(new CustomEvent("flow-update", {
+        detail: { stepPromise }, bubbles: true, composed: true,
+      }));
+    }, this._cancelling));
+  }
+}
+
+if (!customElements.get("ha-selector-grenton_shutter_measurement")) {
+  customElements.define("ha-selector-grenton_shutter_measurement", GrentonShutterMeasurement);
 }

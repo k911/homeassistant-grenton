@@ -540,11 +540,21 @@ also exposes `up_relay_active` / `down_relay_active` from attributes 3/4.
 The calibration wizard checks the starting end position for the selected direction.
 If necessary, use Open/Close shutter and wait for the module to finish calibration
 and report a stable end position before Continue becomes available. The waiting
-view shows a loader, movement direction and elapsed seconds.
+view shows a loader and movement direction. Open/Close remains available even
+at the reported end position, so an uncalibrated position can be corrected first.
 
 During measurement, Finish measurement stops only the millisecond stopwatch.
+The displayed seconds update locally without refreshing the dialog; the saved
+duration comes from the backend clock.
+With slat support enabled, use two clicks: mark when travel ends and slat movement
+starts, then when the slats finish moving. The result shows travel and slat times
+separately, both adjustable in milliseconds before saving. Without slat support,
+the wizard keeps its single-click measurement.
 The result can be adjusted and saved immediately, even if the module is still
-calibrating. Slat time is supplied manually and subtracted from the measured total.
+calibrating. After saving a slat calibration, optional controls let you test native
+angles from 0° (open) to 90° (closed), then adjust the travel and slat timeouts and
+test again. These controls appear only with slat support enabled. Testing waits
+for any ongoing calibration to finish; Finish closes the wizard immediately.
 Cancel discards the result; it never sends a motor Stop command. Background
 observation waits for state 0 and a stable end position. Temporary timing is
 restored after completion unless a new result has already been saved. No new

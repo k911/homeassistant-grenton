@@ -2,8 +2,10 @@
 
 import asyncio
 from copy import deepcopy
+import json
 import logging
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -157,7 +159,8 @@ def test_script_position_template_preserves_fixed_arguments():
     assert entity.set_position.value == '"office",$value$'
 
 
-def test_native_ha_cover_registration_and_availability(tmp_path):
+@pytest.mark.parametrize('language, name', [('pl', 'Roleta'), ('en', 'Roller shutter')])
+def test_native_ha_cover_registration_and_availability(tmp_path, language, name):
     async def run():
         entry = make_entry()
         hass = await make_hass(tmp_path, [entry])
@@ -167,9 +170,20 @@ def test_native_ha_cover_registration_and_availability(tmp_path):
                                   platform_name='grenton', platform=None, scan_interval=timedelta(seconds=30),
                                   entity_namespace=None)
         platform.config_entry = entry
+        translations = json.loads((Path(__file__).parents[1] / 'custom_components' /
+            'homeassistant_grenton' / 'translations' / f'{language}.json').read_text())
+        translated_name = translations['entity']['cover']['roller_shutter']['name']
+        assert translated_name == name
+        platform_translations = {'component.grenton.entity.cover.roller_shutter.name': translated_name}
+        platform.platform_data.platform_translations = platform_translations
+        platform.platform_data.object_id_platform_translations = platform_translations
+        platform.platform_data.default_language_platform_translations = platform_translations
         try:
             await platform.async_add_entities([entity])
             state = hass.states.get(entity.entity_id)
+            assert entity.registry_entry.original_name == name
+            assert entity.registry_entry.translation_key == 'roller_shutter'
+            assert entity.unique_id == 'office_shutter'
             assert state.state == 'open'
             assert state.attributes['current_position'] == 100
             assert 'current_tilt_position' not in state.attributes
