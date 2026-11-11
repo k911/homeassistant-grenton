@@ -81,7 +81,9 @@ def test_native_manager_two_click_measurement_then_degree_test_and_timeout_adjus
                 assert result['data_schema']({}) == {
                     'timings': {'total_ms': 27789, 'travel_ms': 24321, 'lamel_move_timeout': 3468, 'keep_total': True}}
                 measured = ui_fields(result)['timings']['selector']['grenton_shutter_timings']
-                assert measured == {'measured_ms': 27789, 'measured_travel_ms': 24321, 'measured_lamel_ms': 3468}
+                assert measured == {'direction': direction, 'measured_ms': 27789, 'measured_travel_ms': 24321,
+                    'measured_lamel_ms': 3468, 'configured_up_ms': 22000, 'configured_down_ms': 21500,
+                    'configured_lamel_ms': configured_lamel_ms}
                 assert values['10'] == configured_lamel_ms  # The new measured time is not written until Save.
                 result = await manager.async_configure(flow.flow_id,
                     {'timings': {'total_ms': 27500, 'travel_ms': 24000, 'lamel_move_timeout': 3500}})
@@ -110,7 +112,8 @@ def test_native_manager_two_click_measurement_then_degree_test_and_timeout_adjus
                     assert commands[-1] == f'ROLLER1:execute(9,"{degrees}")'
                 result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_tilt_adjust'})
                 assert result['data_schema']({}) == {'timings': {'total_ms': 27500, 'travel_ms': 24000, 'lamel_move_timeout': 3500, 'keep_total': True}}
-                assert ui_fields(result)['timings']['selector']['grenton_shutter_timings'] == measured
+                assert ui_fields(result)['timings']['selector']['grenton_shutter_timings'] == {
+                    **measured, f'configured_{direction}_ms': 24000, 'configured_lamel_ms': 3500}
                 result = await manager.async_configure(flow.flow_id,
                     {'timings': {'total_ms': 29000, 'travel_ms': 25000, 'lamel_move_timeout': 4000, 'keep_total': False}})
                 assert result['step_id'] == 'shutter_calibrated'
@@ -118,7 +121,8 @@ def test_native_manager_two_click_measurement_then_degree_test_and_timeout_adjus
                 result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_tilt_adjust'})
                 assert result['data_schema']({}) == {'timings': {
                     'total_ms': 29000, 'travel_ms': 25000, 'lamel_move_timeout': 4000, 'keep_total': False}}
-                assert ui_fields(result)['timings']['selector']['grenton_shutter_timings'] == measured
+                assert ui_fields(result)['timings']['selector']['grenton_shutter_timings'] == {
+                    **measured, f'configured_{direction}_ms': 25000, 'configured_lamel_ms': 4000}
                 await manager.async_configure(flow.flow_id, result['data_schema']({}))
                 result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_done'})
                 assert result['type'] == 'create_entry'
@@ -148,6 +152,8 @@ def test_unchecked_tilt_support_uses_single_click_and_has_no_tilt_testing(tmp_pa
                 clock[0] = 127.321
                 result = await flow.async_step_shutter_measurement({'measurement': 'finish'})
                 assert result['step_id'] == 'shutter_review'
+                assert result['description_placeholders']['configured_up_ms'] == '22000'
+                assert result['description_placeholders']['configured_down_ms'] == '21500'
                 assert set(ui_fields(result)) == {'total_ms'}
                 result = await flow.async_step_shutter_review({'total_ms': 27321})
                 assert result['type'] == 'create_entry'
@@ -479,5 +485,56 @@ def test_combined_preparation_validates_selected_movement_time_before_saving_til
             assert values['10'] == 3000 and entity._tilt_enabled is False
             assert entity._calibration is None and not commands
             hass.config_entries.async_update_entry.assert_not_called()
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('direction', ['up', 'down'])
+def test_summary_reads_current_settings_and_excludes_provisional_calibration_limit(tmp_path, direction):
+    async def run():
+        entity, coord, values, commands, flow, entry_patch, hass = tilt_flow(tmp_path, direction)
+        with entry_patch:
+            session = await entity.create_calibration(direction, 45000)
+            flow._shutter_session = session
+            session.phase, session.elapsed_ms, session.lamel_ms = 'review', 27000, 3000
+            session.phase_change_ms = 3000 if direction == 'up' else 24000
+            session._temporary = True
+            index, other_index = ('14', '15') if direction == 'up' else ('15', '14')
+            values[index] = 45000
+            async def fresh_read(*args, **kwargs):
+                indices = {source.index for source in kwargs['required_states']}
+                assert {'10', '14', '15'} <= indices
+                values[other_index], values['10'] = 26789, 4500
+                return True
+            coord.async_refresh_clu_state.side_effect = fresh_read
+            result = await flow.async_step_shutter_review()
+            configured = ui_fields(result)['timings']['selector']['grenton_shutter_timings']
+            assert configured[f'configured_{direction}_ms'] == session.original
+            other = 'down' if direction == 'up' else 'up'
+            assert configured[f'configured_{other}_ms'] == 26789
+            assert configured['configured_lamel_ms'] == 4500
+            assert configured['measured_travel_ms'] == 24000 and configured['measured_lamel_ms'] == 3000
+            assert not commands
+            coord.async_refresh_clu_state.side_effect = None
+            await session.abort()
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+def test_summary_does_not_present_cached_settings_as_current_after_failed_read(tmp_path):
+    async def run():
+        entity, coord, _, commands, flow, entry_patch, hass = tilt_flow(tmp_path)
+        with entry_patch:
+            session = await entity.create_calibration('down', 45000)
+            flow._shutter_session = session
+            session.phase, session.elapsed_ms, session.phase_change_ms, session.lamel_ms = 'review', 27000, 24000, 3000
+            coord.async_refresh_clu_state.return_value = False
+            result = await flow.async_step_shutter_review()
+            assert result['errors']['base'] == 'cannot_read_configuration'
+            timings = ui_fields(result)['timings']['selector']['grenton_shutter_timings']
+            assert all(timings[key] is None for key in ('configured_up_ms', 'configured_down_ms', 'configured_lamel_ms'))
+            assert timings['measured_ms'] == 27000
+            assert not commands
+            await session.abort()
         await hass.async_stop()
     asyncio.run(run())

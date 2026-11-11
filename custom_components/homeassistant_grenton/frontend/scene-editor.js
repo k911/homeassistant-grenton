@@ -677,7 +677,7 @@ class GrentonShutterMeasurement extends GrentonEditor {
     let segmentCounter;
     const segmentLabel = settings.segment === "tilt"
       ? this._text("shutter_measurement.slat_elapsed", "Slat movement")
-      : this._text("shutter_measurement.travel_elapsed", "Shutter travel");
+      : this._text(`shutter_measurement.travel_elapsed_${settings.direction}`, "Shutter travel");
     if (settings.segment != null) {
       segmentCounter = document.createElement("output");
       segmentCounter.className = "shutter-timer";
@@ -731,27 +731,37 @@ class GrentonShutterTimings extends GrentonEditor {
   _render() {
     const parent = this._container();
     const settings = this.selector?.grenton_shutter_timings || {};
-    if (settings.measured_ms != null) {
+    const format = new Intl.NumberFormat(this.hass?.language || "en", { maximumFractionDigits: 3 });
+    const travelLabel = settings.direction === "up" ? "measured_travel_up"
+      : settings.direction === "down" ? "measured_travel_down" : "measured_travel";
+    const reference = (titleKey, fallbackTitle, rows, dataset, showMissing = false) => {
       const title = document.createElement("strong");
-      title.textContent = this._text("shutter_timings.measured", "Measured times");
-      const measured = document.createElement("dl");
-      measured.className = "shutter-measured";
-      const format = new Intl.NumberFormat(this.hass?.language || "en", { maximumFractionDigits: 3 });
-      for (const [key, label, fallback] of [
-        ["measured_ms", "measured_total", "Total"],
-        ["measured_lamel_ms", "measured_lamel", "Slat movement"],
-        ["measured_travel_ms", "measured_travel", "Shutter travel"],
-      ]) {
-        if (settings[key] == null) continue;
+      title.textContent = this._text(`shutter_timings.${titleKey}`, fallbackTitle);
+      const list = document.createElement("dl");
+      list.className = "shutter-measured";
+      for (const [key, label, fallback] of rows) {
+        if (settings[key] == null && !showMissing) continue;
         const row = document.createElement("div"), term = document.createElement("dt"), value = document.createElement("dd");
         term.textContent = this._text(`shutter_timings.${label}`, fallback);
-        value.dataset.measured = key;
-        value.textContent = `${format.format(settings[key] / 1000)} s (${settings[key]} ms)`;
+        value.dataset[dataset] = key;
+        value.textContent = settings[key] == null ? "—" : `${format.format(settings[key] / 1000)} s (${settings[key]} ms)`;
         row.append(term, value);
-        measured.append(row);
+        list.append(row);
       }
-      parent.append(title, measured);
+      parent.append(title, list);
+    };
+    if (settings.measured_ms != null) {
+      reference("measured", "Measured times", [
+        ["measured_ms", "measured_total", "Total"],
+        ["measured_lamel_ms", "measured_lamel", "Slat movement"],
+        ["measured_travel_ms", travelLabel, "Shutter travel"],
+      ], "measured");
     }
+    reference("configured", "Current settings", [
+      ["configured_up_ms", "configured_up", "Opening travel time"],
+      ["configured_down_ms", "configured_down", "Closing travel time"],
+      ["configured_lamel_ms", "configured_lamel", "Slat movement time"],
+    ], "configured", true);
     const controls = {};
     const value = this._value || {};
     const keepTotal = this._input("keep_total", value.keep_total !== false, (checked) => {
@@ -767,6 +777,10 @@ class GrentonShutterTimings extends GrentonEditor {
     syncLabel.textContent = this._text("shutter_timings.keep_total", "Keep total time unchanged");
     syncField.append(keepTotal, syncLabel);
     parent.append(syncField);
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = this._text("shutter_timings.hint", "Keep the total fixed to link travel and slat times, or uncheck to edit them independently. Slat time is shared by opening and closing.");
+    parent.append(hint);
     for (const [key, fallback] of [
       ["total_ms", "Total movement time (ms)"],
       ["travel_ms", "Shutter travel time (ms)"],
@@ -792,12 +806,9 @@ class GrentonShutterTimings extends GrentonEditor {
       input.step = "1";
       input.readOnly = key === "total_ms" && value.keep_total === false;
       controls[key] = input;
-      parent.append(this._field(this._text(`shutter_timings.${key}`, fallback), input));
+      const labelKey = key === "travel_ms" && settings.direction ? `travel_${settings.direction}_ms` : key;
+      parent.append(this._field(this._text(`shutter_timings.${labelKey}`, fallback), input));
     }
-    const hint = document.createElement("p");
-    hint.className = "hint";
-    hint.textContent = this._text("shutter_timings.hint", "Keep the total fixed to link travel and slat times, or uncheck to edit them independently. Slat time is shared by opening and closing.");
-    parent.append(hint);
   }
 }
 

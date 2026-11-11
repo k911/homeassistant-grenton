@@ -285,7 +285,7 @@
       },
       "shutter_review": {
         "title": "Wynik pomiaru",
-        "description": "Czas ruchu: {suggested_ms} ms.",
+        "description": "Zmierzony czas: {measured_ms} ms.\n\nObecne ustawienia:\n- Czas ruchu rolety w górę: {configured_up_ms} ms\n- Czas ruchu rolety w dół: {configured_down_ms} ms",
         "data": {
           "total_ms": "Zmierzony czas"
         },
@@ -1106,7 +1106,9 @@
       "elapsed": "Czas pomiaru",
       "cancel": "Anuluj",
       "slat_elapsed": "Ruch lameli",
-      "travel_elapsed": "Przejazd rolety"
+      "travel_elapsed": "Przejazd rolety",
+      "travel_elapsed_up": "Przejazd rolety w górę",
+      "travel_elapsed_down": "Przejazd rolety w dół"
     },
     "shutter_timings": {
       "measured": "Zmierzone czasy",
@@ -1117,7 +1119,15 @@
       "keep_total": "Zachowaj łączny czas",
       "measured_total": "Łącznie",
       "measured_lamel": "Ruch lameli",
-      "measured_travel": "Przejazd rolety"
+      "measured_travel": "Przejazd rolety",
+      "configured": "Obecne ustawienia",
+      "configured_up": "Czas ruchu rolety w górę",
+      "configured_down": "Czas ruchu rolety w dół",
+      "configured_lamel": "Czas ruchu lameli",
+      "measured_travel_up": "Przejazd rolety w górę",
+      "measured_travel_down": "Przejazd rolety w dół",
+      "travel_up_ms": "Czas przejazdu rolety w górę (ms)",
+      "travel_down_ms": "Czas przejazdu rolety w dół (ms)"
     }
   }
 }

@@ -560,7 +560,9 @@ calibration updates this shared setting. The result shows travel and slat times
 separately, both adjustable in milliseconds before saving. Without slat support,
 the wizard keeps its single-click measurement.
 The original measured total, travel and slat times stay visible as read-only
-reference values. **Keep total time unchanged** links the editable travel and
+reference values. The summary also shows the configured opening and closing
+timeouts, plus the slat timeout when enabled, separately from the editable draft.
+Travel labels identify the measured direction. **Keep total time unchanged** links the editable travel and
 slat times by default; uncheck it to adjust them independently and recalculate the
 total. The checkbox choice is remembered while the wizard remains open.
 The result can be adjusted and saved immediately, even if the module is still

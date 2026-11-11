@@ -12,12 +12,19 @@ from .domain.entities.roller_shutter_configuration import milliseconds
 class ShutterTimingsSelector(selector.Selector):
     selector_type = 'grenton_shutter_timings'
     CONFIG_SCHEMA = vol.Schema({
+        vol.Optional('direction'): vol.In(('up', 'down')),
         vol.Optional('measured_ms', default=None): vol.Any(
             None, vol.All(int, vol.Range(min=1, max=1200000))),
         vol.Optional('measured_travel_ms', default=None): vol.Any(
             None, vol.All(int, vol.Range(min=1, max=600000))),
         vol.Optional('measured_lamel_ms', default=None): vol.Any(
             None, vol.All(int, vol.Range(min=1, max=600000))),
+        vol.Optional('configured_up_ms', default=None): vol.Any(
+            None, vol.All(int, vol.Range(min=0, max=600000))),
+        vol.Optional('configured_down_ms', default=None): vol.Any(
+            None, vol.All(int, vol.Range(min=0, max=600000))),
+        vol.Optional('configured_lamel_ms', default=None): vol.Any(
+            None, vol.All(int, vol.Range(min=0, max=600000))),
     })
 
     @staticmethod

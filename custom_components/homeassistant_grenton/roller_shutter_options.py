@@ -297,8 +297,11 @@ class RollerShutterOptionsMixin:
                 if session.tilt_enabled:
                     return await self.async_step_shutter_calibrated()
                 return self.async_create_entry(title='', data=entity._merge_config_into_options(entity._config))
+        configured = await self._shutter_configured_times()
+        if configured is None:
+            errors.setdefault('base', 'cannot_read_configuration')
         if session.tilt_enabled:
-            fields = self._shutter_timing_fields(user_input, session.suggested_ms, session.lamel_ms)
+            fields = self._shutter_timing_fields(user_input, session.suggested_ms, session.lamel_ms, configured)
             travel = session.suggested_ms
         else:
             travel = (user_input or {}).get('total_ms', session.suggested_ms)
@@ -306,19 +309,40 @@ class RollerShutterOptionsMixin:
         return self.async_show_form(step_id='shutter_tilt_review' if session.tilt_enabled else 'shutter_review',
             last_step=not session.tilt_enabled, data_schema=vol.Schema(fields), errors=errors,
             description_placeholders={'measured_ms': str(session.elapsed_ms), 'travel_ms': str(session.suggested_ms),
-                                      'lamel_ms': str(session.lamel_ms), 'suggested_ms': str(travel)})
+                                      'lamel_ms': str(session.lamel_ms), 'suggested_ms': str(travel),
+                                      **{key: str((configured or {}).get(key)) if (configured or {}).get(key) is not None else '—'
+                                         for key in ('configured_up_ms', 'configured_down_ms')}})
 
     async_step_shutter_tilt_review = async_step_shutter_review
 
-    def _shutter_timing_fields(self, user_input, travel, lamel):
+    async def _shutter_configured_times(self):
+        entity, session = self._shutter(), self._shutter_session
+        try:
+            await entity.async_prepare_configuration()
+        except HomeAssistantError:
+            return None
+        values = entity.setting_values
+        if session._temporary:
+            # Show the saved setting, rather than the provisional calibration limit.
+            values[session.key] = session.original
+        return {
+            'configured_up_ms': values.get('blinds_up_max_time'),
+            'configured_down_ms': values.get('blinds_down_max_time'),
+            'configured_lamel_ms': values.get('lamel_move_timeout') if session.tilt_enabled else None,
+        }
+
+    def _shutter_timing_fields(self, user_input, travel, lamel, configured):
         session = self._shutter_session
         default = {'total_ms': travel + lamel, 'travel_ms': travel, 'lamel_move_timeout': lamel,
                    'keep_total': getattr(self, '_shutter_keep_total', True)}
         return {vol.Required('timings', default=(user_input or {}).get('timings', default)):
                 ShutterTimingsSelector({
+                    'direction': session.direction,
                     'measured_ms': session.elapsed_ms,
                     'measured_travel_ms': session.suggested_ms if session.elapsed_ms is not None else None,
                     'measured_lamel_ms': session.lamel_ms if session.elapsed_ms is not None else None,
+                    **{key: (configured or {}).get(key)
+                       for key in ('configured_up_ms', 'configured_down_ms', 'configured_lamel_ms')},
                 })}
 
     def _shutter_tilt_test_available(self):
@@ -383,11 +407,13 @@ class RollerShutterOptionsMixin:
                 await entity.apply_native_settings(settings)
                 self._shutter_keep_total = timings['keep_total']
                 return await self.async_step_shutter_calibrated()
-            await entity.async_prepare_configuration()
         except (vol.Invalid, HomeAssistantError):
             errors['base'] = 'cannot_apply_configuration'
+        configured = await self._shutter_configured_times()
+        if configured is None:
+            errors.setdefault('base', 'cannot_read_configuration')
         fields = self._shutter_timing_fields(user_input,
-            entity.setting_values.get(session.key, 0), entity.setting_values.get('lamel_move_timeout', 0))
+            entity.setting_values.get(session.key, 0), entity.setting_values.get('lamel_move_timeout', 0), configured)
         return self.async_show_form(step_id='shutter_tilt_adjust', errors=errors, data_schema=vol.Schema(fields))
 
     async def async_step_shutter_cancel(self, user_input=None):

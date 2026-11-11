@@ -151,7 +151,7 @@ for (const language of ["en", "pl"]) {
     openingTravel.tick(24321);
     assert.equal(total.textContent, "↑ 27 s");
     assert.equal(travel.textContent, "↑ 24 s");
-    assert.equal(travel.attributes["aria-label"], language === "pl" ? "Przejazd rolety" : "Shutter travel");
+    assert.equal(travel.attributes["aria-label"], language === "pl" ? "Przejazd rolety w górę" : "Shutter travel up");
     assert.equal(openingTravel.editor.root, root);
     assert.equal(openingTravel.counters()[1], travel);
     assert.equal(openingTravel.calls.length, 0);

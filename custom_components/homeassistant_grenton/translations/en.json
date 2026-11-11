@@ -285,7 +285,7 @@
       },
       "shutter_review": {
         "title": "Measurement result",
-        "description": "Movement time: {suggested_ms} ms.",
+        "description": "Measured time: {measured_ms} ms.\n\nCurrent settings:\n- Opening travel time: {configured_up_ms} ms\n- Closing travel time: {configured_down_ms} ms",
         "data": {
           "total_ms": "Measured time"
         },
@@ -1106,7 +1106,9 @@
       "elapsed": "Elapsed time",
       "cancel": "Cancel",
       "slat_elapsed": "Slat movement",
-      "travel_elapsed": "Shutter travel"
+      "travel_elapsed": "Shutter travel",
+      "travel_elapsed_up": "Shutter travel up",
+      "travel_elapsed_down": "Shutter travel down"
     },
     "shutter_timings": {
       "measured": "Measured times",
@@ -1117,7 +1119,15 @@
       "keep_total": "Keep total time unchanged",
       "measured_total": "Total",
       "measured_lamel": "Slat movement",
-      "measured_travel": "Shutter travel"
+      "measured_travel": "Shutter travel",
+      "configured": "Current settings",
+      "configured_up": "Opening travel time",
+      "configured_down": "Closing travel time",
+      "configured_lamel": "Slat movement time",
+      "measured_travel_up": "Shutter travel up",
+      "measured_travel_down": "Shutter travel down",
+      "travel_up_ms": "Opening travel time (ms)",
+      "travel_down_ms": "Closing travel time (ms)"
     }
   }
 }
