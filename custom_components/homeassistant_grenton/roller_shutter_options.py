@@ -2,12 +2,14 @@
 
 import logging
 import voluptuous as vol
+from homeassistant import data_entry_flow
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
 from .domain.entities.roller_shutter_configuration import milliseconds, number_selector
 from .shutter_measurement import ShutterMeasurementSelector
+from .shutter_timings import ShutterTimingsSelector
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,7 +60,7 @@ class RollerShutterOptionsMixin:
             self._shutter_session = session
             if session.finished or session.phase == 'cancelling':
                 return await self.async_step_shutter_wait()
-            if session.phase in ('measuring', 'tilting'):
+            if session.phase in ('measuring', 'tilting', 'travelling'):
                 return await self.async_step_shutter_measurement()
             if session.phase == 'review':
                 return await self.async_step_shutter_review()
@@ -74,15 +76,41 @@ class RollerShutterOptionsMixin:
         else:
             direction = user_input.get('direction')
             if direction in ('up', 'down'):
-                self._shutter_direction = direction
-                return await self.async_step_shutter_limits()
-            errors['direction'] = 'invalid_configuration'
-        return self.async_show_form(step_id='shutter_calibration', data_schema=vol.Schema({
-            vol.Required('direction', default='up'): selector.SelectSelector(selector.SelectSelectorConfig(
+                try:
+                    if 'tilt_enabled' in user_input:
+                        enabled = user_input['tilt_enabled']
+                        settings = {'tilt_enabled': enabled}
+                        if enabled:
+                            timeout = milliseconds(user_input.get('lamel_move_timeout',
+                                entity.setting_values.get('lamel_move_timeout', 0)))
+                            if timeout <= 0:
+                                raise vol.Invalid('Enter a positive slat movement time')
+                            settings['lamel_move_timeout'] = timeout
+                        options = await entity.apply_configuration(settings)
+                        if options != dict(self.config_entry.options):
+                            self.hass.config_entries.async_update_entry(self.config_entry, options=options)
+                except vol.Invalid:
+                    errors['lamel_move_timeout'] = 'invalid_configuration'
+                except HomeAssistantError:
+                    errors['base'] = 'cannot_apply_configuration'
+                else:
+                    self._shutter_direction = direction
+                    return await self.async_step_shutter_limits()
+            else:
+                errors['direction'] = 'invalid_configuration'
+        fields = {
+            vol.Required('direction', default=(user_input or {}).get('direction', 'up')): selector.SelectSelector(selector.SelectSelectorConfig(
                 options=['up', 'down'], translation_key='shutter_directions',
                 mode=selector.SelectSelectorMode.DROPDOWN,
             )),
-        }), errors=errors)
+            vol.Required('tilt_enabled', default=(user_input or {}).get('tilt_enabled', entity._tilt_enabled)):
+                selector.BooleanSelector(),
+        }
+        if 'lamel_move_timeout' in entity.setting_actions:
+            fields[data_entry_flow.Required('lamel_move_timeout',
+                default=(user_input or {}).get('lamel_move_timeout', entity.setting_values.get('lamel_move_timeout', 0)),
+                visible={'field': 'tilt_enabled', 'value': True})] = number_selector()
+        return self.async_show_form(step_id='shutter_calibration', data_schema=vol.Schema(fields), errors=errors)
 
     async def async_step_shutter_limits(self, user_input=None):
         entity = self._shutter()
@@ -176,9 +204,12 @@ class RollerShutterOptionsMixin:
         if self._shutter_session.finished:
             return self.async_abort(reason='calibration_expired')
         step = 'shutter_ready_tilt' if self._shutter_session.tilt_enabled else 'shutter_ready'
+        if self._shutter_session.tilt_enabled and self._shutter_session.direction == 'up':
+            step = 'shutter_ready_tilt_up'
         return self._shutter_menu(step, ['shutter_start_measurement', 'shutter_cancel'])
 
     async_step_shutter_ready_tilt = async_step_shutter_ready
+    async_step_shutter_ready_tilt_up = async_step_shutter_ready
 
     async def async_step_shutter_start_measurement(self, user_input=None):
         try:
@@ -194,28 +225,40 @@ class RollerShutterOptionsMixin:
         if user_input is not None:
             if user_input.get('measurement') == 'cancel':
                 return await self.async_step_shutter_cancel()
-            if user_input.get('measurement') == 'tilt_started':
+            if user_input.get('measurement') in ('tilt_started', 'tilt_finished'):
                 try:
-                    await session.mark_tilt_started()
+                    if user_input['measurement'] == 'tilt_finished':
+                        await session.mark_tilt_finished()
+                    else:
+                        await session.mark_tilt_started()
                 except (vol.Invalid, HomeAssistantError):
                     return await self._shutter_error()
                 return await self.async_step_shutter_measurement()
             return await self.async_step_shutter_stop_measurement()
-        step, action = 'shutter_measurement', 'finish'
+        step, action, segment = 'shutter_measurement', 'finish', None
         if session.tilt_enabled:
-            step = 'shutter_measurement_tilt_end' if session.phase == 'tilting' else 'shutter_measurement_tilt_start'
-            action = 'finish' if session.phase == 'tilting' else 'tilt_started'
+            if session.direction == 'up':
+                step = 'shutter_measurement_opening_travel' if session.phase == 'travelling' else 'shutter_measurement_opening_tilt'
+                action = 'finish' if session.phase == 'travelling' else 'tilt_finished'
+                segment = 'travel' if session.phase == 'travelling' else 'tilt'
+            else:
+                step = 'shutter_measurement_tilt_end' if session.phase == 'tilting' else 'shutter_measurement_tilt_start'
+                action = 'finish' if session.phase == 'tilting' else 'tilt_started'
+                segment = 'tilt' if session.phase == 'tilting' else 'travel'
         return self.async_show_form(step_id=step, data_schema=vol.Schema({
             vol.Required('measurement', default=action): ShutterMeasurementSelector({
                 'flow_id': self.flow_id,
                 'direction': session.direction,
                 'elapsed_ms': round(session.elapsed_seconds * 1000),
-                'tilt_started_ms': session.tilt_started_ms,
+                'segment': segment,
+                'segment_started_ms': session.phase_change_ms or 0,
             }),
         }))
 
     async_step_shutter_measurement_tilt_start = async_step_shutter_measurement
     async_step_shutter_measurement_tilt_end = async_step_shutter_measurement
+    async_step_shutter_measurement_opening_tilt = async_step_shutter_measurement
+    async_step_shutter_measurement_opening_travel = async_step_shutter_measurement
 
     async def async_step_shutter_stop_measurement(self, user_input=None):
         try:
@@ -232,14 +275,11 @@ class RollerShutterOptionsMixin:
         errors = {}
         if user_input is not None:
             try:
-                if user_input.get('save') is not True:
-                    await session.abort()
-                    return await self.async_step_shutter()
-                time_field = 'travel_ms' if session.tilt_enabled else 'total_ms'
-                value = milliseconds(user_input.get(time_field))
-                lamel = milliseconds(user_input.get('lamel_move_timeout')) if session.tilt_enabled else 0
-                if session.tilt_enabled and lamel <= 0:
-                    raise vol.Invalid('Enter a positive slat movement time')
+                if session.tilt_enabled:
+                    timings = ShutterTimingsSelector.validate(user_input.get('timings'))
+                    value, lamel = timings['travel_ms'], timings['lamel_move_timeout']
+                else:
+                    value, lamel = milliseconds(user_input.get('total_ms')), 0
                 if value <= 0:
                     raise vol.Invalid('Enter a positive movement time')
                 settings = {session.key: value}
@@ -247,6 +287,8 @@ class RollerShutterOptionsMixin:
                     settings['lamel_move_timeout'] = lamel
                 async with session._lock:
                     await entity.apply_native_settings(settings, calibration=session)
+                    if session.tilt_enabled:
+                        self._shutter_keep_total = timings['keep_total']
                     session._temporary = False
                     session.finished = True
                     session.phase = 'saved'
@@ -256,19 +298,29 @@ class RollerShutterOptionsMixin:
                 if session.tilt_enabled:
                     return await self.async_step_shutter_calibrated()
                 return self.async_create_entry(title='', data=entity._merge_config_into_options(entity._config))
-        time_field = 'travel_ms' if session.tilt_enabled else 'total_ms'
-        travel = (user_input or {}).get(time_field, session.suggested_ms)
-        fields = {vol.Required(time_field, default=travel): number_selector()}
         if session.tilt_enabled:
-            lamel = (user_input or {}).get('lamel_move_timeout', session.lamel_ms)
-            fields[vol.Required('lamel_move_timeout', default=lamel)] = number_selector()
-        fields[vol.Required('save', default=False)] = selector.BooleanSelector()
+            fields = self._shutter_timing_fields(user_input, session.suggested_ms, session.lamel_ms)
+            travel = session.suggested_ms
+        else:
+            travel = (user_input or {}).get('total_ms', session.suggested_ms)
+            fields = {vol.Required('total_ms', default=travel): number_selector()}
         return self.async_show_form(step_id='shutter_tilt_review' if session.tilt_enabled else 'shutter_review',
             last_step=not session.tilt_enabled, data_schema=vol.Schema(fields), errors=errors,
             description_placeholders={'measured_ms': str(session.elapsed_ms), 'travel_ms': str(session.suggested_ms),
                                       'lamel_ms': str(session.lamel_ms), 'suggested_ms': str(travel)})
 
     async_step_shutter_tilt_review = async_step_shutter_review
+
+    def _shutter_timing_fields(self, user_input, travel, lamel):
+        session = self._shutter_session
+        default = {'total_ms': travel + lamel, 'travel_ms': travel, 'lamel_move_timeout': lamel,
+                   'keep_total': getattr(self, '_shutter_keep_total', True)}
+        return {vol.Required('timings', default=(user_input or {}).get('timings', default)):
+                ShutterTimingsSelector({
+                    'measured_ms': session.elapsed_ms,
+                    'measured_travel_ms': session.suggested_ms if session.elapsed_ms is not None else None,
+                    'measured_lamel_ms': session.lamel_ms if session.elapsed_ms is not None else None,
+                })}
 
     def _shutter_tilt_test_available(self):
         session = self._shutter_session
@@ -327,17 +379,16 @@ class RollerShutterOptionsMixin:
             if result := await self._shutter_prepare_tilt_test('shutter_tilt_adjust'):
                 return result
             if user_input is not None:
-                settings = {key: milliseconds(user_input.get(key))
-                            for key in (session.key, 'lamel_move_timeout')}
-                if any(value <= 0 for value in settings.values()):
-                    raise vol.Invalid('Movement times must be positive')
+                timings = ShutterTimingsSelector.validate(user_input.get('timings'))
+                settings = {session.key: timings['travel_ms'], 'lamel_move_timeout': timings['lamel_move_timeout']}
                 await entity.apply_native_settings(settings)
+                self._shutter_keep_total = timings['keep_total']
                 return await self.async_step_shutter_calibrated()
             await entity.async_prepare_configuration()
         except (vol.Invalid, HomeAssistantError):
             errors['base'] = 'cannot_apply_configuration'
-        fields = {vol.Required(key, default=(user_input or {}).get(key, entity.setting_values.get(key, 0))):
-                  number_selector() for key in (session.key, 'lamel_move_timeout')}
+        fields = self._shutter_timing_fields(user_input,
+            entity.setting_values.get(session.key, 0), entity.setting_values.get('lamel_move_timeout', 0))
         return self.async_show_form(step_id='shutter_tilt_adjust', errors=errors, data_schema=vol.Schema(fields))
 
     async def async_step_shutter_cancel(self, user_input=None):

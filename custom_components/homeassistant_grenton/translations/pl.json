@@ -259,8 +259,11 @@
         "title": "Wybierz kierunek kalibracji",
         "description": "",
         "data": {
-          "direction": "Kierunek"
-        }
+          "direction": "Kierunek",
+          "tilt_enabled": "Obsługa sterowania lamelami",
+          "lamel_move_timeout": "Czas ruchu lameli (ms)"
+        },
+        "submit": "Zapisz i kontynuuj"
       },
       "shutter_limits": {
         "title": "Przygotuj pomiar",
@@ -290,8 +293,7 @@
         "title": "Wynik pomiaru",
         "description": "Czas ruchu: {suggested_ms} ms.",
         "data": {
-          "total_ms": "Zmierzony czas",
-          "save": "Zapisz wynik"
+          "total_ms": "Zmierzony czas"
         },
         "submit": "Zapisz"
       },
@@ -375,11 +377,9 @@
       },
       "shutter_tilt_review": {
         "title": "Wynik kalibracji",
-        "description": "Czas przejazdu rolety: {travel_ms} ms. Czas ruchu lameli: {lamel_ms} ms.",
+        "description": "",
         "data": {
-          "travel_ms": "Czas przejazdu rolety",
-          "lamel_move_timeout": "Czas ruchu lameli",
-          "save": "Zapisz wynik"
+          "timings": ""
         },
         "submit": "Zapisz"
       },
@@ -402,11 +402,33 @@
       "shutter_tilt_adjust": {
         "title": "Czasy ruchu",
         "data": {
-          "blinds_up_max_time": "Czas ruchu rolety w górę",
-          "blinds_down_max_time": "Czas ruchu rolety w dół",
-          "lamel_move_timeout": "Czas ruchu lameli"
+          "timings": ""
         },
         "submit": "Zapisz"
+      },
+      "shutter_ready_tilt_up": {
+        "title": "Pomiar czasu lameli i otwierania",
+        "description": "Kliknij, gdy lamele zakończą obrót, a następnie gdy roleta całkowicie się otworzy.",
+        "menu_options": {
+          "shutter_start_measurement": "Rozpocznij pomiar",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_measurement_opening_tilt": {
+        "title": "Pomiar czasu lameli",
+        "description": "Kliknij, gdy lamele zakończą obrót.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Lamele zakończyły ruch"
+      },
+      "shutter_measurement_opening_travel": {
+        "title": "Pomiar czasu otwierania",
+        "description": "Zakończ pomiar, gdy roleta całkowicie się otworzy i silnik ucichnie.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Roleta jest otwarta"
       }
     },
     "abort": {
@@ -1089,7 +1111,19 @@
     "shutter_measurement": {
       "elapsed": "Czas pomiaru",
       "cancel": "Anuluj",
-      "slat_elapsed": "Ruch lameli"
+      "slat_elapsed": "Ruch lameli",
+      "travel_elapsed": "Przejazd rolety"
+    },
+    "shutter_timings": {
+      "measured": "Zmierzone czasy",
+      "total_ms": "Łączny czas ruchu (ms)",
+      "travel_ms": "Czas przejazdu rolety (ms)",
+      "lamel_move_timeout": "Czas ruchu lameli (ms)",
+      "hint": "Zaznaczenie wiąże czasy przejazdu i lameli. Odznacz, aby zmieniać je niezależnie. Czas lameli jest wspólny dla obu kierunków.",
+      "keep_total": "Zachowaj łączny czas",
+      "measured_total": "Łącznie",
+      "measured_lamel": "Ruch lameli",
+      "measured_travel": "Przejazd rolety"
     }
   }
 }

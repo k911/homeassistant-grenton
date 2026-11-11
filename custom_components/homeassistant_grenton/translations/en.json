@@ -259,8 +259,11 @@
         "title": "Choose calibration direction",
         "description": "",
         "data": {
-          "direction": "Direction"
-        }
+          "direction": "Direction",
+          "tilt_enabled": "Supports slat control",
+          "lamel_move_timeout": "Slat movement time (ms)"
+        },
+        "submit": "Save and continue"
       },
       "shutter_limits": {
         "title": "Prepare measurement",
@@ -290,8 +293,7 @@
         "title": "Measurement result",
         "description": "Movement time: {suggested_ms} ms.",
         "data": {
-          "total_ms": "Measured time",
-          "save": "Save result"
+          "total_ms": "Measured time"
         },
         "submit": "Save"
       },
@@ -375,11 +377,9 @@
       },
       "shutter_tilt_review": {
         "title": "Calibration result",
-        "description": "Shutter travel time: {travel_ms} ms. Slat movement time: {lamel_ms} ms.",
+        "description": "",
         "data": {
-          "travel_ms": "Shutter travel time",
-          "lamel_move_timeout": "Slat movement time",
-          "save": "Save result"
+          "timings": ""
         },
         "submit": "Save"
       },
@@ -402,11 +402,33 @@
       "shutter_tilt_adjust": {
         "title": "Movement times",
         "data": {
-          "blinds_up_max_time": "Opening travel time",
-          "blinds_down_max_time": "Closing travel time",
-          "lamel_move_timeout": "Slat movement time"
+          "timings": ""
         },
         "submit": "Save"
+      },
+      "shutter_ready_tilt_up": {
+        "title": "Slat and opening time measurement",
+        "description": "Click when the slats finish turning, then when the shutter is fully open.",
+        "menu_options": {
+          "shutter_start_measurement": "Start measurement",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_measurement_opening_tilt": {
+        "title": "Measuring slat time",
+        "description": "Click when the slats finish turning.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Slats finished moving"
+      },
+      "shutter_measurement_opening_travel": {
+        "title": "Measuring opening time",
+        "description": "Finish the measurement when the shutter is fully open and the motor goes quiet.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Shutter is fully open"
       }
     },
     "abort": {
@@ -1089,7 +1111,19 @@
     "shutter_measurement": {
       "elapsed": "Elapsed time",
       "cancel": "Cancel",
-      "slat_elapsed": "Slat movement"
+      "slat_elapsed": "Slat movement",
+      "travel_elapsed": "Shutter travel"
+    },
+    "shutter_timings": {
+      "measured": "Measured times",
+      "total_ms": "Total movement time (ms)",
+      "travel_ms": "Shutter travel time (ms)",
+      "lamel_move_timeout": "Slat movement time (ms)",
+      "hint": "Check to link travel and slat times. Uncheck to edit them independently. Slat time is shared by opening and closing.",
+      "keep_total": "Keep total time unchanged",
+      "measured_total": "Total",
+      "measured_lamel": "Slat movement",
+      "measured_travel": "Shutter travel"
     }
   }
 }

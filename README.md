@@ -537,6 +537,10 @@ feedback does not make a shutter without slats unavailable. `grenton_state`
 reports stopped, opening, closing, blocked (3), or calibrating (4), and the cover
 also exposes `up_relay_active` / `down_relay_active` from attributes 3/4.
 
+At direction selection, the calibration wizard also offers slat support and a
+slat-time field shown only when support is checked. **Save and continue** commits
+these settings before measurement; unchecking support writes 0 ms to attribute 10.
+Saving these settings never starts the motor.
 The calibration wizard checks the starting end position for the selected direction.
 If necessary, use Open/Close shutter and wait for the module to finish calibration
 and report a stable end position before Continue becomes available. The waiting
@@ -546,12 +550,21 @@ at the reported end position, so an uncalibrated position can be corrected first
 During measurement, Finish measurement stops only the millisecond stopwatch.
 The displayed seconds update locally without refreshing the dialog; the saved
 duration comes from the backend clock.
-With slat support enabled, use two clicks: mark when travel ends and slat movement
-starts, then when the slats finish moving. The result shows travel and slat times
+With slat support enabled, opening measures slat movement first: click when the
+slats finish turning, then when the shutter is fully open. Closing measures travel
+first: click when slat movement starts, then when the slats finish turning.
+Both directions use the same native slat timeout (`LamelMoveTimeout`); saving either
+calibration updates this shared setting. The result shows travel and slat times
 separately, both adjustable in milliseconds before saving. Without slat support,
 the wizard keeps its single-click measurement.
+The original measured total, travel and slat times stay visible as read-only
+reference values. **Keep total time unchanged** links the editable travel and
+slat times by default; uncheck it to adjust them independently and recalculate the
+total. The checkbox choice is remembered while the wizard remains open.
 The result can be adjusted and saved immediately, even if the module is still
-calibrating. After saving a slat calibration, optional controls let you test native
+calibrating. **Save** writes the result directly, including the numeric slat timeout
+to attribute 10, and confirms it by readback; there is no additional save checkbox.
+After saving a slat calibration, optional controls let you test native
 angles from 0° (open) to 90° (closed), then adjust the travel and slat timeouts and
 test again. These controls appear only with slat support enabled. Testing waits
 for any ongoing calibration to finish; Finish closes the wizard immediately.

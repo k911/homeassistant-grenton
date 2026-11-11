@@ -256,8 +256,8 @@ def test_manual_stopwatch_result_can_be_saved_while_calibration_continues():
             session.POLL_SECONDS = .001
             await session.edge_ready()
             await session.measure()
-            clock[0] = 124
-            await session.mark_tilt_started()
+            clock[0] = 103
+            await session.mark_tilt_finished()
             clock[0] = 127
             await session.stop_measurement()
             assert session.elapsed_ms == 27000 and session.suggested_ms == 24000
@@ -338,7 +338,7 @@ def test_native_wait_loader_and_measurement_save_while_motor_runs(tmp_path):
                 clock[0]=127
                 result=await flow.async_step_shutter_stop_measurement()
                 assert result['step_id']=='shutter_review' and values['0']==4
-                result=await flow.async_step_shutter_review({'total_ms':27000,'save':True})
+                result=await flow.async_step_shutter_review({'total_ms':27000})
                 assert result['type']=='create_entry' and values['14']==27000
                 flow.async_remove()
                 await finish_motor(session,values)

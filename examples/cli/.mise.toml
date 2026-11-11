@@ -1,2 +1,2 @@
 [env]
-_.python.venv = "venv"
+_.python.venv = { path = ".venv", create = true }

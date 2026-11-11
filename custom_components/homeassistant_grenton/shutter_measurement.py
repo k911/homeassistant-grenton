@@ -13,10 +13,11 @@ class ShutterMeasurementSelector(selector.Selector):
         vol.Required('flow_id'): str,
         vol.Required('direction'): vol.In(('up', 'down')),
         vol.Required('elapsed_ms'): vol.All(int, vol.Range(min=0)),
-        vol.Optional('tilt_started_ms', default=None): vol.Any(None, vol.All(int, vol.Range(min=1))),
+        vol.Optional('segment', default=None): vol.Any(None, vol.In(('tilt', 'travel'))),
+        vol.Optional('segment_started_ms', default=0): vol.All(int, vol.Range(min=0)),
     })
 
     def __call__(self, value: Any) -> str:
-        if value not in ('finish', 'cancel', 'tilt_started'):
+        if value not in ('finish', 'cancel', 'tilt_started', 'tilt_finished'):
             raise vol.Invalid('Choose a measurement action')
         return value

@@ -32,7 +32,7 @@ class ShutterCalibration:
         if self.original is None or self.key not in entity.setting_actions:
             raise HomeAssistantError('Travel time is unavailable')
         self.started = self.elapsed_ms = None
-        self.tilt_started_ms = None
+        self.phase_change_ms = None
         self.phase, self.running, self.finished = 'prepare', False, False
         self._guard = None
         self._temporary = self.cancelled = False
@@ -140,7 +140,7 @@ class ShutterCalibration:
             self._measuring = measuring
             self.active_direction = self.direction if measuring else ('down' if self.direction == 'up' else 'up')
             self.started, self.elapsed_ms = monotonic(), None
-            self.tilt_started_ms, self.lamel_ms = None, 0
+            self.phase_change_ms, self.lamel_ms = None, 0
             self._initial_position = self.entity.current_cover_position
             self._saw_motion = False
             self.phase = 'measuring' if measuring else 'positioning'
@@ -168,25 +168,35 @@ class ShutterCalibration:
         await self.run(measuring=True)
 
     async def mark_tilt_started(self):
+        """Closing: travel has finished and slat movement starts."""
+        await self._mark_phase_change('down')
+
+    async def mark_tilt_finished(self):
+        """Opening: slat movement has finished and travel starts."""
+        await self._mark_phase_change('up')
+
+    async def _mark_phase_change(self, direction):
         async with self._lock:
-            if not self.tilt_enabled or self.phase != 'measuring' or self.started is None or self.cancelled:
+            if (not self.tilt_enabled or self.direction != direction or self.phase != 'measuring'
+                    or self.started is None or self.cancelled):
                 raise HomeAssistantError('No slat measurement is running')
             elapsed = milliseconds(round((monotonic() - self.started) * 1000))
             if elapsed <= 0:
                 raise HomeAssistantError('Movement time must be positive')
-            self.tilt_started_ms = elapsed
-            self.phase = 'tilting'
+            self.phase_change_ms = elapsed
+            self.phase = 'travelling' if direction == 'up' else 'tilting'
 
     async def stop_measurement(self):
         async with self._lock:
-            expected_phase = 'tilting' if self.tilt_enabled else 'measuring'
+            expected_phase = ('travelling' if self.direction == 'up' else 'tilting') if self.tilt_enabled else 'measuring'
             if self.phase != expected_phase or self.started is None or self.cancelled:
                 raise HomeAssistantError('No measurement is running')
             elapsed = milliseconds(round((monotonic() - self.started) * 1000), 1200000)
             if self.tilt_enabled:
-                lamel_ms = milliseconds(elapsed - self.tilt_started_ms)
-                if lamel_ms <= 0:
-                    raise HomeAssistantError('Slat movement time must be positive')
+                first_ms, second_ms = self.phase_change_ms, milliseconds(elapsed - self.phase_change_ms)
+                if second_ms <= 0:
+                    raise HomeAssistantError('Movement time must be positive')
+                lamel_ms = first_ms if self.direction == 'up' else second_ms
                 self.lamel_ms = lamel_ms
             else:
                 milliseconds(elapsed)
@@ -197,14 +207,14 @@ class ShutterCalibration:
     def suggested_ms(self):
         if self.elapsed_ms is None or self.elapsed_ms <= self.lamel_ms:
             raise HomeAssistantError('Measured time must exceed slat time')
-        return milliseconds(self.tilt_started_ms if self.tilt_enabled else self.elapsed_ms)
+        return milliseconds(self.elapsed_ms - self.lamel_ms)
 
     async def abort(self):
         async with self._lock:
             if self.phase == 'saved':
                 return
             self.cancelled, self.elapsed_ms = True, None
-            self.tilt_started_ms, self.lamel_ms = None, 0
+            self.phase_change_ms, self.lamel_ms = None, 0
             if self.running:
                 self.phase = 'cancelling'
                 if self._guard is None or self._guard.done():

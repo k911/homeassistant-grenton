@@ -14,7 +14,7 @@ class Element {
   fire(name) { if (!this.disabled) this.listeners[name]?.(); }
 }
 
-function timer({ language = "en", elapsed = 0, direction = "up", tiltStarted = null } = {}) {
+function timer({ language = "en", elapsed = 0, direction = "up", segment = null, segmentStarted = 0 } = {}) {
   const elements = new Map(), intervals = new Map();
   let now = 0, intervalId = 0;
   const calls = [], events = [];
@@ -31,7 +31,7 @@ function timer({ language = "en", elapsed = 0, direction = "up", tiltStarted = n
   const editor = Object.create(elements.get("ha-selector-grenton_shutter_measurement").prototype);
   const translations = JSON.parse(readFileSync(new URL(`translations/${language}.json`, component), "utf8")).selector;
   editor._selector = { grenton_shutter_measurement: {
-    flow_id: "flow123", elapsed_ms: elapsed, direction, tilt_started_ms: tiltStarted,
+    flow_id: "flow123", elapsed_ms: elapsed, direction, segment, segment_started_ms: segmentStarted,
   } };
   editor._hass = { language, callApi: (...args) => { calls.push(args); return Promise.resolve({ type: "abort" }); } };
   editor._localizeValue = (key) => key.split(".").reduce((node, part) => node?.[part], translations);
@@ -116,7 +116,7 @@ test("a disabled timer cannot submit Cancel", () => {
 
 for (const language of ["en", "pl"]) {
   test(`${language}: the second stage shows total and slat time without rebuilding either counter`, () => {
-    const view = timer({ language, direction: "down", elapsed: 24321, tiltStarted: 24321 });
+    const view = timer({ language, direction: "down", elapsed: 24321, segment: "tilt", segmentStarted: 24321 });
     const root = view.editor.root, [total, slats] = view.counters(), cancel = view.cancel();
     assert.equal(total.textContent, "↓ 24 s");
     assert.equal(slats.textContent, "↻ 0 s");
@@ -133,9 +133,28 @@ for (const language of ["en", "pl"]) {
   });
 }
 
-test("the first stage and shutters without tilt show only the travel counter", () => {
+test("shutters without tilt show only the total counter", () => {
   const view = timer();
   assert.equal(view.counters().length, 1);
   view.tick(24000);
   assert.equal(view.counter().textContent, "↑ 24 s");
 });
+
+for (const language of ["en", "pl"]) {
+  test(`${language}: opening counts tilt first and then travel with stable counters`, () => {
+    const openingTilt = timer({ language, direction: "up", segment: "tilt" });
+    openingTilt.tick(3001);
+    assert.equal(openingTilt.counters()[1].textContent, "↻ 3 s");
+    const openingTravel = timer({ language, direction: "up", elapsed: 3001,
+      segment: "travel", segmentStarted: 3001 });
+    const root = openingTravel.editor.root, [total, travel] = openingTravel.counters();
+    openingTravel.tick(24321);
+    assert.equal(total.textContent, "↑ 27 s");
+    assert.equal(travel.textContent, "↑ 24 s");
+    assert.equal(travel.attributes["aria-label"], language === "pl" ? "Przejazd rolety" : "Shutter travel");
+    assert.equal(openingTravel.editor.root, root);
+    assert.equal(openingTravel.counters()[1], travel);
+    assert.equal(openingTravel.calls.length, 0);
+    assert.equal(openingTravel.events.length, 0);
+  });
+}
