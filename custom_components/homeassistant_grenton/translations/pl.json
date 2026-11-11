@@ -237,14 +237,15 @@
         }
       },
       "shutter": {
-        "title": "Konfiguracja: {entity_name}",
+        "title": "Konfiguracja rolety/żaluzji",
+        "description": "{entity_name}",
         "menu_options": {
-          "configure_entity": "Ustawienia żaluzji",
+          "configure_entity": "Ustawienia rolety/żaluzji",
           "shutter_calibration": "Kalibracja czasu otwierania i zamykania"
         }
       },
       "configure_shutter_settings": {
-        "title": "Ustawienia żaluzji",
+        "title": "Ustawienia rolety/żaluzji",
         "description": "",
         "data": {
           "lamel_move_timeout": "Czas ruchu lameli (ms)",
@@ -1091,7 +1092,7 @@
         "light": "Światła",
         "button": "Przyciski",
         "number": "Liczby",
-        "cover": "Żaluzje",
+        "cover": "Rolety/Żaluzje",
         "camera": "Kamery",
         "climate": "Termostaty"
       }

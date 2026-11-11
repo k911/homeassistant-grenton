@@ -237,7 +237,8 @@
         }
       },
       "shutter": {
-        "title": "Configure {entity_name}",
+        "title": "Configure shutter",
+        "description": "{entity_name}",
         "menu_options": {
           "configure_entity": "Shutter settings",
           "shutter_calibration": "Opening and closing time calibration"

@@ -1,6 +1,8 @@
 """Native shutter writes and calibration flows; motors are always mocked."""
 
 import asyncio
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -87,6 +89,26 @@ def test_settings_require_successful_reads_and_confirmed_readback():
         with pytest.raises(HomeAssistantError, match='confirm'):
             await entity.apply_configuration({'tilt_enabled': True, 'lamel_move_timeout': 1000})
         assert entity._config == {}
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('language', ['en', 'pl'])
+def test_shutter_menu_title_renders_without_placeholders(language):
+    async def run():
+        entity, _, _, _ = configured_shutter()
+        flow, entry_patch = make_flow(entity.coordinator, entity)
+        with entry_patch:
+            menu = await flow.async_step_entity_list({'entity': entity.entity_id})
+        assert menu['type'] == 'menu'
+        assert menu['step_id'] == 'shutter'
+        translations = json.loads((Path(__file__).parents[1]
+            / f'custom_components/homeassistant_grenton/translations/{language}.json').read_text()
+        )['options']['step'][menu['step_id']]
+        # HA passes description placeholders to menu descriptions, not titles.
+        assert translations['title'].format() == {
+            'en': 'Configure shutter', 'pl': 'Konfiguracja rolety/żaluzji',
+        }[language]
+        assert translations['description'].format(**menu['description_placeholders']) == entity.label
     asyncio.run(run())
 
 
