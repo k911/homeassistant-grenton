@@ -18,6 +18,14 @@ SETTING_LIMITS = {
 STATE_NAMES = {0: 'stopped', 1: 'opening', 2: 'closing', 3: 'blocked', 4: 'calibrating'}
 
 
+@dataclass
+class OppositeTimingAdjustment:
+    """Keep one opposite-direction total stable across save retries."""
+
+    direction: str
+    total_ms: int | None = None
+
+
 def milliseconds(value: Any, maximum: int = 600000) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise vol.Invalid('Enter a whole number of milliseconds')

@@ -79,7 +79,7 @@ def test_native_manager_two_click_measurement_then_degree_test_and_timeout_adjus
                 assert result['description_placeholders']['travel_ms'] == '24321'
                 assert result['description_placeholders']['lamel_ms'] == '3468'
                 assert result['data_schema']({}) == {
-                    'timings': {'total_ms': 27789, 'travel_ms': 24321, 'lamel_move_timeout': 3468, 'keep_total': True}}
+                    'timings': {'total_ms': 27900, 'travel_ms': 24400, 'lamel_move_timeout': 3500, 'keep_total': True, 'adapt_opposite': False}}
                 measured = ui_fields(result)['timings']['selector']['grenton_shutter_timings']
                 assert measured == {'direction': direction, 'measured_ms': 27789, 'measured_travel_ms': 24321,
                     'measured_lamel_ms': 3468, 'configured_up_ms': 22000, 'configured_down_ms': 21500,
@@ -111,16 +111,16 @@ def test_native_manager_two_click_measurement_then_degree_test_and_timeout_adjus
                     assert result['step_id'] == 'shutter_calibrated'
                     assert commands[-1] == f'ROLLER1:execute(9,"{degrees}")'
                 result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_tilt_adjust'})
-                assert result['data_schema']({}) == {'timings': {'total_ms': 27500, 'travel_ms': 24000, 'lamel_move_timeout': 3500, 'keep_total': True}}
+                assert result['data_schema']({}) == {'timings': {'total_ms': 27500, 'travel_ms': 24000, 'lamel_move_timeout': 3500, 'keep_total': True, 'adapt_opposite': False}}
                 assert ui_fields(result)['timings']['selector']['grenton_shutter_timings'] == {
                     **measured, f'configured_{direction}_ms': 24000, 'configured_lamel_ms': 3500}
                 result = await manager.async_configure(flow.flow_id,
-                    {'timings': {'total_ms': 29000, 'travel_ms': 25000, 'lamel_move_timeout': 4000, 'keep_total': False}})
+                    {'timings': {'total_ms': 29000, 'travel_ms': 25000, 'lamel_move_timeout': 4000, 'keep_total': False, 'adapt_opposite': False}})
                 assert result['step_id'] == 'shutter_calibrated'
                 assert values[index] == 25000 and values['10'] == 4000
                 result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_tilt_adjust'})
                 assert result['data_schema']({}) == {'timings': {
-                    'total_ms': 29000, 'travel_ms': 25000, 'lamel_move_timeout': 4000, 'keep_total': False}}
+                    'total_ms': 29000, 'travel_ms': 25000, 'lamel_move_timeout': 4000, 'keep_total': False, 'adapt_opposite': False}}
                 assert ui_fields(result)['timings']['selector']['grenton_shutter_timings'] == {
                     **measured, f'configured_{direction}_ms': 25000, 'configured_lamel_ms': 4000}
                 await manager.async_configure(flow.flow_id, result['data_schema']({}))
@@ -536,5 +536,64 @@ def test_summary_does_not_present_cached_settings_as_current_after_failed_read(t
             assert timings['measured_ms'] == 27000
             assert not commands
             await session.abort()
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('enabled,travel,lamel,rounded_travel,rounded_lamel', [
+    (False, 27321, 0, 27400, 0),
+    (False, 27400, 0, 27400, 0),
+    (True, 24321, 3468, 24400, 3500),
+    (True, 24400, 3500, 24400, 3500),
+    (True, 1, 1, 100, 100),
+    (True, 599999, 599999, 600000, 600000),
+])
+def test_summary_rounds_only_editable_defaults_up_to_100_ms(
+    tmp_path, enabled, travel, lamel, rounded_travel, rounded_lamel,
+):
+    async def run():
+        entity, _, values, _, flow, entry_patch, hass = tilt_flow(tmp_path, enabled=enabled)
+        with entry_patch:
+            session = await entity.create_calibration('down', 45000)
+            flow._shutter_session = session
+            session.phase, session.elapsed_ms, session.phase_change_ms, session.lamel_ms = (
+                'review', travel + lamel, travel if enabled else None, lamel)
+            result = await flow.async_step_shutter_review()
+            submitted = result['data_schema']({})
+            if enabled:
+                assert submitted['timings'] == {
+                    'total_ms': rounded_travel + rounded_lamel, 'travel_ms': rounded_travel,
+                    'lamel_move_timeout': rounded_lamel, 'keep_total': True, 'adapt_opposite': False}
+                reference = ui_fields(result)['timings']['selector']['grenton_shutter_timings']
+                assert reference['measured_ms'] == travel + lamel
+                assert reference['measured_travel_ms'] == travel
+                assert reference['measured_lamel_ms'] == lamel
+                assert reference['configured_down_ms'] == 21500
+                assert reference['configured_lamel_ms'] == 3000
+            else:
+                assert submitted == {'total_ms': rounded_travel}
+                assert result['description_placeholders']['measured_ms'] == str(travel)
+            result = await flow.async_step_shutter_review(submitted)
+            assert result['type'] == ('menu' if enabled else 'create_entry')
+            assert values['15'] == rounded_travel
+            if enabled:
+                assert values['10'] == rounded_lamel
+            assert session.elapsed_ms == travel + lamel and session.lamel_ms == lamel
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+def test_adjustment_dialog_keeps_existing_configured_precision(tmp_path):
+    async def run():
+        entity, _, values, _, flow, entry_patch, hass = tilt_flow(tmp_path)
+        with entry_patch:
+            session = await entity.create_calibration('down', 45000)
+            flow._shutter_session = session
+            session.phase, session.finished = 'saved', True
+            session.elapsed_ms, session.phase_change_ms, session.lamel_ms = 27789, 24321, 3468
+            values['15'], values['10'] = 24321, 3468
+            result = await flow.async_step_shutter_tilt_adjust()
+            assert result['data_schema']({})['timings'] == {
+                'total_ms': 27789, 'travel_ms': 24321, 'lamel_move_timeout': 3468, 'keep_total': True, 'adapt_opposite': False}
         await hass.async_stop()
     asyncio.run(run())

@@ -22,7 +22,7 @@ from ..action import GrentonAction, GrentonActionAttribute, GrentonActionMethod
 from ..state_object import GrentonStateObject
 from .base import BaseGrentonEntity
 from .configurable import ConfigurableEntity
-from .roller_shutter_configuration import SETTING_LIMITS, STATE_NAMES, ShutterConfigurationSchema, milliseconds
+from .roller_shutter_configuration import SETTING_LIMITS, STATE_NAMES, OppositeTimingAdjustment, ShutterConfigurationSchema, milliseconds
 from .roller_shutter_calibration import ShutterCalibration
 
 
@@ -307,7 +307,8 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
         else:
             await self._execute(template, str(int(value)))
 
-    async def apply_native_settings(self, settings, *, calibration=None):
+    async def apply_native_settings(self, settings, *, calibration=None,
+                                    opposite_adjustment: OppositeTimingAdjustment | None = None):
         if settings:
             await self.async_prepare_configuration()
         validated = {}
@@ -331,6 +332,27 @@ class GrentonEntityRollerShutterV3(BaseGrentonEntity, CoverEntity, ConfigurableE
                 raise ServiceValidationError('This calibration result is no longer available')
             if active is not None and active is not calibration and (active.running or not active.finished):
                 raise ServiceValidationError('Finish or cancel calibration before saving settings')
+            if opposite_adjustment is not None:
+                if opposite_adjustment.direction not in ('up', 'down') or 'lamel_move_timeout' not in validated:
+                    raise ServiceValidationError('Choose the calibration direction and slat timeout')
+                opposite = 'down' if opposite_adjustment.direction == 'up' else 'up'
+                key = f'blinds_{opposite}_max_time'
+                current = self.setting_values
+                old_lamel, old_travel = current.get('lamel_move_timeout'), current.get(key)
+                if old_lamel is None or old_travel is None or key not in self.setting_actions:
+                    raise ServiceValidationError('Opposite-direction timing is unavailable')
+                if opposite_adjustment.total_ms is not None or old_lamel != validated['lamel_move_timeout']:
+                    total = opposite_adjustment.total_ms
+                    if total is None:
+                        total = (old_travel or self.travel_time(opposite)) + old_lamel
+                    try:
+                        adjusted = milliseconds(total - validated['lamel_move_timeout'])
+                        if adjusted <= 0:
+                            raise vol.Invalid('Opposite-direction travel time must be positive')
+                    except vol.Invalid as error:
+                        raise ServiceValidationError(str(error)) from error
+                    opposite_adjustment.total_ms = total
+                    validated[key] = adjusted
             for key, value in validated.items():
                 if self.setting_values.get(key) != value:
                     await self._write_setting(key, value)

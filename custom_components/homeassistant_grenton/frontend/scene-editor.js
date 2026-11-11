@@ -809,6 +809,18 @@ class GrentonShutterTimings extends GrentonEditor {
       const labelKey = key === "travel_ms" && settings.direction ? `travel_${settings.direction}_ms` : key;
       parent.append(this._field(this._text(`shutter_timings.${labelKey}`, fallback), input));
     }
+    const adaptOpposite = this._input("adapt_opposite", value.adapt_opposite === true, (checked) => {
+      this._value = { ...this._value, adapt_opposite: checked };
+    }, "checkbox", false);
+    const adaptField = document.createElement("label"), adaptLabel = document.createElement("span");
+    adaptField.className = "shutter-sync";
+    const adaptKey = settings.direction === "up" ? "adapt_closing" : settings.direction === "down" ? "adapt_opening" : "adapt_opposite";
+    adaptLabel.textContent = this._text(`shutter_timings.${adaptKey}`, "Adjust opposite-direction travel time");
+    adaptField.append(adaptOpposite, adaptLabel);
+    const adaptHint = document.createElement("p");
+    adaptHint.className = "hint";
+    adaptHint.textContent = this._text("shutter_timings.adapt_hint", "Preserves the opposite direction's total runtime when slat time changes.");
+    parent.append(adaptField, adaptHint);
   }
 }
 

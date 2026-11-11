@@ -149,3 +149,25 @@ test("unknown configured times are shown as unknown and zero remains a real valu
   const view = editor({ configured: { configured_up_ms: null, configured_down_ms: 0, configured_lamel_ms: null } });
   assert.deepEqual(view.configured().map((node) => node.textContent), ["—", "0 s (0 ms)", "—"]);
 });
+
+for (const language of ["en", "pl"]) {
+  for (const direction of ["up", "down"]) {
+    test(`${language}/${direction}: opposite-direction adaptation is unchecked and requires an explicit choice`, () => {
+      const view = editor({ language, direction });
+      const checkbox = view.field("adapt_opposite");
+      assert.equal(checkbox.checked, false);
+      const label = descendants(view.root).find((node) => node.tag === "label" && node.children.includes(checkbox));
+      assert.equal(label.children[1].textContent, language === "pl"
+        ? `Dostosuj czas ruchu rolety w ${direction === "up" ? "dół" : "górę"}`
+        : `Adjust ${direction === "up" ? "closing" : "opening"} travel time`);
+      checkbox.checked = true;
+      checkbox.fire("input");
+      assert.equal(view.emitted.adapt_opposite, true);
+      assert.equal(view.emitted.travel_ms, 24000);
+      assert.equal(view.emitted.lamel_move_timeout, 3000);
+      checkbox.checked = false;
+      checkbox.fire("input");
+      assert.equal(view.emitted.adapt_opposite, false);
+    });
+  }
+}

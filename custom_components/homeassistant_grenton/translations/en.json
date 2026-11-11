@@ -1127,7 +1127,11 @@
       "measured_travel_up": "Shutter travel up",
       "measured_travel_down": "Shutter travel down",
       "travel_up_ms": "Opening travel time (ms)",
-      "travel_down_ms": "Closing travel time (ms)"
+      "travel_down_ms": "Closing travel time (ms)",
+      "adapt_opposite": "Adjust opposite-direction travel time",
+      "adapt_opening": "Adjust opening travel time",
+      "adapt_closing": "Adjust closing travel time",
+      "adapt_hint": "Preserves the opposite direction's total runtime when slat time changes."
     }
   }
 }

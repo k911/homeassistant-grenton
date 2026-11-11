@@ -7,7 +7,7 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
-from .domain.entities.roller_shutter_configuration import milliseconds, number_selector
+from .domain.entities.roller_shutter_configuration import OppositeTimingAdjustment, milliseconds, number_selector
 from .shutter_measurement import ShutterMeasurementSelector
 from .shutter_timings import ShutterTimingsSelector
 
@@ -285,7 +285,9 @@ class RollerShutterOptionsMixin:
                 if session.tilt_enabled:
                     settings['lamel_move_timeout'] = lamel
                 async with session._lock:
-                    await entity.apply_native_settings(settings, calibration=session)
+                    adjustment = self._shutter_opposite_adjustment(timings) if session.tilt_enabled else None
+                    await entity.apply_native_settings(settings, calibration=session, opposite_adjustment=adjustment)
+                    self._shutter_pending_opposite = None
                     if session.tilt_enabled:
                         self._shutter_keep_total = timings['keep_total']
                     session._temporary = False
@@ -300,11 +302,13 @@ class RollerShutterOptionsMixin:
         configured = await self._shutter_configured_times()
         if configured is None:
             errors.setdefault('base', 'cannot_read_configuration')
+        travel_default = (session.suggested_ms + 99) // 100 * 100
         if session.tilt_enabled:
-            fields = self._shutter_timing_fields(user_input, session.suggested_ms, session.lamel_ms, configured)
-            travel = session.suggested_ms
+            lamel_default = (session.lamel_ms + 99) // 100 * 100
+            fields = self._shutter_timing_fields(user_input, travel_default, lamel_default, configured)
+            travel = travel_default
         else:
-            travel = (user_input or {}).get('total_ms', session.suggested_ms)
+            travel = (user_input or {}).get('total_ms', travel_default)
             fields = {vol.Required('total_ms', default=travel): number_selector()}
         return self.async_show_form(step_id='shutter_tilt_review' if session.tilt_enabled else 'shutter_review',
             last_step=not session.tilt_enabled, data_schema=vol.Schema(fields), errors=errors,
@@ -314,6 +318,15 @@ class RollerShutterOptionsMixin:
                                          for key in ('configured_up_ms', 'configured_down_ms')}})
 
     async_step_shutter_tilt_review = async_step_shutter_review
+
+    def _shutter_opposite_adjustment(self, timings):
+        if not timings['adapt_opposite']:
+            return None
+        adjustment = getattr(self, '_shutter_pending_opposite', None)
+        if adjustment is None:
+            adjustment = OppositeTimingAdjustment(self._shutter_session.direction)
+            self._shutter_pending_opposite = adjustment
+        return adjustment
 
     async def _shutter_configured_times(self):
         entity, session = self._shutter(), self._shutter_session
@@ -334,7 +347,7 @@ class RollerShutterOptionsMixin:
     def _shutter_timing_fields(self, user_input, travel, lamel, configured):
         session = self._shutter_session
         default = {'total_ms': travel + lamel, 'travel_ms': travel, 'lamel_move_timeout': lamel,
-                   'keep_total': getattr(self, '_shutter_keep_total', True)}
+                   'keep_total': getattr(self, '_shutter_keep_total', True), 'adapt_opposite': False}
         return {vol.Required('timings', default=(user_input or {}).get('timings', default)):
                 ShutterTimingsSelector({
                     'direction': session.direction,
@@ -404,7 +417,8 @@ class RollerShutterOptionsMixin:
             if user_input is not None:
                 timings = ShutterTimingsSelector.validate(user_input.get('timings'))
                 settings = {session.key: timings['travel_ms'], 'lamel_move_timeout': timings['lamel_move_timeout']}
-                await entity.apply_native_settings(settings)
+                await entity.apply_native_settings(settings, opposite_adjustment=self._shutter_opposite_adjustment(timings))
+                self._shutter_pending_opposite = None
                 self._shutter_keep_total = timings['keep_total']
                 return await self.async_step_shutter_calibrated()
         except (vol.Invalid, HomeAssistantError):

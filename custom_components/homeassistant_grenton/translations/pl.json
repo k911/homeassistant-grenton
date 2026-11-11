@@ -1127,7 +1127,11 @@
       "measured_travel_up": "Przejazd rolety w górę",
       "measured_travel_down": "Przejazd rolety w dół",
       "travel_up_ms": "Czas przejazdu rolety w górę (ms)",
-      "travel_down_ms": "Czas przejazdu rolety w dół (ms)"
+      "travel_down_ms": "Czas przejazdu rolety w dół (ms)",
+      "adapt_opposite": "Dostosuj czas ruchu w przeciwnym kierunku",
+      "adapt_opening": "Dostosuj czas ruchu rolety w górę",
+      "adapt_closing": "Dostosuj czas ruchu rolety w dół",
+      "adapt_hint": "Zachowuje łączny czas ruchu w przeciwnym kierunku po zmianie czasu lameli."
     }
   }
 }
