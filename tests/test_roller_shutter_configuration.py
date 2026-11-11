@@ -316,8 +316,7 @@ def test_native_wait_loader_and_measurement_save_while_motor_runs(tmp_path):
         flow.flow_id = 'shutter-flow'
         with entry_patch:
             flow.selected_entity_uid=entity.unique_id
-            await flow.async_step_shutter_calibration({'direction':'up'})
-            result=await flow.async_step_shutter_limits({'limit_up_ms':45000})
+            result=await flow.async_step_shutter_calibration({'direction':'up', 'limit_up_ms':45000})
             assert 'shutter_edge_ready' not in result['menu_options']
             assert result['step_id'] == 'shutter_position_close_required'
             session=flow._shutter_session;session.POLL_SECONDS=.001
@@ -370,8 +369,7 @@ def test_native_manager_frontend_timer_and_popup_close_keep_firmware_running(tmp
         with entry_patch:
             await manager._async_handle_step(flow, 'entity_list', {'entity': entity.entity_id})
             await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_calibration'})
-            await manager.async_configure(flow.flow_id, {'direction': 'down'})
-            await manager.async_configure(flow.flow_id, {'limit_down_ms': 45000})
+            await manager.async_configure(flow.flow_id, {'direction': 'down', 'limit_down_ms': 45000})
             session = flow._shutter_session
             session.POLL_SECONDS = .001
             assert not commands

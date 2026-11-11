@@ -44,9 +44,10 @@ def test_native_manager_two_click_measurement_then_degree_test_and_timeout_adjus
             await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_calibration'})
             configured_lamel_ms = initial_lamel_ms or 2500
             result = await manager.async_configure(flow.flow_id, {
-                'direction': direction, 'tilt_enabled': True, 'lamel_move_timeout': configured_lamel_ms})
-            assert set(ui_fields(result)) == {f'limit_{direction}_ms'}
-            await manager.async_configure(flow.flow_id, {f'limit_{direction}_ms': 45000})
+                'direction': direction, 'tilt_enabled': True, 'lamel_move_timeout': configured_lamel_ms,
+                f'limit_{direction}_ms': 45000})
+            assert result['type'] == 'menu'
+            assert flow._shutter_session.limit_ms == 45000
             session = flow._shutter_session
             session.POLL_SECONDS = .001
             result = await manager.async_configure(flow.flow_id, {'next_step_id': 'shutter_edge_ready'})
@@ -131,8 +132,7 @@ def test_unchecked_tilt_support_uses_single_click_and_has_no_tilt_testing(tmp_pa
     async def run():
         entity, _, values, commands, flow, entry_patch, hass = tilt_flow(tmp_path, enabled=False)
         with entry_patch:
-            await flow.async_step_shutter_calibration({'direction': 'down'})
-            result = await flow.async_step_shutter_limits({'limit_down_ms': 45000})
+            result = await flow.async_step_shutter_calibration({'direction': 'down', 'limit_down_ms': 45000})
             session = flow._shutter_session
             session.POLL_SECONDS = .001
             assert not session.tilt_enabled
@@ -413,8 +413,14 @@ def test_direction_dialog_configures_tilt_support_and_timeout_without_moving(tmp
             fields = list(ui_fields(result).values())
             add_visible_conditions_to_serialized_schema(result['data_schema'], fields)
             by_name = {field['name']: field for field in fields}
-            assert set(by_name) == {'direction', 'tilt_enabled', 'lamel_move_timeout'}
+            assert set(by_name) == {'direction', 'limit_up_ms', 'limit_down_ms', 'tilt_enabled', 'lamel_move_timeout'}
             assert by_name['lamel_move_timeout']['visible'] == {'field': 'tilt_enabled', 'value': True}
+            for selected, expected_time in (('up', 22000), ('down', 21500)):
+                assert by_name[f'limit_{selected}_ms']['visible'] == {'field': 'direction', 'value': selected}
+                active, _ = _strip_hidden_fields(result['data_schema'], {'direction': selected, 'tilt_enabled': enabled})
+                defaults = active({'direction': selected, 'tilt_enabled': enabled})
+                assert defaults[f'limit_{selected}_ms'] == expected_time
+                assert ('limit_down_ms' if selected == 'up' else 'limit_up_ms') not in defaults
             hidden, _ = _strip_hidden_fields(result['data_schema'], {'tilt_enabled': False})
             assert 'lamel_move_timeout' not in {key.schema for key in hidden.schema}
             visible, _ = _strip_hidden_fields(result['data_schema'], {'tilt_enabled': True})
@@ -422,15 +428,18 @@ def test_direction_dialog_configures_tilt_support_and_timeout_without_moving(tmp
             assert not commands
             result = await manager.async_configure(flow.flow_id, {
                 'direction': direction, 'tilt_enabled': enabled,
+                f'limit_{direction}_ms': 45000,
+                'limit_down_ms' if direction == 'up' else 'limit_up_ms': 'stale invalid hidden value',
                 'lamel_move_timeout': 3500 if enabled else 'stale invalid hidden value'})
-            assert result['step_id'] == 'shutter_limits'
+            assert result['type'] == 'menu'
+            assert result['step_id'] == ('shutter_position_closed' if direction == 'up' else 'shutter_position_open')
             assert values['10'] == (3500 if enabled else 0)
             assert entity._tilt_enabled is enabled
             assert coord.config_entry.options['entities'][entity.unique_id] == {'tilt_enabled': enabled}
             assert commands == [f'ROLLER1:set(10,{3500 if enabled else 0})']
             hass.config_entries.async_schedule_reload.assert_not_called()
-            await manager.async_configure(flow.flow_id, {f'limit_{direction}_ms': 45000})
             session = flow._shutter_session
+            assert session.limit_ms == 45000
             assert session.tilt_enabled is enabled
             manager.async_abort(flow.flow_id)
             await asyncio.sleep(.01)
@@ -451,6 +460,24 @@ def test_direction_dialog_rejects_invalid_tilt_timeout_before_writes(tmp_path, t
             assert result['step_id'] == 'shutter_calibration'
             assert result['errors']['lamel_move_timeout'] == 'invalid_configuration'
             assert not commands and entity._tilt_enabled is False
+            hass.config_entries.async_update_entry.assert_not_called()
+        await hass.async_stop()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('direction', ['up', 'down'])
+@pytest.mark.parametrize('limit', [0, 600001, None, 'invalid'])
+def test_combined_preparation_validates_selected_movement_time_before_saving_tilt(tmp_path, direction, limit):
+    async def run():
+        entity, _, values, commands, flow, entry_patch, hass = tilt_flow(tmp_path, direction, enabled=False)
+        with entry_patch:
+            result = await flow.async_step_shutter_calibration({
+                'direction': direction, f'limit_{direction}_ms': limit,
+                'tilt_enabled': True, 'lamel_move_timeout': 3500})
+            assert result['step_id'] == 'shutter_calibration'
+            assert result['errors'][f'limit_{direction}_ms'] == 'invalid_configuration'
+            assert values['10'] == 3000 and entity._tilt_enabled is False
+            assert entity._calibration is None and not commands
             hass.config_entries.async_update_entry.assert_not_called()
         await hass.async_stop()
     asyncio.run(run())

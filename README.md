@@ -537,9 +537,11 @@ feedback does not make a shutter without slats unavailable. `grenton_state`
 reports stopped, opening, closing, blocked (3), or calibrating (4), and the cover
 also exposes `up_relay_active` / `down_relay_active` from attributes 3/4.
 
-At direction selection, the calibration wizard also offers slat support and a
-slat-time field shown only when support is checked. **Save and continue** commits
-these settings before measurement; unchecking support writes 0 ms to attribute 10.
+The calibration wizard prepares direction and timeouts in one dialog. Selecting
+opening or closing shows that direction's movement-time field. Slat support and
+its conditional timeout field appear in the same dialog. **Save and continue**
+commits slat settings before measurement and proceeds directly to positioning;
+unchecking support writes 0 ms to attribute 10.
 Saving these settings never starts the motor.
 The calibration wizard checks the starting end position for the selected direction.
 If necessary, use Open/Close shutter and wait for the module to finish calibration

@@ -76,26 +76,36 @@ class RollerShutterOptionsMixin:
         else:
             direction = user_input.get('direction')
             if direction in ('up', 'down'):
+                limit_field = f'limit_{direction}_ms'
                 try:
+                    limit = milliseconds(user_input.get(limit_field, entity.travel_time(direction)))
+                    if limit <= 0:
+                        raise vol.Invalid('Enter a positive movement time', path=[limit_field])
                     if 'tilt_enabled' in user_input:
                         enabled = user_input['tilt_enabled']
                         settings = {'tilt_enabled': enabled}
                         if enabled:
-                            timeout = milliseconds(user_input.get('lamel_move_timeout',
-                                entity.setting_values.get('lamel_move_timeout', 0)))
+                            try:
+                                timeout = milliseconds(user_input.get('lamel_move_timeout',
+                                    entity.setting_values.get('lamel_move_timeout', 0)))
+                            except vol.Invalid as error:
+                                raise vol.Invalid(str(error), path=['lamel_move_timeout']) from error
                             if timeout <= 0:
-                                raise vol.Invalid('Enter a positive slat movement time')
+                                raise vol.Invalid('Enter a positive slat movement time', path=['lamel_move_timeout'])
                             settings['lamel_move_timeout'] = timeout
                         options = await entity.apply_configuration(settings)
                         if options != dict(self.config_entry.options):
                             self.hass.config_entries.async_update_entry(self.config_entry, options=options)
-                except vol.Invalid:
-                    errors['lamel_move_timeout'] = 'invalid_configuration'
+                    self._shutter_session = await entity.create_calibration(direction, limit)
+                except vol.Invalid as error:
+                    field = str(error.path[0]) if error.path else limit_field
+                    errors[field] = 'invalid_configuration'
+                except ValueError:
+                    errors['base'] = 'invalid_configuration'
                 except HomeAssistantError:
                     errors['base'] = 'cannot_apply_configuration'
                 else:
-                    self._shutter_direction = direction
-                    return await self.async_step_shutter_limits()
+                    return await self.async_step_shutter_position()
             else:
                 errors['direction'] = 'invalid_configuration'
         fields = {
@@ -103,29 +113,18 @@ class RollerShutterOptionsMixin:
                 options=['up', 'down'], translation_key='shutter_directions',
                 mode=selector.SelectSelectorMode.DROPDOWN,
             )),
-            vol.Required('tilt_enabled', default=(user_input or {}).get('tilt_enabled', entity._tilt_enabled)):
-                selector.BooleanSelector(),
         }
+        for direction in ('up', 'down'):
+            field = f'limit_{direction}_ms'
+            fields[data_entry_flow.Optional(field,
+                default=(user_input or {}).get(field, entity.travel_time(direction)),
+                visible={'field': 'direction', 'value': direction})] = number_selector()
+        fields[vol.Required('tilt_enabled', default=(user_input or {}).get('tilt_enabled', entity._tilt_enabled))] = selector.BooleanSelector()
         if 'lamel_move_timeout' in entity.setting_actions:
             fields[data_entry_flow.Required('lamel_move_timeout',
                 default=(user_input or {}).get('lamel_move_timeout', entity.setting_values.get('lamel_move_timeout', 0)),
                 visible={'field': 'tilt_enabled', 'value': True})] = number_selector()
         return self.async_show_form(step_id='shutter_calibration', data_schema=vol.Schema(fields), errors=errors)
-
-    async def async_step_shutter_limits(self, user_input=None):
-        entity = self._shutter()
-        errors = {}
-        name = 'limit_up_ms' if self._shutter_direction == 'up' else 'limit_down_ms'
-        if user_input is not None:
-            try:
-                limit = milliseconds(user_input.get(name, entity.travel_time(self._shutter_direction)))
-                self._shutter_session = await entity.create_calibration(self._shutter_direction, limit)
-            except (vol.Invalid, ValueError, HomeAssistantError):
-                errors['base'] = 'invalid_configuration'
-            else:
-                return await self.async_step_shutter_position()
-        fields = {vol.Optional(name, default=(user_input or {}).get(name, entity.travel_time(self._shutter_direction))): number_selector()}
-        return self.async_show_form(step_id='shutter_limits', data_schema=vol.Schema(fields), errors=errors)
 
     async def async_step_shutter_position(self, user_input=None):
         session = self._shutter_session

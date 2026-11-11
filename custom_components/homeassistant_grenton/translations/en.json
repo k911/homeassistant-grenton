@@ -256,22 +256,16 @@
         }
       },
       "shutter_calibration": {
-        "title": "Choose calibration direction",
+        "title": "Prepare calibration",
         "description": "",
         "data": {
           "direction": "Direction",
           "tilt_enabled": "Supports slat control",
-          "lamel_move_timeout": "Slat movement time (ms)"
-        },
-        "submit": "Save and continue"
-      },
-      "shutter_limits": {
-        "title": "Prepare measurement",
-        "description": "",
-        "data": {
+          "lamel_move_timeout": "Slat movement time (ms)",
           "limit_up_ms": "Opening movement time",
           "limit_down_ms": "Closing movement time"
-        }
+        },
+        "submit": "Save and continue"
       },
       "shutter_ready": {
         "title": "Measurement",
@@ -313,7 +307,7 @@
       },
       "shutter_position_closed": {
         "title": "Starting position",
-        "description": "If the shutter is not fully closed, choose Close shutter.",
+        "description": "The shutter should now be fully closed. If it is not, choose Close shutter.",
         "menu_options": {
           "shutter_position_up": "Open shutter",
           "shutter_position_down": "Close shutter",
@@ -323,7 +317,7 @@
       },
       "shutter_position_open": {
         "title": "Starting position",
-        "description": "If the shutter is not fully open, choose Open shutter.",
+        "description": "The shutter should now be fully open. If it is not, choose Open shutter.",
         "menu_options": {
           "shutter_position_up": "Open shutter",
           "shutter_position_down": "Close shutter",
@@ -333,7 +327,7 @@
       },
       "shutter_position_close_required": {
         "title": "Starting position",
-        "description": "Close the shutter before measuring opening time.",
+        "description": "The shutter must be fully closed before starting the measurement.",
         "menu_options": {
           "shutter_position_up": "Open shutter",
           "shutter_position_down": "Close shutter",
@@ -343,7 +337,7 @@
       },
       "shutter_position_open_required": {
         "title": "Starting position",
-        "description": "Open the shutter before measuring closing time.",
+        "description": "The shutter must be fully open before starting the measurement.",
         "menu_options": {
           "shutter_position_up": "Open shutter",
           "shutter_position_down": "Close shutter",

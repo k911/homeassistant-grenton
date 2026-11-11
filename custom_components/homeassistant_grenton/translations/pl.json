@@ -256,22 +256,16 @@
         }
       },
       "shutter_calibration": {
-        "title": "Wybierz kierunek kalibracji",
+        "title": "Przygotuj kalibrację",
         "description": "",
         "data": {
           "direction": "Kierunek",
           "tilt_enabled": "Obsługa sterowania lamelami",
-          "lamel_move_timeout": "Czas ruchu lameli (ms)"
-        },
-        "submit": "Zapisz i kontynuuj"
-      },
-      "shutter_limits": {
-        "title": "Przygotuj pomiar",
-        "description": "",
-        "data": {
+          "lamel_move_timeout": "Czas ruchu lameli (ms)",
           "limit_up_ms": "Czas ruchu rolety w górę",
           "limit_down_ms": "Czas ruchu rolety w dół"
-        }
+        },
+        "submit": "Zapisz i kontynuuj"
       },
       "shutter_ready": {
         "title": "Pomiar",
@@ -313,7 +307,7 @@
       },
       "shutter_position_closed": {
         "title": "Pozycja początkowa",
-        "description": "Jeśli roleta nie jest całkowicie zamknięta, wybierz „Zamknij roletę”.",
+        "description": "Roleta powinna być już całkowicie zamknięta. Jeśli nie jest, wybierz „Zamknij roletę”.",
         "menu_options": {
           "shutter_position_up": "Otwórz roletę",
           "shutter_position_down": "Zamknij roletę",
@@ -323,7 +317,7 @@
       },
       "shutter_position_open": {
         "title": "Pozycja początkowa",
-        "description": "Jeśli roleta nie jest całkowicie otwarta, wybierz „Otwórz roletę”.",
+        "description": "Roleta powinna być już całkowicie otwarta. Jeśli nie jest, wybierz „Otwórz roletę”.",
         "menu_options": {
           "shutter_position_up": "Otwórz roletę",
           "shutter_position_down": "Zamknij roletę",
@@ -333,7 +327,7 @@
       },
       "shutter_position_close_required": {
         "title": "Pozycja początkowa",
-        "description": "Zamknij roletę przed pomiarem czasu ruchu w górę.",
+        "description": "Przed rozpoczęciem pomiaru roleta musi być całkowicie zamknięta.",
         "menu_options": {
           "shutter_position_up": "Otwórz roletę",
           "shutter_position_down": "Zamknij roletę",
@@ -343,7 +337,7 @@
       },
       "shutter_position_open_required": {
         "title": "Pozycja początkowa",
-        "description": "Otwórz roletę przed pomiarem czasu ruchu w dół.",
+        "description": "Przed rozpoczęciem pomiaru roleta musi być całkowicie otwarta.",
         "menu_options": {
           "shutter_position_up": "Otwórz roletę",
           "shutter_position_down": "Zamknij roletę",
