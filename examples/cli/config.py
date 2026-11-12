@@ -1,7 +1,9 @@
 """Configuration management utilities."""
 import json
 import logging
+import os
 import sys
+import tempfile
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +32,24 @@ def get_config_path(config_arg: Optional[str] = None) -> Path:
 
 def ensure_config_dir(config_path: Path) -> None:
     """Ensure configuration directory exists."""
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+
+
+def _write_private(path: Path, content: str) -> None:
+    """Atomically replace secret-bearing files with owner-only permissions."""
+    ensure_config_dir(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def save_configuration(
@@ -57,7 +76,7 @@ def save_configuration(
         discovered = discover_tracked_objects(interface_data)
         _merge_discovered_tracked_objects(config_data, discovered)
 
-    config_path.write_text(yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True))
+    _write_private(config_path, yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True))
     _LOGGER.info(f"Configuration saved to {config_path}")
 
 
@@ -297,8 +316,7 @@ def _merge_discovered_tracked_objects(config_data: dict, discovered: dict) -> No
 def save_interface_cache(interface_data: dict, cache_path: Optional[Path] = None) -> None:
     """Save full mobile interface data to cache for analysis (JSON by spec)."""
     cache_path = cache_path or _DEFAULT_CACHE_PATH
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(json.dumps(interface_data, indent=2))
+    _write_private(cache_path, json.dumps(interface_data, indent=2))
     _LOGGER.info(f"Interface cache saved to {cache_path}")
 
 

@@ -1,11 +1,14 @@
 """Tests for configuration merging and tracked-object discovery."""
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
-from config import save_configuration
+from config import save_configuration, save_interface_cache
 
 
 def _interface() -> dict:
@@ -136,6 +139,40 @@ class SaveConfigurationTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def test_secrets_are_private_even_with_permissive_umask_and_existing_files(self):
+        cache = self.path.with_name('interface.json')
+        previous_umask = os.umask(0)
+        try:
+            for existing in (False, True):
+                if existing:
+                    self.path.chmod(0o644)
+                    cache.chmod(0o644)
+                save_configuration(_interface(), self.path)
+                save_interface_cache(_interface(), cache)
+                for path in (self.path, cache):
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        finally:
+            os.umask(previous_umask)
+
+    def test_failed_atomic_save_preserves_old_secrets_and_removes_temporary_file(self):
+        save_configuration(_interface(), self.path)
+        original = self.path.read_bytes()
+        with patch('config.os.replace', side_effect=OSError('Disk failure')):
+            with self.assertRaises(OSError):
+                save_configuration({'encryption': {'key': 'replacement'}}, self.path)
+        self.assertEqual(self.path.read_bytes(), original)
+        self.assertEqual(list(self.path.parent.iterdir()), [self.path])
+
+    def test_cache_save_replaces_symlink_without_overwriting_its_target(self):
+        target = self.path.with_name('target.json')
+        target.write_text('keep target')
+        cache = self.path.with_name('interface.json')
+        cache.symlink_to(target)
+        save_interface_cache(_interface(), cache)
+        self.assertFalse(cache.is_symlink())
+        self.assertEqual(target.read_text(), 'keep target')
+        self.assertEqual(stat.S_IMODE(cache.stat().st_mode), 0o600)
 
     def test_preserves_custom_configuration_and_tracked_objects_by_default(self):
         _write_existing(self.path)

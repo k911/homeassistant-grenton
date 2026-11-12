@@ -366,6 +366,11 @@ The interface cache (JSON) is stored by default in:
 ~/.grenton/cache/interface.json
 ```
 
+Both files contain encryption keys. Saves are atomic and use owner-only
+permissions (`0600`), including when replacing an older file. Protect existing
+copies and backups too; redact keys before sharing the cache or configuration.
+See the [security guidance](../../SECURITY.md) for network and log handling.
+
 You can specify a custom config path with the `--config` option. The parent directory will be created automatically if it doesn't exist. Inside `config.yaml` you can optionally set the cache path using either a top-level `cache_path: /path/to/interface.json` or a `cache:
  interface: /path/to/interface.json` mapping.
 
