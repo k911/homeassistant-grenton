@@ -110,7 +110,7 @@ def _cleanup_orphans(
     )
     for entity in clu_entities:
         if info := entity.device_info:
-            valid_device_identifiers.update(info["identifiers"])
+            valid_device_identifiers.update(info.identifiers)
 
     configured_entity_domains = {
         entity.unique_id: entity.default_entity_type

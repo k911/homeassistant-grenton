@@ -1,0 +1,745 @@
+# Device and protocol reference
+
+[Back to setup and everyday use](../README.md)
+
+This reference covers advanced bindings, automation actions, wire formats and diagnostic behavior. Start with the README for installation and normal configuration.
+
+## VALUE_V2 and VALUE_DOUBLE as Binary Sensors
+
+Select the value entity under **Grenton → Configure** and choose **Binary sensor**,
+then select a device class such as **Door**, **Window**, or **Opening**. With
+**Invert state** disabled (the default), positive values mean off/closed and zero
+means on/open. Negative values are also treated as on. Numeric strings are
+accepted, while missing or invalid values remain unknown. Binary sensors have no
+measurement unit or state class.
+
+Enable **Invert state** to reverse this mapping: positive values mean on/open,
+and zero or negative values mean off/closed. This option is configured separately
+for each VALUE_DOUBLE channel; missing or invalid values remain unknown.
+
+The default remains **Sensor**, with configurable device class and unit. Enum
+sensors have no measurement state class or unit. Changing between Sensor and
+Binary sensor reloads the integration and replaces the old entity registration
+on the same device. Update automations and dashboards to use the new entity ID.
+For VALUE_DOUBLE, configure each of the two entities independently; they can use
+different domains, device classes, and units while remaining on the same device.
+
+Open a value entity from its device page to inspect its read-only `state_source`
+attributes: call type and CLU ID, plus object name and attribute index for an
+Attribute source, or variable name for a Variable source. This is available for
+sensor and binary sensor presentations, independently for each VALUE_DOUBLE
+channel, and for custom CLU variable sensors.
+
+## Temperature Reads and Polling
+
+VALUE_V2 and VALUE_DOUBLE entities configured with the **Temperature** device
+class automatically use slow polling. This also applies to existing temperature
+entities on reload, including configurations previously saved as realtime.
+Selecting Temperature in the configuration saves **Polling** automatically.
+Other values retain their configurable **Realtime** / **Polling** choice,
+independently for each VALUE_DOUBLE channel.
+
+Thermostat current temperature, target temperature, minimum and maximum are
+also polled. Schedule data uses the source CLU's polling interval while the
+thermostat is on in Auto. Disable **Automatically sync schedule** in that
+thermostat's configuration to use explicit editor/save reads only. Power, manual/schedule
+mode, direction and output activity retain realtime subscriptions on capable CLUs.
+Changing the target or operating mode reads the target back immediately; schedule and limit changes
+retain their targeted readback checks.
+
+**CLU_GATE_HTTP** uses polling for regular bindings, including controls and
+controller diagnostics, because it does not provide realtime updates. Schedule
+data follows the thermostat's sync setting and active schedule mode. It opens
+no report listener. Its polling interval can be shorter than the
+main CLU's; configure it under **Configure CLU**. User actions still execute
+immediately; displayed feedback follows the next poll or an explicit readback.
+
+Polled values are read at startup and then at their source CLU's configured
+interval. Ordinary reads use `SYSTEM:fetchValues` on the existing control socket,
+in batches of up to 30 values. Large attribute values, including schedules, use
+individual `OBJECT:get(INDEX)` requests as observed in Object Manager. Large
+variables remain isolated `fetchValues` reads. Reads do not
+create subscriptions or receive the 45-second registration refresh.
+On realtime-capable CLUs, a binding shared with a realtime consumer remains
+realtime; thermostat temperature feedback now requests slow polling too.
+
+Value entities expose `read_mode`, `effective_read_mode` and `last_polled` (UTC)
+when polling is requested or required by the CLU. Failed reads temporarily
+retain the previous value; after two source-CLU intervals without success the
+value becomes unavailable until a read succeeds. A real CLU `nil` response is
+shown as unknown. Other entities show unknown for stale polled fields.
+
+Polling reduces change reports and, when it removes subscription groups, their
+refreshes. It adds a request per batch per interval, so the traffic
+reduction depends on the number of values and their previous update frequency.
+
+## CLU connections and cleanup
+
+Each CLU has one control UDP socket for actions, health pings, `fetchValues` and
+direct attribute reads. Realtime-capable CLUs also have one report listener shared by all groups.
+Registrations specify that listener's local address and port; reports are routed
+by subscription ID. Groups contain up to 30 ordinary keys. Large values stay
+isolated, and duplicate bindings share one source.
+
+One health ping runs every **10 seconds** per CLU. Groups renew every
+**45 seconds**, using fresh request message IDs. Timers follow monotonic
+deadlines, skip missed ticks and avoid catch-up bursts. Slow reads yield between
+batches so renewals can proceed. Controllers run independently, and outgoing
+datagrams retain at least 20 ms spacing per CLU.
+Large reads wait for in-flight requests to finish, then run exclusively on that
+CLU until their reply or timeout. Pings, renewals and actions wait during the
+large read; unsolicited state reports can still arrive.
+
+Group replacement, integration reload/unload, failed startup and Home Assistant
+shutdown send bounded `clientDestroy` requests for owned subscriptions, then
+close local sockets and pending work. Missing acknowledgements cannot prevent
+local cleanup. A hard process kill cannot run this remote cleanup.
+
+Lost sockets are recovered on the next health check or registration refresh.
+Timeouts alone do not recreate sockets or replay actions. Old-generation,
+unknown-ID and malformed reports cannot update entities. Thirty keys is a
+conservative batching budget; arbitrary large strings can still produce large
+replies, so thermostat schedules remain isolated and large reads run exclusively.
+
+Each CLU device has local **Connection**, **Request timeouts** and
+**Realtime subscriptions** diagnostics. They observe existing traffic and add no
+CLU reads or registrations. Last-seen timestamps stay internal for connection
+checks. Timeout counts reset when the integration reloads;
+subscription counts describe local active groups sharing the report listener,
+rather than a firmware-reported remote session count.
+
+A CLU is disconnected after **30 seconds** without a valid reply or report.
+Realtime entities using that CLU become unavailable and recover when communication
+returns. Independently, a realtime source expires after **90 seconds** without a
+successful registration snapshot or pushed value, even if keepalives still work.
+Only entities using affected sources are marked unavailable; multi-source widgets
+check every realtime source. Existing polling freshness rules remain unchanged.
+Diagnostics remain available during outages so their values can explain them.
+Keepalives update those diagnostics directly, without refreshing all normal
+entities unless availability changes.
+
+Object Manager imports use a 30-second HTTP timeout and close their session on
+exit, failure or cancellation. ZIP/JSON parsing runs outside the event loop;
+invalid archives and non-object JSON produce an import data error.
+
+## On/Off Controls as Lights
+
+Open **Grenton → Configure** and select the ON_OFF entity. The dialog has three
+forms, prefilled with the current imported or saved settings:
+
+1. **State**: choose Switch or Light and configure the state source (CLU and
+   object/attribute index, or CLU and variable name).
+2. **Turn on**: configure the action's call type, CLU and target.
+3. **Turn off**: configure its action independently and save all settings.
+
+Both actions support Method, Script, Attribute and Variable. Method/script calls
+have typed argument rows that can be added, removed or reordered; omit trailing
+arguments to use defaults. Attribute/variable actions have an editable value to
+set. State sources support Attribute and Variable. The entity's attributes expose
+the effective state source and both actions, including arguments and call payloads.
+
+Controls are detected as **Light** when their imported name contains `Light`,
+`Światło` or `swiatlo` (case-insensitive), or their icon is `bulb` (Grenton's
+`image` field; `icon` is also accepted). Detection is
+independent for each ON_OFF_DOUBLE channel. A channel icon takes precedence
+over a widget icon; the widget icon is used when the channel has none. Other
+controls default to **Switch**. Saved entity-type choices override detection,
+including an explicit **Switch** choice. Existing controls without a saved type
+are detected on reload.
+
+Saving reloads the integration and creates the selected entity type, preserving
+the Grenton state subscription, ON/OFF actions, and device. Light mode provides
+on/off control without brightness or color controls. The choice persists across
+restarts and interface reconfiguration.
+
+Changing the type changes the entity domain (`switch.…` ↔ `light.…`) and removes
+the previous entity registration. Update dashboards and automations to reference
+the new entity ID. You can change the choice again through the same dialog.
+
+## Dimmer (DIMMER_V2)
+
+`DIMMER_V2` creates a brightness-capable light. Home Assistant brightness (0–255)
+is scaled to the widget's native `min`/`max` range and rounded to `precision`
+decimal places. Zero brightness uses the OFF action; turning on without a
+brightness value uses the separate ON action.
+
+Under **Configure entities**, four forms configure the brightness source and
+range, ON action, OFF action, and brightness action. Sources support Attribute
+and Variable; actions support Attribute, Variable, Method and Script. Settings
+start from the imported interface and persist across reloads and interface
+refreshes. Saving reloads the integration and registers the configured source.
+
+The brightness action uses `$value$` for the scaled level, preserving other
+arguments: `LEDSetValue("livingRoom",$value$)` becomes
+`LEDSetValue("livingRoom",128.0)` at brightness 128 with a 0–255 range and precision 2.
+In the Script/Method argument editor, use **Lua expression** for `$value$` and
+**String** for a fixed room name. Attribute/Variable actions use `$value$` in
+their value field. The entity attributes show `state_source`, `brightness_range`
+and all three actions with their call types, targets, arguments and call templates.
+
+## Thermostat (THERMOSTAT_V2)
+
+`THERMOSTAT_V2` creates one climate entity per widget, showing the current
+temperature and heating/cooling/idle status. **Heat** and optional **Cool** enable
+manual operation (Grenton mode 0), **Auto** enables the weekly schedule (mode 2), and
+**Off** disables the thermostat. The separate turn-on action preserves the current
+Grenton mode. Schedule runs on the CLU, including while Home Assistant is offline.
+
+Cooling defaults to disabled unless the interface supplies both `controlDirection`
+and `setControlDirectionAction` (also accepted as `setControlDirection`). To override
+this, open **Grenton → Configure**, select the thermostat and toggle **Enable cooling**.
+The choice persists across reloads and interface refreshes. Missing direction
+bindings use thermostat attribute **7** on the imported thermostat object.
+**Heat** selects direction 0; **Cool** selects direction 1. **Auto** preserves that
+direction. The popup's **Control direction** field changes heating/cooling
+independently of manual/schedule mode, so an Auto thermostat can switch to cooling
+and remain Auto. By default it keeps the current direction. While following a
+cooling schedule, the climate state is `auto`, `control_direction_name` is
+`cooling`, and `hvac_action` is `cooling` when the output is active (`idle` otherwise).
+The numeric value is also available as `control_direction`. Disabling cooling
+hides Cool without changing the running CLU settings.
+
+Manual target temperatures use 0.5°C increments. Temperature editing is disabled
+in Auto; choose Heat or Cool before changing the target. A temperature action
+cannot leave Auto, including when it also requests a manual mode.
+Setting only a temperature in manual mode preserves the enabled state.
+The widget's minimum and maximum temperature bindings supply the control's bounds.
+Each device also exposes **Minimum temperature** and **Maximum temperature** sensors
+from attributes **10** and **11**, using Home Assistant's preferred temperature unit.
+To change them, open **Grenton → Configure**, select the thermostat and enable
+**Edit temperature limits**. Enter both limits in Celsius, in 0.5°C increments.
+The captured schedule format supports nonnegative targets and a maximum above 1°C.
+Changing the maximum re-encodes the saved week to preserve its temperatures.
+Targets outside the new limits are rejected; edit the schedule in the same popup
+or change the manual target first. Limits and schedules are read back from the CLU
+before success is reported. A failed multi-write save can leave partial changes;
+reopen configuration to inspect the device's current values before retrying.
+Home Assistant converts Celsius temperatures to the installation's preferred unit.
+While Auto hides the editable target control, the effective scheduled target is
+available as the read-only `scheduled_target_temperature_celsius` attribute.
+
+Activity comes from `controlOutValue`: 1 means heating or cooling according to
+direction, and 0 means idle when enabled. Unsupported or missing values remain unknown.
+When enabled, modes 1 and 3 are retained in the `grenton_mode` attribute with an
+unknown HVAC mode and disabled temperature editing. Fan controls are not exposed.
+
+Reconfigure the integration to import the widget if it was added after the last
+interface import, then reload or restart after updating the integration.
+
+### Viewing the saved schedule
+
+Each thermostat has a **Schedule** sensor under **Sensors** on its device page.
+Its state summarizes the current scheduled target and next temperature change,
+for example **22°C until 20:00**. Open it to see whether the schedule is being
+followed, the heating/cooling direction, the next target and change time, and
+readable periods for all seven days. Constant schedules show **20°C all week**.
+Manual mode and Off retain the last read schedule with **Following schedule: No**.
+After a Home Assistant restart, enabled synchronization loads the schedule if
+the thermostat is on in Auto. Otherwise the sensor remains unknown until
+configuration is opened, a schedule is saved, or automatic synchronization resumes.
+
+The sensor shares the thermostat's schedule and recalculates its displayed
+period at each quarter-hour without contacting the CLU itself. When automatic
+synchronization is disabled, it shows the last explicitly fetched snapshot;
+external edits appear after configuration is opened again. It follows Home Assistant's temperature unit,
+language (English/Polish) and time zone; the time zone should match the CLU clock.
+Before valid schedule data arrives, its state is unknown. The climate entity's
+existing ID and the thermostat's device name stay unchanged.
+
+### Weekly schedules
+
+Open **Grenton → Configure**, select the thermostat and enable **Edit weekly schedule**.
+The popup groups days with identical schedules into **1–7 sections**. Each section
+selects Monday–Friday, Saturday–Sunday, every day, or individual days, with
+**1–96 temperature periods** inside it. Every day must belong to exactly one
+section. The time controls accept a one- or two-digit hour (0–23) and only
+minutes `00`, `15`, `30` or `45`. Hour entry keeps focus while typing and adds a
+leading zero when you leave the field. Compact rows share one set of column
+headings per section, with equal-height inputs and more space for time.
+Rows stay in place during editing; saving
+orders them by start time. Periods begin at `00:00`; each lasts until the next
+start time, and the last ends at midnight. **Add period**
+appends 15 minutes after the last start, keeping its temperature and all existing
+periods intact; it is disabled once the last start is `23:45`. Add or remove
+sections directly in the popup. It loads the current CLU schedule;
+saving replaces the complete week without changing power or manual/schedule mode.
+Direction also stays unchanged unless explicitly selected in the popup. Leaving
+schedule editing unchecked still applies selected limit and direction changes and saves the cooling option.
+
+The `weekly_schedule` entity attribute shows the decoded schedule in Celsius.
+Use `grenton.set_thermostat_schedule` to replace the complete week. Each day must
+start at `00:00`, with later changes in increasing order on 15-minute boundaries.
+Each temperature applies until the next change, or midnight for the last period.
+All seven lowercase English weekday names are required. The action preserves the
+current operating mode, power state and schedule metadata. Select Auto to use the
+schedule if the thermostat is currently in manual mode.
+
+Schedule editing reads the configured minimum and maximum from thermostat
+attributes **10** and **11** and accepts **0.5°C** increments within those limits.
+The captured encoding supports nonnegative temperatures. The current schedule
+and limits must have been received from the CLU before an update can be sent.
+Schedule data has **no realtime subscription**. **Automatically sync schedule**
+is enabled by default, including for existing thermostats. It reads the schedule
+at startup and on the source CLU's polling interval only while power is on and
+mode is Auto (2). Manual mode, Off, unknown modes, or disabling the option pause
+background reads. Changing the option applies immediately and is saved per
+thermostat. Opening thermostat configuration loads the
+schedule on demand in any mode. Each large attribute schedule is read with
+`OBJECT:get(9)` on the existing control socket, separate from batches of up to
+30 ordinary values. Direct replies preserve the raw schedule text, including spaces.
+The integration never pushes a cached Home Assistant schedule.
+Outgoing packets are paced across the CLU's sockets to reduce request bursts.
+Newer pushed reports take precedence over an older in-flight read. Failed reads
+retain cached values; an actual CLU `nil` clears them.
+
+Every schedule save first reads fresh data, then makes one immediate readback
+to verify the reported week and limits after writing, including in manual mode
+or Off, and when automatic synchronization is disabled. These explicit reads
+preserve the sync setting and request only the thermostat's schedule, limits and target.
+An acknowledgement alone
+does not count as a confirmed save. Missing or inconsistent data keeps the schedule
+sensor unknown and disables editing; the climate's `schedule_status` attribute
+and logs explain the decoding problem, including the first rejected pair, day/time
+and reported maximum. Unsupported data is not rewritten automatically.
+Timeout logs identify ping, state-read or
+write requests. Repeated ping timeouts indicate missed CLU replies; they do not
+establish a schedule-format problem.
+
+```yaml
+action: grenton.set_thermostat_schedule
+target:
+  entity_id: climate.living_room
+data:
+  schedule:
+    monday: &daily
+      - time: "00:00"
+        temperature: 23
+      - time: "06:00"
+        temperature: 24
+      - time: "15:00"
+        temperature: 25.5
+      - time: "22:00"
+        temperature: 23
+    tuesday: *daily
+    wednesday: *daily
+    thursday: *daily
+    friday: *daily
+    saturday: *daily
+    sunday: *daily
+```
+
+**Schedule encoding:** the [codec](../custom_components/homeassistant_grenton/domain/thermostat_schedule.py)
+is inferred from captures, including maxima of 20, 29, 30, 33 and 600°C; it is not
+a published Grenton specification. A complete string has **1,350 characters**:
+672 two-character slots (96 per day, every 15 minutes, Sunday through Saturday),
+then six metadata characters. Each slot starts at its corresponding quarter-hour.
+
+Slots use this ordered, zero-indexed base-90 alphabet. The space after `Z` is a
+digit and must be preserved, including at the start or end of a string:
+
+```text
+0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ !#$()*+,-./:;<=>?@[]^_`{|}~
+```
+
+For temperature `T` and configured maximum `M` (attribute 11):
+
+```text
+Encode: n = min(floor(T / M * 8100 + 0.5), 8099)
+        pair = alphabet[n // 90] + alphabet[n % 90]
+Decode: n = 90 * index(pair[0]) + index(pair[1])
+        T = floor(n / 8100 * M * 2 + 0.5) / 2
+```
+
+Decoding rounds to **0.5°C**, matching the mobile app. Object Manager can store
+intermediate codes: `+a`, `;M` and `.t` display as **23, 25 and 24°C** in the app,
+although Object Manager shows 23.0, 25.2 and 24.1°C. Both `X~` (a captured default)
+and `Y0` display as 20°C. Such codes are valid even when re-encoding the displayed
+temperature would produce a different pair.
+
+When saving at the same maximum, unchanged slots keep their original pairs;
+only changed targets receive a new encoding. This preserves hidden precision
+without exposing it as editable values. The minimum (attribute 10) constrains
+writes without offsetting the encoding.
+At `M = 600`, `_0` means 560°C, `30` means 20°C and `3r` means 22°C. `00` means
+0°C, not an off command; the maximum encodes as `~~`.
+
+The final metadata pair matches rounded `8100 / M` in captures: `30` is 270 for
+`M = 30`, and `0e` is 14 for `M = 600` (13.5 rounded). Read `M` from attribute 11;
+inverting this rounded factor can give the wrong temperature. The preceding four
+characters (observed as `+00:`) remain unexplained. Ordinary schedule edits
+preserve all six characters. When changing the maximum through the popup, preserve
+the first four and regenerate the final pair as rounded `8100 / M`, together with
+all temperature slots from the displayed half-degree targets. Captures validate the codec; the save path also checks
+readback, but limit changes still need confirmation on physical hardware.
+
+## Roller shutters V3
+
+`ROLLER_SHUTTER_V3` imports as one cover with the widget's stable ID and name.
+Home Assistant uses 0% for closed and 100% for open; the imported
+`reversePosition` binding normalizes reversed device ranges for both feedback
+and position commands. Open/close use the configured position action with the
+appropriate endpoint, while stop uses the imported stop action.
+
+Open **Configure → Configure entities**, select the cover, and choose **Shutter
+settings** or **Opening and closing time calibration**.
+Tilt support is an explicit HA setting, initially inferred from a positive
+`LamelMoveTimeout`. All shutter settings share one dialog. Checking tilt support
+immediately reveals the slat-time field; unchecking it hides that field and saves
+the native slat movement time as **0 ms**. Slat angles of 0–90 degrees map to HA's
+100–0% tilt range.
+
+The settings form reads current values from the CLU and saves only the native
+values which changed, with readback confirmation:
+
+| Setting | Native attribute | Range |
+| --- | --- | --- |
+| Slat movement time (shown when tilt is enabled) | 10 | Positive whole milliseconds, up to 600000 |
+| Reverse position | 13 | Boolean, written as numeric 0/1 |
+| Motor startup compensation | 16 | 0–1000 ms |
+| Full opening time | 14 | 0–600000 ms |
+| Full closing time | 15 | 0–600000 ms |
+
+For native ROL objects, legacy **MaxTime / attribute 9** is read as the fallback
+when a direction's travel time is zero. It is not exposed as an editable setting.
+Only tilt support is stored in HA options; timing and direction remain on the CLU.
+Settings use slow polling; state, position, relay states and bound slat position
+use realtime updates. Missing or invalid positions remain unknown; missing slat
+feedback does not make a shutter without slats unavailable. `grenton_state`
+reports stopped, opening, closing, blocked (3), or calibrating (4), and the cover
+also exposes `up_relay_active` / `down_relay_active` from attributes 3/4.
+
+The calibration wizard prepares direction and timeouts in one dialog. Selecting
+opening or closing shows that direction's movement-time field. Slat support and
+its conditional timeout field appear in the same dialog. **Save and continue**
+commits slat settings before measurement and proceeds directly to positioning;
+unchecking support writes 0 ms to attribute 10.
+Saving these settings never starts the motor.
+The calibration wizard checks the starting end position for the selected direction.
+If necessary, use Open/Close shutter and wait for the module to finish calibration
+and report a stable end position before Continue becomes available. The waiting
+view shows a loader and movement direction. Open/Close remains available even
+at the reported end position, so an uncalibrated position can be corrected first.
+
+During measurement, Finish measurement stops only the millisecond stopwatch.
+The displayed seconds update locally without refreshing the dialog; the saved
+duration comes from the backend clock.
+With slat support enabled, opening measures slat movement first: click when the
+slats finish turning, then when the shutter is fully open. Closing measures travel
+first: click when slat movement starts, then when the slats finish turning.
+Both directions use the same native slat timeout (`LamelMoveTimeout`); saving either
+calibration updates this shared setting. The result shows travel and slat times
+separately, both adjustable in milliseconds before saving. Without slat support,
+the wizard keeps its single-click measurement.
+The original measured total, travel and slat times stay visible as read-only
+reference values at full millisecond precision. Editable summary defaults round
+travel and slat times up to 100 ms; their sum supplies the editable total. Manual
+edits keep their entered precision. The summary also shows the configured opening and closing
+timeouts, plus the slat timeout when enabled, separately from the editable draft.
+Travel labels identify the measured direction. **Keep total time unchanged** links the editable travel and
+slat times by default; uncheck it to adjust them independently and recalculate the
+total. The checkbox choice is remembered while the wizard remains open.
+An additional checkbox, unchecked by default, can preserve the opposite
+direction's total runtime when saving a new slat timeout. It adjusts that
+direction's travel time by `old slat time - new slat time`; a shorter slat time
+therefore increases the opposite travel time. Compensation must remain within
+the supported travel-time range and is confirmed by readback with the other settings.
+The result can be adjusted and saved immediately, even if the module is still
+calibrating. **Save** writes the result directly, including the numeric slat timeout
+to attribute 10, and confirms it by readback; there is no additional save checkbox.
+After saving a slat calibration, optional controls let you test native
+angles from 0° (open) to 90° (closed), then adjust the travel and slat timeouts and
+test again. These controls appear only with slat support enabled. Testing waits
+for any ongoing calibration to finish; Finish closes the wizard immediately.
+Cancel discards the result; it never sends a motor Stop command. Background
+observation waits for state 0 and a stable end position. Temporary timing is
+restored after completion unless a new result has already been saved. No new
+calibration can start while the preceding movement is still active.
+
+Position commands preserve imported script parameters and action templates,
+validate the requested percentage, and report command failures to the caller.
+
+## CLU Controllers and Scripts
+
+Each CLU in the imported configuration is automatically added as a Home
+Assistant device, including CLUs without widgets. Its **Controller**
+sensor identifies the CLU by serial number and exposes `clu_id`, `ip`, and
+`port`. Each CLU has its own entity, so installations with multiple CLUs can
+select the controller on which to run a script. Refresh the interface through
+**Reconfigure** when CLUs are added or removed.
+
+For `N` realtime groups, nominal traffic is **6 health pings** and
+`60 × N / 45` registrations per minute,
+before user actions, readbacks, retries and CLU responses/change reports.
+Slow reads reuse the control socket and add approximately
+`(ceil(S / 30) + L) × 60 / T` requests per minute for `S` ordinary polled
+values and `L` periodically polled large values at an interval of `T` seconds.
+Here `L` includes thermostat schedules only while their automatic synchronization
+is enabled and they are on in Auto mode.
+See **Temperature Reads and Polling** above for configuration.
+
+See **CLU connections and cleanup** above for socket ownership and remote
+subscription removal.
+A ping timeout alone does not prove a reboot; a drop in the CLU Uptime sensor does
+provide evidence of a restart. Neither identifies its cause.
+
+### Restart detection and debug capture
+
+The integration keeps the last successful uptime per CLU in memory. Failed,
+missing or invalid readings do not replace it. A fresh decrease emits a warning;
+repeated equal/increasing samples do not emit another warning for that boot.
+Both slow polls and explicitly configured realtime reports use the same observer.
+
+After HA starts or the integration reloads, the first reading establishes a new
+baseline. A first uptime within the configured slow-poll interval plus **5
+seconds** also emits a **recent restart** warning. A higher first reading is
+silent. This avoids persistent baseline storage; a restart during a long HA
+outage can be missed once uptime exceeds that startup window.
+
+Each supported CLU has a **Last restart** timestamp sensor, estimated from the
+first uptime sample and updated when a new reset is detected. It represents the
+approximate boot time, not the cause or the exact time HA noticed it. Its
+attributes include detection time, old/new uptime and debug-capture outcome.
+An initial old uptime still provides an estimated boot timestamp without a warning.
+
+The separate **Diagnostic file capture** configuration switch defaults to off. Its
+preference persists per CLU; the uptime baseline does not. When enabled at the
+time a restart is detected, the integration tries to download `a:\debug.bin` in
+the background, with **two attempts maximum** and a five-second pause after the
+first failure. Success stops
+the retry. Empty files and transfer errors count as unsuccessful attempts; after
+both fail, one warning explains that no debug file could be captured. A regular
+restart or disabled native debugging may leave no file available.
+
+Diagnostic file capture never reads or changes Telnet log level, opens Telnet, or enables
+the independent **Debug mode** switch. Normal CLU polling continues during
+downloads. Disabling capture, detecting a newer restart on that CLU, or unloading
+the integration cancels the superseded work.
+The existing transfer deadlines and 4 MiB size limit bound each attempt.
+
+Successful nonempty dumps are saved atomically under
+`<HA config>/grenton/debug/<entry>/<controller>/` (directory IDs are hashed),
+keeping the five newest dumps per controller. Failed or empty downloads do not
+evict previous dumps. The sensor's `debug_capture_file` attribute gives the
+config-relative filename. Files are not placed in the public `www` directory.
+Capture status/error metadata remains available on the Last restart sensor even
+when no binary file can be retrieved. A reboot warning is independent of whether
+capture is enabled or succeeds.
+
+### Debug log capture in Home Assistant
+
+The **Debug log capture** configuration switch (Polish: **Przechwytywanie logów debugowania**) opens
+a native log stream for that CLU. It defaults to off and is not restored after
+HA restart or integration reload. Turning it on first sets native verbosity to
+**DEBUG** and confirms the model-specific log-level attribute, then connects to
+TCP port 23 using the same Telnet negotiation and CRLF keepalives as the CLI.
+The switch becomes on only after the CLU accepts the session.
+
+Only one Telnet client can use a CLU at a time. Stop the Object Manager or CLI
+listener before enabling this switch. A refused, reset, silent or prematurely
+closed connection fails the switch action with an error and a warning; the
+switch remains off. There are no automatic connection retries. If an established
+stream disconnects, the switch turns off and a warning explains how to reconnect.
+
+Received lines use the dedicated logger
+`custom_components.homeassistant_grenton.clu_logs`. Each record identifies the
+CLU by name and ID and preserves the native timestamp and severity. Untagged
+lines use INFO. All native levels, including DEBUG, are enabled on this logger
+while at least one stream is active; its previous level is restored after the
+last stream stops. An explicit Home Assistant `logger:` override takes
+precedence; set this logger to `debug` there if you already override its level.
+Other integration loggers keep their configured levels.
+Look in **Settings → System → Logs → Show full logs** or the HA log output;
+the condensed error view contains warnings/errors rather than every DEBUG line.
+Log retention follows Home Assistant's logging configuration.
+
+Turning the switch off or unloading the integration closes the socket and stops
+its keepalive task, releasing the single Telnet slot. Native verbosity remains
+at the last setting, including when a connection attempt fails after DEBUG was
+enabled; use **Debug mode** to turn it off. **Diagnostic file capture**
+remains independent. Partial lines and fragmented UTF-8 are handled across TCP
+reads, with bounded line buffers for malformed or unterminated output.
+
+The CLU type is detected from its serial number: `221…` is `CLU_Z_WAVE`,
+and `521…` is `CLU_GATE_HTTP`. The detected type is shown as the device model.
+Built-in values use indexed attributes on the CLU object ID imported from the
+interface, for example `CLU900001.0` for Uptime. The object ID can differ from
+`CLU` followed by the serial number; serial numbers are used only to detect
+the device type.
+
+| Entity | Index | Domain | Availability / purpose |
+| --- | --- | --- | --- |
+| Uptime | 0 | `sensor` | Both types; read-only running time in seconds (`duration`). |
+| Cloud connection | 19 | `binary_sensor` | Both types; read-only Connected / Disconnected status (`connectivity`). |
+| Use cloud | 18 | `switch` | Both types; enable or disable the CLU cloud connector. |
+| Firmware version | 17 | `sensor` | Both types; read-only software version, also shown in the device's firmware metadata. |
+| Bus voltage | 27 | `sensor` | CLU_Z_WAVE only; read-only voltage in V, with measurement statistics. |
+| State | 2 | `sensor` | CLU_Z_WAVE only; native state such as System OK, Emergency or Critical error. |
+| Log level | 31 / 23 | `sensor` | CLU_Z_WAVE / CLU_GATE_HTTP; OFF, ERROR, WARNING, INFO or DEBUG. |
+| Last restart reason | 26 | `sensor` | CLU_GATE_HTTP only; Power on, External reset, Configuration reload or System exception. |
+| Debug mode | 31 / 23 | `switch` | CLU_Z_WAVE / CLU_GATE_HTTP; enable DEBUG (4), or disable native logging with OFF (0). |
+| Debug log capture | — | `switch` | Both types; enable DEBUG verbosity and forward the TCP/23 stream to the dedicated HA logger. |
+
+Read-only values appear under **Diagnostic**; Use cloud, Debug mode and
+Debug log capture appear under **Configuration**. They share the existing CLU device.
+Native attributes use each CLU's
+configured slow-poll interval (60 seconds by default), without adding realtime
+subscriptions. Values remain unknown until confirmed and expire after two missed
+poll intervals. Existing explicit realtime consumers retain their configured
+precedence for a shared attribute.
+
+Use cloud writes a boolean to attribute 18 and reads the CLU state back. Debug
+logging writes a numeric level to the type-specific attribute and reads just
+that attribute back, updating both the switch and the log-level sensor. The
+switch is on only for DEBUG; ERROR, WARNING and INFO remain visible on the level
+sensor while the switch is off. Enabling it does not open a Telnet connection.
+To listen to native logs, enable **Debug log capture** or use the CLI `debug-logs`
+command after stopping Object Manager's log listener; each CLU supports only one
+Telnet session.
+
+State, level and reset-reason sensors include `raw_value`; unrecognized codes
+remain unknown instead of receiving an invented label. Internal log (attribute 1
+on CLU_Z_WAVE) is currently available through the CLI only; Home Assistant does
+not poll it. Use the CLI's `fetch-values` or `watch-attribute` to inspect it.
+For example, from `examples/cli`:
+
+```bash
+python3 main.py watch-attribute --clu CLU_Z_WAVE_1 \
+  --attribute CLU828599.0 --attribute CLU828599.1 --output json
+```
+
+This watches uptime and internal-log changes through subscriptions; it is
+separate from Home Assistant's slow polling. Use the imported CLU object ID
+from your configuration. More examples are in [the CLI README](../examples/cli/README.md).
+
+Unrecognized serial prefixes still get a Controller entity for script calls;
+only supported types get built-in attribute entities.
+
+The constants in `domain/device_types.py` define `index: attribute name` maps
+for each known device type and the CLU serial prefixes. Extend these maps when
+adding types; the entity bindings use the mapped indexes and skip unsupported
+attributes.
+
+Open **Grenton → Configure → Configure CLU**, select a controller, then choose
+**Variables**. Choose **Add variable**, enter its Grenton variable name and
+optional display name, and select its Grenton type and read mode:
+
+- **Boolean** creates a switch that writes `true` / `false` and reads the CLU
+  state back after a change.
+- **String**, **Integer**, and **Float** create sensors with the same device
+  class and unit settings as VALUE_V2. Select **None** for a plain value sensor.
+
+Each variable supports **Realtime** or **Polling**. Polling uses the selected
+CLU's interval and `fetchValues`; HTTP Gate always uses polling. Existing
+variables retain realtime reads unless configured otherwise.
+
+For a variable containing Unix seconds, choose **Timestamp** to display the date
+and time, or **Date** to display its calendar date in Home Assistant's configured
+time zone. These classes have no measurement state class or unit. **Uptime**
+(**Czas pracy** in Polish) expects Unix seconds for the last boot time; the
+built-in CLU Uptime entity still reports elapsed seconds as a duration.
+
+The same dialog lets you edit or remove a configured variable. These are
+existing Grenton variables selected for exposure in Home Assistant; adding or
+removing an entity does not create or delete a variable on the CLU. Their
+configuration is retained when the interface is refreshed. Renaming a variable
+keeps its Home Assistant identity; changing between Boolean and a sensor type
+changes its entity domain, so update references to its entity ID as needed.
+Custom variable entities also appear in the integration's **Configure entity**
+list. Configuration changes reload the integration.
+
+Use **Developer Tools → Actions → Grenton: Run script** (`grenton.run_script`)
+to select a CLU controller entity or device, enter its script name, and add
+optional typed argument rows. This calls the script directly on the CLU;
+no scene widget or saved button is required. Enter the script name as defined
+on that CLU.
+
+For example, replace the entity ID below with your CLU's Controller sensor:
+
+```yaml
+action: grenton.run_script
+target:
+  entity_id: sensor.main_clu_controller
+data:
+  script: Evening
+  arguments:
+    - type: string
+      value: "living_room"
+    - type: float
+      value: 0.75
+    - type: boolean
+      value: true
+```
+
+This sends `Evening("living_room", 0.75, true)` to the selected CLU. Arguments
+are positional and support `string`, `number`, `float`, `boolean`, `nil`, and
+`lua`. Strings are quoted and escaped automatically. Omit trailing arguments
+to use defaults implemented by the Grenton script. Omit `arguments`, or pass
+`arguments: []`, to call with no arguments.
+
+Automation and Home Assistant script templates can supply both the script name
+and argument values at run time:
+
+```yaml
+action: grenton.run_script
+target:
+  entity_id: sensor.main_clu_controller
+data:
+  script: SetOutput
+  arguments:
+    - type: number
+      value: "{{ states('input_number.output_value') | int }}"
+```
+
+Scene buttons run their saved action when pressed.
+
+The upstream **Grenton: Run scene** action (`grenton.run_scene`) remains available
+for existing automations targeting a SCENE button. Its optional `parameter` is
+raw Lua passed into the script call for that invocation only:
+
+```yaml
+action: grenton.run_scene
+target:
+  entity_id: button.evening
+data:
+  parameter: '"lightOffice", -1'
+```
+
+Omit `parameter` to use the scene's saved arguments/value. Set `parameter: ""`
+to call the script without arguments. Runtime overrides do not change the scene
+configuration. Use `grenton.run_script` to call a named script directly on a CLU
+with typed arguments.
+
+## Scene Actions and Arguments
+
+Select a scene button in **Grenton → Configure** to view its current settings.
+Changing the call type updates the fields immediately in the same form:
+
+- **Script**: CLU, script name, and optional arguments.
+- **Method**: CLU, object name, method index, and optional arguments.
+- **Attribute**: CLU, object name, and attribute index.
+- **Variable**: CLU and variable name (text).
+
+Saving applies changes immediately and preserves them across reloads and
+interface refreshes. These settings override the scene in Home Assistant only.
+
+For script and method calls, use **Add argument** to add individual input rows.
+Each row has a type picker: **String**, **Number**, **Float**, **Boolean**, **Nil**, or
+**Lua expression**. String arguments are quoted and escaped automatically;
+numbers and booleans keep their types. Edit a row directly, remove it, or use
+the up/down controls to change the order. Omit trailing arguments to let the
+script/method use its defaults; remove every row to call without arguments.
+Imported script and method arguments appear as separate rows when they can be
+safely split, with types inferred from Lua literals. For example, `800,0` becomes
+two Number arguments, while `"800,0"` remains one String argument. Complex Lua
+is preserved as an expression. Attribute/variable calls retain their existing
+value while their target is configured.
+
+Open the scene button's entity details and expand **Attributes** to see
+`call_type`, `clu_id`, `object_name`, `event`, `index` (for methods/attributes),
+`variable_name` (for variables), `value`,
+`arguments` (including each argument's type and value for scripts/methods),
+and `call`, the exact configured call payload. These are also available in
+**Developer Tools → States**.
+
+After updating the integration, restart Home Assistant and refresh the browser
+to load the scene editor.

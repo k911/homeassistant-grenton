@@ -235,17 +235,215 @@
           "slow_read_interval": "Interwał odpytywania (sekundy)",
           "subscription_id": "Początkowy identyfikator subskrypcji"
         }
+      },
+      "shutter": {
+        "title": "Konfiguracja rolety/żaluzji",
+        "description": "{entity_name}",
+        "menu_options": {
+          "configure_entity": "Ustawienia rolety/żaluzji",
+          "shutter_calibration": "Kalibracja czasu otwierania i zamykania"
+        }
+      },
+      "configure_shutter_settings": {
+        "title": "Ustawienia rolety/żaluzji",
+        "description": "",
+        "data": {
+          "lamel_move_timeout": "Czas ruchu lameli (ms)",
+          "reverse_position": "Odwróć zakres pozycji urządzenia",
+          "mechanical_offset": "Czas kompensacji rozruchu napędu (ms)",
+          "blinds_up_max_time": "Czas ruchu rolety w górę (ms)",
+          "blinds_down_max_time": "Czas ruchu rolety w dół (ms)",
+          "tilt_enabled": "Obsługa sterowania lamelami"
+        }
+      },
+      "shutter_calibration": {
+        "title": "Przygotuj kalibrację",
+        "description": "",
+        "data": {
+          "direction": "Kierunek",
+          "tilt_enabled": "Obsługa sterowania lamelami",
+          "lamel_move_timeout": "Czas ruchu lameli (ms)",
+          "limit_up_ms": "Czas ruchu rolety w górę",
+          "limit_down_ms": "Czas ruchu rolety w dół"
+        },
+        "submit": "Zapisz i kontynuuj"
+      },
+      "shutter_ready": {
+        "title": "Pomiar",
+        "description": "Zakończ pomiar, gdy roleta osiągnie koniec przejazdu i silnik ucichnie.",
+        "menu_options": {
+          "shutter_start_measurement": "Rozpocznij pomiar",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_measurement": {
+        "title": "Pomiar",
+        "description": "",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Zakończ pomiar"
+      },
+      "shutter_review": {
+        "title": "Wynik pomiaru",
+        "description": "Zmierzony czas: {measured_ms} ms.\n\nObecne ustawienia:\n- Czas ruchu rolety w górę: {configured_up_ms} ms\n- Czas ruchu rolety w dół: {configured_down_ms} ms",
+        "data": {
+          "total_ms": "Zmierzony czas"
+        },
+        "submit": "Zapisz"
+      },
+      "shutter_error": {
+        "title": "Błąd polecenia napędu",
+        "description": "Nie udało się potwierdzić stanu rolety.",
+        "menu_options": {
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_wait": {
+        "title": "Trwa ruch rolety",
+        "description": ""
+      },
+      "shutter_check_position": {
+        "title": "Pozycja początkowa"
+      },
+      "shutter_position_closed": {
+        "title": "Pozycja początkowa",
+        "description": "Roleta powinna być już całkowicie zamknięta. Jeśli nie jest, wybierz „Zamknij roletę”.",
+        "menu_options": {
+          "shutter_position_up": "Otwórz roletę",
+          "shutter_position_down": "Zamknij roletę",
+          "shutter_edge_ready": "Dalej",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_position_open": {
+        "title": "Pozycja początkowa",
+        "description": "Roleta powinna być już całkowicie otwarta. Jeśli nie jest, wybierz „Otwórz roletę”.",
+        "menu_options": {
+          "shutter_position_up": "Otwórz roletę",
+          "shutter_position_down": "Zamknij roletę",
+          "shutter_edge_ready": "Dalej",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_position_close_required": {
+        "title": "Pozycja początkowa",
+        "description": "Przed rozpoczęciem pomiaru roleta musi być całkowicie zamknięta.",
+        "menu_options": {
+          "shutter_position_up": "Otwórz roletę",
+          "shutter_position_down": "Zamknij roletę",
+          "shutter_edge_ready": "Dalej",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_position_open_required": {
+        "title": "Pozycja początkowa",
+        "description": "Przed rozpoczęciem pomiaru roleta musi być całkowicie otwarta.",
+        "menu_options": {
+          "shutter_position_up": "Otwórz roletę",
+          "shutter_position_down": "Zamknij roletę",
+          "shutter_edge_ready": "Dalej",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_ready_tilt": {
+        "title": "Pomiar czasu rolety i lameli",
+        "description": "Kliknij, gdy roleta osiągnie koniec przejazdu i lamele zaczną się obracać. Kliknij ponownie, gdy lamele zakończą ruch.",
+        "menu_options": {
+          "shutter_start_measurement": "Rozpocznij pomiar",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_measurement_tilt_start": {
+        "title": "Pomiar czasu przejazdu",
+        "description": "Kliknij, gdy lamele zaczną się obracać.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Lamele zaczęły ruch"
+      },
+      "shutter_measurement_tilt_end": {
+        "title": "Pomiar czasu lameli",
+        "description": "Zakończ pomiar, gdy lamele zakończą ruch.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Lamele zakończyły ruch"
+      },
+      "shutter_tilt_review": {
+        "title": "Wynik kalibracji",
+        "description": "",
+        "data": {
+          "timings": ""
+        },
+        "submit": "Zapisz"
+      },
+      "shutter_calibrated": {
+        "title": "Kalibracja zapisana",
+        "menu_options": {
+          "shutter_tilt_test": "Przetestuj pozycję lameli",
+          "shutter_tilt_adjust": "Dostosuj czasy ruchu",
+          "shutter_done": "Zakończ"
+        }
+      },
+      "shutter_tilt_test": {
+        "title": "Test pozycji lameli",
+        "description": "0° — otwarte, 90° — zamknięte.",
+        "data": {
+          "lamel_position": "Pozycja lameli"
+        },
+        "submit": "Ustaw pozycję"
+      },
+      "shutter_tilt_adjust": {
+        "title": "Czasy ruchu",
+        "data": {
+          "timings": ""
+        },
+        "submit": "Zapisz"
+      },
+      "shutter_ready_tilt_up": {
+        "title": "Pomiar czasu lameli i otwierania",
+        "description": "Kliknij, gdy lamele zakończą obrót, a następnie gdy roleta całkowicie się otworzy.",
+        "menu_options": {
+          "shutter_start_measurement": "Rozpocznij pomiar",
+          "shutter_cancel": "Anuluj"
+        }
+      },
+      "shutter_measurement_opening_tilt": {
+        "title": "Pomiar czasu lameli",
+        "description": "Kliknij, gdy lamele zakończą obrót.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Lamele zakończyły ruch"
+      },
+      "shutter_measurement_opening_travel": {
+        "title": "Pomiar czasu otwierania",
+        "description": "Zakończ pomiar, gdy roleta całkowicie się otworzy i silnik ucichnie.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Roleta jest otwarta"
       }
     },
     "abort": {
       "no_configurable_entities": "Nie znaleziono konfigurowalnych encji.",
       "entity_not_found": "Wybrana encja nie została znaleziona.",
-      "entity_not_configurable": "Ta encja nie może być skonfigurowana."
+      "entity_not_configurable": "Ta encja nie może być skonfigurowana.",
+      "calibration_unavailable": "Kalibracja jest niedostępna.",
+      "calibration_expired": "Pomiar jest niedostępny.",
+      "calibration_cancelled": "Pomiar anulowany."
     },
     "error": {
       "invalid_configuration": "Wybierz poprawne opcje i wprowadź poprawne wartości.",
-      "cannot_apply_configuration": "Nie udało się zapisać konfiguracji w CLU. Sprawdź połączenie i aktualne limity temperatur, a następnie spróbuj ponownie.",
-      "cannot_read_configuration": "Nie udało się odczytać aktualnych ustawień z CLU. Sprawdź połączenie i otwórz konfigurację ponownie."
+      "cannot_apply_configuration": "Nie udało się zapisać ustawień. Sprawdź połączenie i wprowadzone wartości.",
+      "cannot_read_configuration": "Nie udało się odczytać aktualnych ustawień z CLU. Sprawdź połączenie i otwórz konfigurację ponownie.",
+      "cannot_test_tilt": "Nie udało się ustawić pozycji lameli. Poczekaj na zakończenie ruchu i spróbuj ponownie."
+    },
+    "progress": {
+      "shutter_up": "↑ Otwieranie",
+      "shutter_down": "↓ Zamykanie",
+      "shutter_check_position": "Sprawdzanie pozycji…"
     }
   },
   "services": {
@@ -351,11 +549,65 @@
       "clu_uptime": {
         "name": "Czas pracy"
       },
+      "clu_last_restart": {
+        "name": "Ostatni restart"
+      },
       "clu_bus_voltage": {
         "name": "Napięcie magistrali"
       },
       "clu_firmware_version": {
         "name": "Wersja oprogramowania"
+      },
+      "clu_state": {
+        "name": "Stan",
+        "state": {
+          "system_starting": "Uruchamianie systemu",
+          "system_ok": "System OK",
+          "telnet_logging": "Logowanie (telnet)",
+          "emergency": "Tryb awaryjny",
+          "critical_error": "Błąd krytyczny",
+          "monitor": "Tryb monitorowania",
+          "module_not_responding": "Moduł nie odpowiada",
+          "zwave_inclusion": "Dodawanie węzła Z-Wave",
+          "zwave_exclusion": "Usuwanie węzła Z-Wave",
+          "zwave_busy": "Operacja Z-Wave w toku",
+          "zwave_error": "Błąd operacji Z-Wave",
+          "zwave_success": "Operacja Z-Wave zakończona"
+        },
+        "state_attributes": {
+          "raw_value": {
+            "name": "Wartość surowa"
+          }
+        }
+      },
+      "clu_telnet_log_level": {
+        "name": "Poziom logowania",
+        "state": {
+          "off": "OFF",
+          "error": "ERROR",
+          "warning": "WARNING",
+          "info": "INFO",
+          "debug": "DEBUG"
+        },
+        "state_attributes": {
+          "raw_value": {
+            "name": "Wartość surowa"
+          }
+        }
+      },
+      "clu_reset_reason": {
+        "name": "Przyczyna ostatniego restartu",
+        "state": {
+          "power_on": "Włączenie zasilania",
+          "external_reset": "Reset zewnętrzny",
+          "configuration_reload": "Przeładowanie konfiguracji",
+          "system_exception": "Wyjątek systemowy"
+        },
+        "state_attributes": {
+          "raw_value": {
+            "name": "Wartość surowa"
+          }
+        }
       },
       "thermostat_schedule": {
         "name": "Harmonogram",
@@ -418,8 +670,22 @@
       }
     },
     "switch": {
+      "clu_telnet_logging": {
+        "name": "Przechwytywanie logów debugowania"
+      },
+      "clu_debug_capture": {
+        "name": "Przechwytywanie plików diagnostycznych"
+      },
+      "clu_debug_logging": {
+        "name": "Tryb debugowania"
+      },
       "clu_use_cloud": {
         "name": "Używaj chmury"
+      }
+    },
+    "cover": {
+      "roller_shutter": {
+        "name": "Roleta"
       }
     }
   },
@@ -496,6 +762,7 @@
         "door": "Drzwi",
         "garage_door": "Brama garażowa",
         "gas": "Gaz",
+        "glass_break": "Stłuczenie szkła",
         "heat": "Ciepło",
         "light": "Światło",
         "lock": "Zamek",
@@ -503,7 +770,7 @@
         "motion": "Ruch",
         "moving": "Poruszający się",
         "occupancy": "Zajętość",
-        "opening": "Otwierający się",
+        "opening": "Otwieranie",
         "plug": "Wtyczka",
         "power": "Zasilanie",
         "presence": "Obecność",
@@ -825,10 +1092,47 @@
         "light": "Światła",
         "button": "Przyciski",
         "number": "Liczby",
-        "cover": "Osłony",
+        "cover": "Rolety/Żaluzje",
         "camera": "Kamery",
         "climate": "Termostaty"
       }
+    },
+    "shutter_directions": {
+      "options": {
+        "up": "Otwieranie (w górę)",
+        "down": "Zamykanie (w dół)"
+      }
+    },
+    "shutter_measurement": {
+      "elapsed": "Czas pomiaru",
+      "cancel": "Anuluj",
+      "slat_elapsed": "Ruch lameli",
+      "travel_elapsed": "Przejazd rolety",
+      "travel_elapsed_up": "Przejazd rolety w górę",
+      "travel_elapsed_down": "Przejazd rolety w dół"
+    },
+    "shutter_timings": {
+      "measured": "Zmierzone czasy",
+      "total_ms": "Łączny czas ruchu (ms)",
+      "travel_ms": "Czas przejazdu rolety (ms)",
+      "lamel_move_timeout": "Czas ruchu lameli (ms)",
+      "hint": "Zaznaczenie wiąże czasy przejazdu i lameli. Odznacz, aby zmieniać je niezależnie. Czas lameli jest wspólny dla obu kierunków.",
+      "keep_total": "Zachowaj łączny czas",
+      "measured_total": "Łącznie",
+      "measured_lamel": "Ruch lameli",
+      "measured_travel": "Przejazd rolety",
+      "configured": "Obecne ustawienia",
+      "configured_up": "Czas ruchu rolety w górę",
+      "configured_down": "Czas ruchu rolety w dół",
+      "configured_lamel": "Czas ruchu lameli",
+      "measured_travel_up": "Przejazd rolety w górę",
+      "measured_travel_down": "Przejazd rolety w dół",
+      "travel_up_ms": "Czas przejazdu rolety w górę (ms)",
+      "travel_down_ms": "Czas przejazdu rolety w dół (ms)",
+      "adapt_opposite": "Dostosuj czas ruchu w przeciwnym kierunku",
+      "adapt_opening": "Dostosuj czas ruchu rolety w górę",
+      "adapt_closing": "Dostosuj czas ruchu rolety w dół",
+      "adapt_hint": "Zachowuje łączny czas ruchu w przeciwnym kierunku po zmianie czasu lameli."
     }
   }
 }

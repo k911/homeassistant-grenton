@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 import threading
+import traceback
 import zipfile
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -44,7 +45,9 @@ def corrupted_compressed_zip():
 
 def http_session(status=200, data=b""):
     response = AsyncMock(status=status)
-    response.read.return_value = data
+    chunks = AsyncMock()
+    chunks.__aiter__.return_value = [data]
+    response.content.iter_chunked = Mock(return_value=chunks)
     context = AsyncMock()
     context.__aenter__.return_value = response
     session = Mock(closed=False, close=AsyncMock())
@@ -78,7 +81,7 @@ def test_context_closes_session_and_import_parses_outside_event_loop():
                 session.get.assert_called_once_with(
                     "http://192.0.2.1:9998/api/v1/interface/hash/1234"
                 )
-                response.read.assert_awaited_once()
+                response.content.iter_chunked.assert_called_once_with(64 * 1024)
             session.close.assert_awaited_once()
             assert api.session is None
             with pytest.raises(RuntimeError, match="context manager"):
@@ -102,6 +105,7 @@ def test_request_failures_become_connection_errors_and_close_session(failure):
             async with api:
                 await api.fetch_mobile_interface("1234")
         assert "PIN" not in str(caught.value)
+        assert "PIN" not in ''.join(traceback.format_exception(caught.value))
         assert api.session is None
         session.close.assert_awaited_once()
 
@@ -118,7 +122,7 @@ def test_http_failures_keep_error_type_and_do_not_parse_body(status, error):
         with patch("aiohttp.ClientSession", return_value=session), pytest.raises(error):
             async with GrentonObjectManagerApi("http://192.0.2.1:9998") as api:
                 await api.fetch_mobile_interface("1234")
-        response.read.assert_not_awaited()
+        response.content.iter_chunked.assert_not_called()
         session.close.assert_awaited_once()
 
     asyncio.run(run())
@@ -129,11 +133,12 @@ def test_cancelled_import_closes_session_and_nested_context_cannot_leak_it():
         session, response = http_session()
         started = asyncio.Event()
 
-        async def read():
+        async def chunks():
             started.set()
             await asyncio.Future()
+            yield b""  # Make the suspended response an asynchronous iterator.
 
-        response.read.side_effect = read
+        response.content.iter_chunked.side_effect = lambda _: chunks()
         api = GrentonObjectManagerApi("http://192.0.2.1:9998")
 
         async def fetch():
@@ -171,3 +176,29 @@ def test_invalid_archives_and_non_object_json_raise_data_errors(raw):
     api = GrentonObjectManagerApi("http://192.0.2.1:9998")
     with pytest.raises(GrentonObjectManagerDataError):
         api._parse_interface_zip(raw)
+
+
+def test_download_limit_applies_to_streamed_body_and_closes_session():
+    async def run():
+        session, response = http_session()
+        response.content.iter_chunked.return_value.__aiter__.return_value = [b"1234", b"5678"]
+        with (
+            patch("aiohttp.ClientSession", return_value=session),
+            patch('custom_components.homeassistant_grenton.domain.api.object_manager.MAX_INTERFACE_ZIP_BYTES', 7),
+            pytest.raises(GrentonObjectManagerDataError, match="download exceeds"),
+        ):
+            async with GrentonObjectManagerApi("http://192.0.2.1:9998") as api:
+                await api.fetch_mobile_interface("1234")
+        session.close.assert_awaited_once()
+    asyncio.run(run())
+
+
+def test_compressed_json_limit_is_checked_before_decompression():
+    raw = interface_zip(json.dumps({'name': 'a' * 4096}), compression=zipfile.ZIP_DEFLATED)
+    with (
+        patch('custom_components.homeassistant_grenton.domain.api.object_manager.MAX_INTERFACE_JSON_BYTES', 100),
+        patch.object(zipfile.ZipFile, 'open') as open_member,
+        pytest.raises(GrentonObjectManagerDataError, match="JSON exceeds"),
+    ):
+        GrentonObjectManagerApi("http://192.0.2.1:9998")._parse_interface_zip(raw)
+    open_member.assert_not_called()

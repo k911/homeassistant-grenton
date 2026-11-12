@@ -250,6 +250,7 @@ def test_options_flow_validates_type_persists_it_and_schedules_reload(tmp_path):
         entry.runtime_data = SimpleNamespace(devices=[device])
         hass = HomeAssistant(str(tmp_path))
         hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
             async_get_known_entry=Mock(return_value=entry),
             async_update_entry=Mock(return_value=True),
             async_schedule_reload=Mock(),
@@ -327,7 +328,10 @@ def test_native_ha_domain_change_cleans_old_registration_and_keeps_device(
             discovery_keys=MappingProxyType({}),
             subentries_data=None,
         )
-        hass.config_entries = SimpleNamespace(async_get_entry=lambda entry_id: entry)
+        hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
+            async_get_entry=lambda entry_id: entry,
+        )
         dr.async_setup(hass)
         await asyncio.gather(
             dr.async_load(hass, load_empty=True), er.async_load(hass, load_empty=True)

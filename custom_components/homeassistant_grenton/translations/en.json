@@ -235,17 +235,215 @@
           "slow_read_interval": "Polling interval (seconds)",
           "subscription_id": "Initial subscription ID"
         }
+      },
+      "shutter": {
+        "title": "Configure shutter",
+        "description": "{entity_name}",
+        "menu_options": {
+          "configure_entity": "Shutter settings",
+          "shutter_calibration": "Opening and closing time calibration"
+        }
+      },
+      "configure_shutter_settings": {
+        "title": "Shutter settings",
+        "description": "",
+        "data": {
+          "lamel_move_timeout": "Slat movement time (ms)",
+          "reverse_position": "Reverse native position range",
+          "mechanical_offset": "Motor startup compensation time (ms)",
+          "blinds_up_max_time": "Full opening time (ms)",
+          "blinds_down_max_time": "Full closing time (ms)",
+          "tilt_enabled": "Supports slat control"
+        }
+      },
+      "shutter_calibration": {
+        "title": "Prepare calibration",
+        "description": "",
+        "data": {
+          "direction": "Direction",
+          "tilt_enabled": "Supports slat control",
+          "lamel_move_timeout": "Slat movement time (ms)",
+          "limit_up_ms": "Opening movement time",
+          "limit_down_ms": "Closing movement time"
+        },
+        "submit": "Save and continue"
+      },
+      "shutter_ready": {
+        "title": "Measurement",
+        "description": "Finish the measurement when the shutter reaches the end and the motor goes quiet.",
+        "menu_options": {
+          "shutter_start_measurement": "Start measurement",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_measurement": {
+        "title": "Measurement",
+        "description": "",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Finish measurement"
+      },
+      "shutter_review": {
+        "title": "Measurement result",
+        "description": "Measured time: {measured_ms} ms.\n\nCurrent settings:\n- Opening travel time: {configured_up_ms} ms\n- Closing travel time: {configured_down_ms} ms",
+        "data": {
+          "total_ms": "Measured time"
+        },
+        "submit": "Save"
+      },
+      "shutter_error": {
+        "title": "Motor operation failed",
+        "description": "Could not confirm the shutter state.",
+        "menu_options": {
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_wait": {
+        "title": "Shutter moving",
+        "description": ""
+      },
+      "shutter_check_position": {
+        "title": "Starting position"
+      },
+      "shutter_position_closed": {
+        "title": "Starting position",
+        "description": "The shutter should now be fully closed. If it is not, choose Close shutter.",
+        "menu_options": {
+          "shutter_position_up": "Open shutter",
+          "shutter_position_down": "Close shutter",
+          "shutter_edge_ready": "Continue",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_position_open": {
+        "title": "Starting position",
+        "description": "The shutter should now be fully open. If it is not, choose Open shutter.",
+        "menu_options": {
+          "shutter_position_up": "Open shutter",
+          "shutter_position_down": "Close shutter",
+          "shutter_edge_ready": "Continue",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_position_close_required": {
+        "title": "Starting position",
+        "description": "The shutter must be fully closed before starting the measurement.",
+        "menu_options": {
+          "shutter_position_up": "Open shutter",
+          "shutter_position_down": "Close shutter",
+          "shutter_edge_ready": "Continue",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_position_open_required": {
+        "title": "Starting position",
+        "description": "The shutter must be fully open before starting the measurement.",
+        "menu_options": {
+          "shutter_position_up": "Open shutter",
+          "shutter_position_down": "Close shutter",
+          "shutter_edge_ready": "Continue",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_ready_tilt": {
+        "title": "Shutter and slat measurement",
+        "description": "Click when the shutter reaches the end of its travel and the slats start turning. Click again when the slats finish moving.",
+        "menu_options": {
+          "shutter_start_measurement": "Start measurement",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_measurement_tilt_start": {
+        "title": "Measuring travel time",
+        "description": "Click when the slats start turning.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Slats started moving"
+      },
+      "shutter_measurement_tilt_end": {
+        "title": "Measuring slat time",
+        "description": "Finish the measurement when the slats finish moving.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Slats finished moving"
+      },
+      "shutter_tilt_review": {
+        "title": "Calibration result",
+        "description": "",
+        "data": {
+          "timings": ""
+        },
+        "submit": "Save"
+      },
+      "shutter_calibrated": {
+        "title": "Calibration saved",
+        "menu_options": {
+          "shutter_tilt_test": "Test slat position",
+          "shutter_tilt_adjust": "Adjust movement times",
+          "shutter_done": "Finish"
+        }
+      },
+      "shutter_tilt_test": {
+        "title": "Slat position test",
+        "description": "0° — open, 90° — closed.",
+        "data": {
+          "lamel_position": "Slat position"
+        },
+        "submit": "Set position"
+      },
+      "shutter_tilt_adjust": {
+        "title": "Movement times",
+        "data": {
+          "timings": ""
+        },
+        "submit": "Save"
+      },
+      "shutter_ready_tilt_up": {
+        "title": "Slat and opening time measurement",
+        "description": "Click when the slats finish turning, then when the shutter is fully open.",
+        "menu_options": {
+          "shutter_start_measurement": "Start measurement",
+          "shutter_cancel": "Cancel"
+        }
+      },
+      "shutter_measurement_opening_tilt": {
+        "title": "Measuring slat time",
+        "description": "Click when the slats finish turning.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Slats finished moving"
+      },
+      "shutter_measurement_opening_travel": {
+        "title": "Measuring opening time",
+        "description": "Finish the measurement when the shutter is fully open and the motor goes quiet.",
+        "data": {
+          "measurement": ""
+        },
+        "submit": "Shutter is fully open"
       }
     },
     "abort": {
       "no_configurable_entities": "No configurable entities found.",
       "entity_not_found": "Selected entity not found.",
-      "entity_not_configurable": "This entity cannot be configured."
+      "entity_not_configurable": "This entity cannot be configured.",
+      "calibration_unavailable": "Calibration is unavailable.",
+      "calibration_expired": "Measurement unavailable.",
+      "calibration_cancelled": "Measurement cancelled."
     },
     "error": {
       "invalid_configuration": "Select valid options and enter valid values.",
-      "cannot_apply_configuration": "Could not save the configuration to the CLU. Check the connection and current temperature limits, then retry.",
-      "cannot_read_configuration": "Could not read the current settings from the CLU. Check the connection and reopen configuration."
+      "cannot_apply_configuration": "Could not save settings. Check the connection and entered values.",
+      "cannot_read_configuration": "Could not read the current settings from the CLU. Check the connection and reopen configuration.",
+      "cannot_test_tilt": "Could not set the slat position. Wait for movement to finish and try again."
+    },
+    "progress": {
+      "shutter_up": "↑ Opening",
+      "shutter_down": "↓ Closing",
+      "shutter_check_position": "Checking position…"
     }
   },
   "services": {
@@ -351,11 +549,65 @@
       "clu_uptime": {
         "name": "Uptime"
       },
+      "clu_last_restart": {
+        "name": "Last restart"
+      },
       "clu_bus_voltage": {
         "name": "Bus voltage"
       },
       "clu_firmware_version": {
         "name": "Firmware version"
+      },
+      "clu_state": {
+        "name": "State",
+        "state": {
+          "system_starting": "System starting",
+          "system_ok": "System OK",
+          "telnet_logging": "Logging (telnet)",
+          "emergency": "Emergency",
+          "critical_error": "Critical error",
+          "monitor": "Monitor mode",
+          "module_not_responding": "Module not responding",
+          "zwave_inclusion": "Adding Z-Wave node",
+          "zwave_exclusion": "Removing Z-Wave node",
+          "zwave_busy": "Z-Wave operation in progress",
+          "zwave_error": "Z-Wave operation failed",
+          "zwave_success": "Z-Wave operation successful"
+        },
+        "state_attributes": {
+          "raw_value": {
+            "name": "Raw value"
+          }
+        }
+      },
+      "clu_telnet_log_level": {
+        "name": "Log level",
+        "state": {
+          "off": "OFF",
+          "error": "ERROR",
+          "warning": "WARNING",
+          "info": "INFO",
+          "debug": "DEBUG"
+        },
+        "state_attributes": {
+          "raw_value": {
+            "name": "Raw value"
+          }
+        }
+      },
+      "clu_reset_reason": {
+        "name": "Last restart reason",
+        "state": {
+          "power_on": "Power on",
+          "external_reset": "External reset",
+          "configuration_reload": "Configuration reload",
+          "system_exception": "System exception"
+        },
+        "state_attributes": {
+          "raw_value": {
+            "name": "Raw value"
+          }
+        }
       },
       "thermostat_schedule": {
         "name": "Schedule",
@@ -418,8 +670,22 @@
       }
     },
     "switch": {
+      "clu_telnet_logging": {
+        "name": "Debug log capture"
+      },
+      "clu_debug_capture": {
+        "name": "Diagnostic file capture"
+      },
+      "clu_debug_logging": {
+        "name": "Debug mode"
+      },
       "clu_use_cloud": {
         "name": "Use cloud"
+      }
+    },
+    "cover": {
+      "roller_shutter": {
+        "name": "Roller shutter"
       }
     }
   },
@@ -496,6 +762,7 @@
         "door": "Door",
         "garage_door": "Garage door",
         "gas": "Gas",
+        "glass_break": "Glass break",
         "heat": "Heat",
         "light": "Light",
         "lock": "Lock",
@@ -829,6 +1096,43 @@
         "camera": "Cameras",
         "climate": "Thermostats"
       }
+    },
+    "shutter_directions": {
+      "options": {
+        "up": "Opening (up)",
+        "down": "Closing (down)"
+      }
+    },
+    "shutter_measurement": {
+      "elapsed": "Elapsed time",
+      "cancel": "Cancel",
+      "slat_elapsed": "Slat movement",
+      "travel_elapsed": "Shutter travel",
+      "travel_elapsed_up": "Shutter travel up",
+      "travel_elapsed_down": "Shutter travel down"
+    },
+    "shutter_timings": {
+      "measured": "Measured times",
+      "total_ms": "Total movement time (ms)",
+      "travel_ms": "Shutter travel time (ms)",
+      "lamel_move_timeout": "Slat movement time (ms)",
+      "hint": "Check to link travel and slat times. Uncheck to edit them independently. Slat time is shared by opening and closing.",
+      "keep_total": "Keep total time unchanged",
+      "measured_total": "Total",
+      "measured_lamel": "Slat movement",
+      "measured_travel": "Shutter travel",
+      "configured": "Current settings",
+      "configured_up": "Opening travel time",
+      "configured_down": "Closing travel time",
+      "configured_lamel": "Slat movement time",
+      "measured_travel_up": "Shutter travel up",
+      "measured_travel_down": "Shutter travel down",
+      "travel_up_ms": "Opening travel time (ms)",
+      "travel_down_ms": "Closing travel time (ms)",
+      "adapt_opposite": "Adjust opposite-direction travel time",
+      "adapt_opening": "Adjust opening travel time",
+      "adapt_closing": "Adjust closing travel time",
+      "adapt_hint": "Preserves the opposite direction's total runtime when slat time changes."
     }
   }
 }

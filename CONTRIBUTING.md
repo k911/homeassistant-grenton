@@ -54,13 +54,15 @@ Keep each change focused and tested. Update docs and translations when behavior 
 
 Recommended environment:
 - Python 3.14.2+
-- Home Assistant 2026.9.4 (pinned in `tests/requirements.txt`)
+- Home Assistant 2026.11.1 (pinned in `tests/requirements.txt`)
+- Node.js 20 or newer for frontend tests
 
 Create a virtual environment and install dependencies:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r tests/requirements.txt
 ```
 
@@ -72,6 +74,9 @@ Run tests and checks before opening a PR:
 # Unit tests
 python -m pytest tests
 
+# Standalone CLI tests (run from the CLI directory for its local imports)
+(cd examples/cli && python -m pytest)
+
 # Frontend regression tests (Node.js; no additional packages)
 node --test tests/*.test.mjs
 
@@ -81,6 +86,12 @@ mypy custom_components/homeassistant_grenton
 # Linting
 ruff check custom_components/homeassistant_grenton
 ```
+
+The integration suite uses mocked CLUs and does not move real devices. Check
+shutter calibration and thermostat limit changes on supported hardware before
+releasing changes to their native write paths. Protocol details and action
+examples belong in [the reference](docs/reference.md); keep the README focused
+on installation and everyday use.
 
 ### Commit Message Format
 

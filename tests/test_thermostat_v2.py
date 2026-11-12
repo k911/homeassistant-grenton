@@ -18,6 +18,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import EntityPlatform
+from homeassistant.util.unit_system import METRIC_SYSTEM, US_CUSTOMARY_SYSTEM
 from test_clu_scripts import make_entry
 from test_on_off_configuration import coordinator
 
@@ -106,8 +107,8 @@ def test_page_discovers_thermostat_and_registers_all_heating_feedback():
     entity = device.entities[0]
     assert isinstance(entity, ClimateEntity)
     assert entity.unique_id == "thermostat1_climate"
-    assert entity.device_info["model"] == "THERMOSTAT_V2"
-    assert entity.device_info["name"] == "Living room"
+    assert entity.device_info.model == "THERMOSTAT_V2"
+    assert entity.device_info.name == "Living room"
     assert entity.name is None
     assert {
         call.args[0].index for call in coord.register_component_state.call_args_list
@@ -125,7 +126,7 @@ def test_page_discovers_thermostat_and_registers_all_heating_feedback():
     assert entity.hvac_modes == [HVACMode.OFF, HVACMode.HEAT, HVACMode.AUTO]
     assert not entity.supported_features & ClimateEntityFeature.PRESET_MODE
     assert entity.target_temperature_step == 0.5
-    assert entity.temperature_unit == "°C"
+    assert entity.native_temperature_unit == "°C"
 
 
 @pytest.mark.parametrize(
@@ -163,8 +164,8 @@ def test_only_confirmed_modes_are_mapped_to_hvac_modes(mode, expected):
 
 def test_temperature_and_bounds_use_distinct_read_bindings():
     entity, _ = thermostat(**{"14": "21.3", "12": 24.5, "10": "10", "11": 30})
-    assert entity.current_temperature == 21.3
-    assert entity.target_temperature == 24.5
+    assert entity.native_current_temperature == 21.3
+    assert entity.native_target_temperature == 24.5
     assert entity.min_temp == 10
     assert entity.max_temp == 30
 
@@ -172,8 +173,8 @@ def test_temperature_and_bounds_use_distinct_read_bindings():
 @pytest.mark.parametrize("value", [None, "", "nil", "bad", True, "nan", "inf", "-inf"])
 def test_invalid_feedback_never_becomes_a_temperature(value):
     entity, _ = thermostat(**{"14": value, "12": value})
-    assert entity.current_temperature is None
-    assert entity.target_temperature is None
+    assert entity.native_current_temperature is None
+    assert entity.native_target_temperature is None
 
 
 def test_power_preserves_mode_and_explicit_heat_and_auto_select_the_mode():
@@ -356,11 +357,24 @@ def test_climate_platform_adds_only_climate_entities():
     assert "climate" in PLATFORMS
 
 
-def test_native_climate_entity_registration_and_state(tmp_path):
+@pytest.mark.parametrize(
+    "units, current_temperature, target_temperature, temperature_unit",
+    [
+        (METRIC_SYSTEM, 21.2, 22.5, "°C"),
+        (US_CUSTOMARY_SYSTEM, 70, 72, "°F"),
+    ],
+)
+def test_native_climate_entity_registration_and_state(
+    tmp_path, units, current_temperature, target_temperature, temperature_unit, caplog
+):
     async def run():
         hass = HomeAssistant(str(tmp_path))
+        hass.config.units = units
         entry = make_entry()
-        hass.config_entries = SimpleNamespace(async_get_entry=lambda entry_id: entry)
+        hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
+            async_get_entry=lambda entry_id: entry,
+        )
         dr.async_setup(hass)
         await asyncio.gather(
             dr.async_load(hass, load_empty=True), er.async_load(hass, load_empty=True)
@@ -380,7 +394,11 @@ def test_native_climate_entity_registration_and_state(tmp_path):
         await platform.async_add_entities([entity])
         state = hass.states.get(entity.entity_id)
         assert state.state == "auto"
-        assert state.attributes["current_temperature"] == 21.2
+        assert state.attributes["current_temperature"] == current_temperature
+        assert state.attributes["temperature_unit"] == temperature_unit
+        assert entity.native_current_temperature == 21.2
+        assert entity.native_target_temperature == 23.5
+        assert entity.native_temperature_unit == "°C"
         assert "temperature" not in state.attributes
         assert state.attributes["scheduled_target_temperature_celsius"] == 23.5
         assert state.attributes["hvac_action"] == "idle"
@@ -415,7 +433,7 @@ def test_native_climate_entity_registration_and_state(tmp_path):
         entity._handle_coordinator_update()
         state = hass.states.get(entity.entity_id)
         assert state.state == "heat"
-        assert state.attributes["temperature"] == 22.5
+        assert state.attributes["temperature"] == target_temperature
         assert (
             state.attributes["supported_features"]
             & ClimateEntityFeature.TARGET_TEMPERATURE
@@ -425,3 +443,4 @@ def test_native_climate_entity_registration_and_state(tmp_path):
         await hass.async_stop()
 
     asyncio.run(run())
+    assert not any("deprecated" in record.message.lower() for record in caplog.records)

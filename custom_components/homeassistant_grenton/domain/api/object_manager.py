@@ -10,6 +10,8 @@ from typing import Any, Self
 import aiohttp
 
 INTERFACE_REQUEST_TIMEOUT = 30
+MAX_INTERFACE_ZIP_BYTES = 32 * 1024 * 1024
+MAX_INTERFACE_JSON_BYTES = 16 * 1024 * 1024
 
 
 class GrentonObjectManagerApi:
@@ -71,18 +73,22 @@ class GrentonObjectManagerApi:
                     raise GrentonObjectManagerConnectionError(
                         f"Failed to fetch interface: HTTP {response.status}"
                     )
-                raw_data = await response.read()
+                raw_data = bytearray()
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    if len(raw_data) + len(chunk) > MAX_INTERFACE_ZIP_BYTES:
+                        raise GrentonObjectManagerDataError("Interface download exceeds 32 MiB")
+                    raw_data.extend(chunk)
             # ZIP decompression and JSON parsing must not block HA's event loop.
             return await asyncio.to_thread(self._parse_interface_zip, raw_data)
-        except TimeoutError as error:
+        except TimeoutError:
             raise GrentonObjectManagerConnectionError(
                 "Object Manager request timed out"
-            ) from error
-        except aiohttp.ClientError as error:
+            ) from None
+        except aiohttp.ClientError:
             # aiohttp errors can include the request URL, which contains the PIN.
             raise GrentonObjectManagerConnectionError(
                 "Object Manager request failed"
-            ) from error
+            ) from None
 
     def _parse_interface_zip(self, zip_data: bytes) -> dict[str, Any]:
         """Parse the interface ZIP file and extract mobile interface data.
@@ -96,6 +102,8 @@ class GrentonObjectManagerApi:
         Raises:
             GrentonObjectManagerDataError: If ZIP parsing fails or data is invalid
         """
+        if len(zip_data) > MAX_INTERFACE_ZIP_BYTES:
+            raise GrentonObjectManagerDataError("Interface download exceeds 32 MiB")
         try:
             with zipfile.ZipFile(io.BytesIO(zip_data)) as archive:
                 if "mygrenton/data.json" not in archive.namelist():
@@ -103,8 +111,14 @@ class GrentonObjectManagerApi:
                         "Invalid interface ZIP: missing mygrenton/data.json"
                     )
 
-                with archive.open("mygrenton/data.json") as interface_file:
-                    data = json.load(interface_file)
+                member = archive.getinfo("mygrenton/data.json")
+                if member.file_size > MAX_INTERFACE_JSON_BYTES:
+                    raise GrentonObjectManagerDataError("Interface JSON exceeds 16 MiB")
+                with archive.open(member) as interface_file:
+                    payload = interface_file.read(MAX_INTERFACE_JSON_BYTES + 1)
+                    if len(payload) > MAX_INTERFACE_JSON_BYTES:
+                        raise GrentonObjectManagerDataError("Interface JSON exceeds 16 MiB")
+                    data = json.loads(payload)
                 if not isinstance(data, dict):
                     raise GrentonObjectManagerDataError(
                         "Interface data must be a JSON object"
@@ -113,7 +127,7 @@ class GrentonObjectManagerApi:
 
         except zipfile.BadZipFile as error:
             raise GrentonObjectManagerDataError("Invalid ZIP file format") from error
-        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as error:
             raise GrentonObjectManagerDataError(
                 "Invalid JSON data in interface file"
             ) from error

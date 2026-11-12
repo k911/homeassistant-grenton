@@ -79,6 +79,7 @@ async def make_hass(tmp_path, entries):
     hass = HomeAssistant(str(tmp_path))
     by_id = {entry.entry_id: entry for entry in entries}
     hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
         async_get_entry=by_id.get,
         async_entries=lambda *args, **kwargs: list(by_id.values()),
     )
@@ -325,7 +326,7 @@ def test_setup_discovers_all_imported_clus_without_any_widgets(tmp_path):
             "clu1",
             "clu2",
         ]
-        assert len(entry.runtime_data.clu_entities) == 17
+        assert len(entry.runtime_data.clu_entities) == 29
         coordinator.async_setup.assert_awaited_once()
         hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 

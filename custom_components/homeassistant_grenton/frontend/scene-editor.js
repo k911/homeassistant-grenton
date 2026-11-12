@@ -36,6 +36,15 @@ const STYLE = `
   .schedule-time select { padding-inline: 4px; }
   .schedule-period-remove { width: 42px; height: 42px; padding: 0; font-size: 22px; }
   .hint { font-size: 13px; color: var(--secondary-text-color, #666); margin: 0; }
+  .shutter-timer { display: block; min-height: 56px; font-size: 32px;
+    font-variant-numeric: tabular-nums; line-height: 56px; white-space: nowrap; }
+  .shutter-cancel { justify-self: start; min-height: 44px; padding-inline: 0;
+    border: 0; background: transparent; color: var(--secondary-text-color, #666); }
+  .shutter-cancel:hover { background: transparent; text-decoration: underline; }
+  .shutter-measured { display: grid; gap: 6px; margin: 0; font-size: 14px; }
+  .shutter-measured > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; }
+  .shutter-measured dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .shutter-sync { display: flex; align-items: center; gap: 8px; }
   .add { justify-self: start; color: var(--primary-color, #03a9f4); }
   .arguments { margin-top: 16px; }
   @media (max-width: 400px) { .inputs { grid-template-columns: 1fr; } }
@@ -641,4 +650,180 @@ class GrentonThermostatEditor extends GrentonEditor {
 
 if (!customElements.get("ha-selector-grenton_thermostat")) {
   customElements.define("ha-selector-grenton_thermostat", GrentonThermostatEditor);
+}
+
+class GrentonShutterMeasurement extends GrentonEditor {
+  disconnectedCallback() {
+    clearInterval(this._timer);
+    this._timer = undefined;
+  }
+
+  _render() {
+    const settings = this.selector?.grenton_shutter_measurement;
+    if (!settings) return;
+    const signature = JSON.stringify(settings);
+    if (this._clockSignature !== signature) {
+      this._clockSignature = signature;
+      this._clockStarted = performance.now();
+      this._initialElapsed = settings.elapsed_ms;
+    }
+    clearInterval(this._timer);
+    const parent = this._container();
+    const counter = document.createElement("output");
+    counter.className = "shutter-timer";
+    counter.setAttribute("role", "timer");
+    counter.setAttribute("aria-live", "off");
+    counter.setAttribute("aria-label", this._text("shutter_measurement.elapsed", "Elapsed time"));
+    let segmentCounter;
+    const segmentLabel = settings.segment === "tilt"
+      ? this._text("shutter_measurement.slat_elapsed", "Slat movement")
+      : this._text(`shutter_measurement.travel_elapsed_${settings.direction}`, "Shutter travel");
+    if (settings.segment != null) {
+      segmentCounter = document.createElement("output");
+      segmentCounter.className = "shutter-timer";
+      segmentCounter.setAttribute("role", "timer");
+      segmentCounter.setAttribute("aria-live", "off");
+      segmentCounter.setAttribute("aria-label", segmentLabel);
+    }
+    const update = () => {
+      const elapsed = this._initialElapsed + performance.now() - this._clockStarted;
+      const seconds = Math.floor(elapsed / 1000);
+      counter.textContent = `${settings.direction === "up" ? "↑" : "↓"} ${seconds} s`;
+      if (segmentCounter) {
+        const icon = settings.segment === "tilt" ? "↻" : (settings.direction === "up" ? "↑" : "↓");
+        segmentCounter.textContent = `${icon} ${Math.floor(Math.max(0, elapsed - settings.segment_started_ms) / 1000)} s`;
+      }
+    };
+    update();
+    if (this.isConnected) this._timer = setInterval(update, 250);
+    parent.append(counter);
+    if (segmentCounter) {
+      const label = document.createElement("span");
+      label.textContent = segmentLabel;
+      parent.append(label, segmentCounter);
+    }
+    const cancel = this._button(this._text("shutter_measurement.cancel", "Cancel"), () => {
+      if (this.disabled || this._cancelling) return;
+      this._cancelling = true;
+      this._render();
+      // Use the same options-flow API and transition event as HA's flow controls.
+      const stepPromise = this.hass.callApi("POST",
+        `config/config_entries/options/flow/${encodeURIComponent(settings.flow_id)}`,
+        { measurement: "cancel" });
+      this.dispatchEvent(new CustomEvent("flow-update", {
+        detail: { stepPromise }, bubbles: true, composed: true,
+      }));
+    }, this._cancelling);
+    cancel.className = "shutter-cancel";
+    parent.append(cancel);
+  }
+}
+
+if (!customElements.get("ha-selector-grenton_shutter_measurement")) {
+  customElements.define("ha-selector-grenton_shutter_measurement", GrentonShutterMeasurement);
+}
+
+class GrentonShutterTimings extends GrentonEditor {
+  _prepareValue(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  _render() {
+    const parent = this._container();
+    const settings = this.selector?.grenton_shutter_timings || {};
+    const format = new Intl.NumberFormat(this.hass?.language || "en", { maximumFractionDigits: 3 });
+    const travelLabel = settings.direction === "up" ? "measured_travel_up"
+      : settings.direction === "down" ? "measured_travel_down" : "measured_travel";
+    const reference = (titleKey, fallbackTitle, rows, dataset, showMissing = false) => {
+      const title = document.createElement("strong");
+      title.textContent = this._text(`shutter_timings.${titleKey}`, fallbackTitle);
+      const list = document.createElement("dl");
+      list.className = "shutter-measured";
+      for (const [key, label, fallback] of rows) {
+        if (settings[key] == null && !showMissing) continue;
+        const row = document.createElement("div"), term = document.createElement("dt"), value = document.createElement("dd");
+        term.textContent = this._text(`shutter_timings.${label}`, fallback);
+        value.dataset[dataset] = key;
+        value.textContent = settings[key] == null ? "—" : `${format.format(settings[key] / 1000)} s (${settings[key]} ms)`;
+        row.append(term, value);
+        list.append(row);
+      }
+      parent.append(title, list);
+    };
+    if (settings.measured_ms != null) {
+      reference("measured", "Measured times", [
+        ["measured_ms", "measured_total", "Total"],
+        ["measured_lamel_ms", "measured_lamel", "Slat movement"],
+        ["measured_travel_ms", travelLabel, "Shutter travel"],
+      ], "measured");
+    }
+    reference("configured", "Current settings", [
+      ["configured_up_ms", "configured_up", "Opening travel time"],
+      ["configured_down_ms", "configured_down", "Closing travel time"],
+      ["configured_lamel_ms", "configured_lamel", "Slat movement time"],
+    ], "configured", true);
+    const controls = {};
+    const value = this._value || {};
+    const keepTotal = this._input("keep_total", value.keep_total !== false, (checked) => {
+      this._value = { ...this._value, keep_total: checked };
+      controls.total_ms.readOnly = !checked;
+      if (!checked && Number.isFinite(this._value.travel_ms) && Number.isFinite(this._value.lamel_move_timeout)) {
+        this._value.total_ms = this._value.travel_ms + this._value.lamel_move_timeout;
+        controls.total_ms.value = this._value.total_ms;
+      }
+    }, "checkbox", false);
+    const syncField = document.createElement("label"), syncLabel = document.createElement("span");
+    syncField.className = "shutter-sync";
+    syncLabel.textContent = this._text("shutter_timings.keep_total", "Keep total time unchanged");
+    syncField.append(keepTotal, syncLabel);
+    parent.append(syncField);
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = this._text("shutter_timings.hint", "Keep the total fixed to link travel and slat times, or uncheck to edit them independently. Slat time is shared by opening and closing.");
+    parent.append(hint);
+    for (const [key, fallback] of [
+      ["total_ms", "Total movement time (ms)"],
+      ["travel_ms", "Shutter travel time (ms)"],
+      ["lamel_move_timeout", "Slat movement time (ms)"],
+    ]) {
+      const input = this._input(key, value[key], (next) => {
+        this._value = { ...this._value, [key]: next };
+        const total = this._value.total_ms;
+        const counterpart = key === "travel_ms" ? this._value.travel_ms : this._value.lamel_move_timeout;
+        if (this._value.keep_total === false) {
+          if (Number.isFinite(this._value.travel_ms) && Number.isFinite(this._value.lamel_move_timeout)) {
+            this._value.total_ms = this._value.travel_ms + this._value.lamel_move_timeout;
+            controls.total_ms.value = this._value.total_ms;
+          }
+        } else if (Number.isFinite(total) && Number.isFinite(counterpart)) {
+          const derived = key === "travel_ms" ? "lamel_move_timeout" : "travel_ms";
+          this._value[derived] = total - counterpart;
+          controls[derived].value = this._value[derived];
+        }
+      }, "number");
+      input.min = "1";
+      input.max = key === "total_ms" ? "1200000" : "600000";
+      input.step = "1";
+      input.readOnly = key === "total_ms" && value.keep_total === false;
+      controls[key] = input;
+      const labelKey = key === "travel_ms" && settings.direction ? `travel_${settings.direction}_ms` : key;
+      parent.append(this._field(this._text(`shutter_timings.${labelKey}`, fallback), input));
+    }
+    const adaptOpposite = this._input("adapt_opposite", value.adapt_opposite === true, (checked) => {
+      this._value = { ...this._value, adapt_opposite: checked };
+    }, "checkbox", false);
+    const adaptField = document.createElement("label"), adaptLabel = document.createElement("span");
+    adaptField.className = "shutter-sync";
+    const adaptKey = settings.direction === "up" ? "adapt_closing" : settings.direction === "down" ? "adapt_opening" : "adapt_opposite";
+    adaptLabel.textContent = this._text(`shutter_timings.${adaptKey}`, "Adjust opposite-direction travel time");
+    adaptField.append(adaptOpposite, adaptLabel);
+    const adaptHint = document.createElement("p");
+    adaptHint.className = "hint";
+    adaptHint.textContent = this._text("shutter_timings.adapt_hint", "Preserves the opposite direction's total runtime when slat time changes.");
+    parent.append(adaptField, adaptHint);
+  }
+}
+
+if (!customElements.get("ha-selector-grenton_shutter_timings")) {
+  customElements.define("ha-selector-grenton_shutter_timings", GrentonShutterTimings);
 }

@@ -20,6 +20,8 @@ class GrentonObjectRollerShutterV3Dto(BaseModel):
     blindsUpMaxTime: Optional[GrentonValueUnionDto] = None
     blindsDownMaxTime: Optional[GrentonValueUnionDto] = None
     mechanicalOffset: Optional[GrentonValueUnionDto] = None
+    # Legacy shared travel time (attribute 9), fallback when per-direction times are zero.
+    maxTime: Optional[GrentonValueUnionDto] = None
     setPositionAction: GrentonActionUnionDto
     setLamelPositionAction: GrentonActionUnionDto
     calibrationAction: Optional[GrentonActionUnionDto] = None

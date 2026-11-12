@@ -1,0 +1,5 @@
+Generated with the built-in image_gen tool.
+Exported as transparent 256x256 and 512x512 PNGs for Home Assistant.
+
+Prompt:
+Use case: logo-brand. Asset type: square app/integration icon for an independent smart-home controller integration. Create one original, extremely simple geometric blue symbol: a bold rounded house outline with an abstract short connected circuit path and two circular endpoints inside. Compact, balanced silhouette, clearly readable at 48px. Solid medium blue #168BE8 only, clean flat vector-like edges, consistent thick rounded strokes, generous transparent margin. No text, letters, gradients, shadows, 3D, background tile, mockup, watermark, or existing company logos. Do not imitate Grenton or Home Assistant logos. Output a single centered icon on a genuinely transparent background, square 1024x1024.

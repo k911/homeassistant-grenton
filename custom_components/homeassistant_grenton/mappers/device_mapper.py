@@ -46,7 +46,7 @@ class DeviceMapper:
         device = DeviceMapper._map_device(dto, coordinator)
         for entity in device.entities:
             if info := entity.device_info:
-                info["name"] = device.name
+                info.name = device.name
             # HA uses the device name for its sole/main entity without repeating
             # the label. Multi-entity widgets retain individual entity labels.
             entity._use_device_name = len(device.entities) == 1

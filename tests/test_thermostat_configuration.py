@@ -365,6 +365,7 @@ def test_native_options_manager_sends_the_schedule_after_its_schema_validation(
         entry.update_listeners = []
         hass = HomeAssistant(str(tmp_path))
         hass.config_entries = SimpleNamespace(
+            async_wait_initialized=AsyncMock(),
             async_get_known_entry=Mock(return_value=entry),
             async_update_entry=Mock(return_value=True),
             async_schedule_reload=Mock(),

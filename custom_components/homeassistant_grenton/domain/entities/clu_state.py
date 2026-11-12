@@ -1,7 +1,7 @@
 """Built-in CLU diagnostics and cloud configuration."""
 
 from math import isfinite
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -13,7 +13,11 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import EntityCategory, UnitOfElectricPotential, UnitOfTime
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfElectricPotential,
+    UnitOfTime,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -141,7 +145,7 @@ class GrentonCluFirmwareVersion(GrentonCluStateEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         info = clu_device_info(self.clu)
         if version := self.native_value:
-            info["sw_version"] = version
+            info.sw_version = version
         return info
 
     @callback
@@ -217,6 +221,116 @@ class GrentonCluBusVoltage(GrentonCluStateEntity, SensorEntity):
         return voltage if isfinite(voltage) else None
 
 
+def _integer(value: GrentonValue) -> int | None:
+    """Parse an integer code without coercing booleans or fractional numbers."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        code = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if isinstance(value, float) and code != value:
+        return None
+    return code
+
+
+class _GrentonCluEnum(GrentonCluStateEntity, SensorEntity):
+    """Translate known codes while retaining unknown raw values for diagnosis."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    codes: ClassVar[dict[int, str]]
+
+    def __init__(
+        self, coordinator: GrentonCoordinator, clu: GrentonClu, attribute: str, key: str,
+    ) -> None:
+        super().__init__(coordinator, clu, attribute, key, read_mode="slow")
+        self._attr_options = list(self.codes.values())
+
+    @property
+    def native_value(self) -> str | None:
+        code = _integer(self._value)
+        return self.codes.get(code) if code is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"raw_value": self._value}
+
+
+class GrentonCluNativeState(_GrentonCluEnum):
+    """Native CLU state, including emergency and module failure states."""
+
+    _attr_icon = "mdi:state-machine"
+    codes: ClassVar[dict[int, str]] = {
+        0: "system_starting", 1: "system_ok", 2: "telnet_logging", 3: "emergency",
+        4: "critical_error", 5: "monitor", 6: "module_not_responding",
+        7: "zwave_inclusion", 8: "zwave_exclusion", 9: "zwave_busy",
+        10: "zwave_error", 11: "zwave_success",
+    }
+
+    def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
+        super().__init__(coordinator, clu, "State", "clu_state")
+
+
+class GrentonCluTelnetLogLevel(_GrentonCluEnum):
+    """Native verbosity setting, independent of the single Telnet connection."""
+
+    _attr_icon = "mdi:format-list-bulleted"
+    codes: ClassVar[dict[int, str]] = {0: "off", 1: "error", 2: "warning", 3: "info", 4: "debug"}
+
+    def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
+        super().__init__(coordinator, clu, "TelnetLogLevel", "clu_telnet_log_level")
+
+
+class GrentonCluResetReason(_GrentonCluEnum):
+    """Reported reset classification on controller families that expose it."""
+
+    _attr_icon = "mdi:restart-alert"
+    codes: ClassVar[dict[int, str]] = {
+        0: "power_on", 1: "external_reset", 2: "configuration_reload", 3: "system_exception",
+    }
+
+    def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
+        super().__init__(coordinator, clu, "ResetReason", "clu_reset_reason")
+
+
+class GrentonCluDebugLogging(GrentonCluStateEntity, SwitchEntity):
+    """Enable native DEBUG output, or disable native logging with OFF."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:bug-outline"
+
+    def __init__(self, coordinator: GrentonCoordinator, clu: GrentonClu) -> None:
+        super().__init__(
+            coordinator, clu, "TelnetLogLevel", "clu_debug_logging", read_mode="slow",
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        level = _integer(self._value)
+        return level == 4 if level in GrentonCluTelnetLogLevel.codes else None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set_level(4)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set_level(0)
+
+    async def _set_level(self, level: int) -> None:
+        literal = str(level)
+        action = GrentonActionAttribute(
+            clu_id=self.clu.id,
+            object_name=self.state_object.object_name,
+            index=self.state_object.index,
+            event=GrentonActionEventType.ON if level else GrentonActionEventType.OFF,
+            value=literal,
+            lua_value=literal,
+        )
+        await self.coordinator.execute_action(action, raise_on_error=True)
+        await self.coordinator.async_refresh_clu_state(
+            self.clu.id, required_states=[self.state_object],
+        )
+
+
 def clu_entities(coordinator: GrentonCoordinator, clu: GrentonClu) -> list[Entity]:
     """Discover built-in entities independently of mobile-interface widgets."""
     controller = GrentonCluEntity(coordinator, clu)
@@ -227,6 +341,10 @@ def clu_entities(coordinator: GrentonCoordinator, clu: GrentonClu) -> list[Entit
         ("UseCloud", GrentonCluUseCloud),
         ("FirmwareVersion", GrentonCluFirmwareVersion),
         ("BusVoltage", GrentonCluBusVoltage),
+        ("State", GrentonCluNativeState),
+        ("TelnetLogLevel", GrentonCluTelnetLogLevel),
+        ("ResetReason", GrentonCluResetReason),
+        ("TelnetLogLevel", GrentonCluDebugLogging),
     ):
         if attribute_index(clu.device_type, attribute) is not None:
             entities.append(entity_class(coordinator, clu))

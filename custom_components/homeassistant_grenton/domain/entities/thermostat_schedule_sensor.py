@@ -42,6 +42,11 @@ class GrentonThermostatScheduleSensor(BaseGrentonEntity, SensorEntity):
         )
 
     @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Keep the timer, which is independent of the entity ID, on rename."""
+        super().async_entity_id_changed(old_entity_id)
+
+    @callback
     def _refresh_time(self, now: datetime) -> None:
         self.async_write_ha_state()
 
