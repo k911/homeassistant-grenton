@@ -1,5 +1,7 @@
 # Home Assistant Grenton
 
+<img src="custom_components/homeassistant_grenton/brand/icon.png" alt="Grenton integration icon" width="80" height="80">
+
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/k911/homeassistant-grenton?style=for-the-badge)](https://github.com/k911/homeassistant-grenton/releases)
 
