@@ -4,8 +4,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from time import monotonic
 
+from ...clu_settings import DEFAULT_REGISTRATION_INTERVAL
+
 KEEPALIVE_INTERVAL = 10
-REGISTRATION_INTERVAL = 45
+REGISTRATION_INTERVAL = DEFAULT_REGISTRATION_INTERVAL
 CONNECTION_STALE_AFTER = 30
 REALTIME_STALE_AFTER = 2 * REGISTRATION_INTERVAL
 

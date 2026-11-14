@@ -226,6 +226,7 @@ class ReportFormattingTests(unittest.TestCase):
             args = create_parser().parse_args([
                 kind, "--clu", "Main", "--config", "/tmp/example.yaml",
                 "--output", "json", "--timeout", "12.5",
+                "--skip-firmware-check",
             ])
             manager = SimpleNamespace(diagnostics=AsyncMock(return_value=report), firmware=AsyncMock(return_value=report))
             output = io.StringIO()

@@ -42,6 +42,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # A conservative key budget, not a firmware limit on UDP datagram size.
 MAX_KEYS_PER_REGISTER = 30
+# Client policy, not a firmware maximum; AES-CBC always adds PKCS#7 padding.
+MAX_STATE_REQUEST_BYTES = 1200
 MIN_SEND_INTERVAL = 0.02
 SUBSCRIPTION_CLEANUP_TIMEOUT = 2.0
 MAX_SUBSCRIPTION_ID = 65535
@@ -504,13 +506,40 @@ class GrentonCluApi:
         raise RuntimeError("No unused subscription IDs remain on this listener")
 
     def state_read_batches(self, keys: list[StateKey]) -> list[list[StateKey]]:
-        """Deduplicate ordinary reads in groups of 30 and isolate large values."""
+        """Bound UTF-8 request bytes as well as key count; isolate large values.
+
+        Budget the larger registration envelope with maximum IPv4/port/ID
+        widths. Returned value sizes are unknown here, so this does not bound
+        replies. Known long values still need singleton/on-demand reads.
+        """
         unique = list(dict.fromkeys(keys))
         ordinary = [key for key in unique if key not in self.large_value_keys]
-        return [
-            ordinary[offset : offset + MAX_KEYS_PER_REGISTER]
-            for offset in range(0, len(ordinary), MAX_KEYS_PER_REGISTER)
-        ] + [[key] for key in unique if key in self.large_value_keys]
+        batches: list[list[StateKey]] = []
+        batch: list[StateKey] = []
+
+        def fits(candidate: list[StateKey]) -> bool:
+            request = GrentonCluApiClientRegisterRequest(
+                candidate, 65535, "00000000", subscription_id=65535,
+                report_ip="255.255.255.255",
+            )
+            plaintext_bytes = len(request.raw.encode("utf-8"))
+            return 16 * (plaintext_bytes // 16 + 1) <= MAX_STATE_REQUEST_BYTES
+
+        for key in ordinary:
+            if batch and (len(batch) >= MAX_KEYS_PER_REGISTER or not fits([*batch, key])):
+                batches.append(batch)
+                batch = []
+            if not batch and not fits([key]):
+                raise ValueError("A state key exceeds the encrypted request byte budget")
+            batch.append(key)
+        if batch:
+            batches.append(batch)
+        for key in unique:
+            if key in self.large_value_keys:
+                if not fits([key]):
+                    raise ValueError("A state key exceeds the encrypted request byte budget")
+                batches.append([key])
+        return batches
 
     async def register_component_states(
         self, keys: list[StateKey], *, required_keys: set[StateKey] | None = None
@@ -547,12 +576,13 @@ class GrentonCluApi:
                     )
                 )
                 if rebuild:
+                    # Validate the new mapping before removing working groups.
+                    chunks = self.state_read_batches(keys)
                     self._retire_groups()
                     if not await self._cleanup_retired_groups() or not self._current(
                         generation
                     ):
                         return [MISSING_STATE] * len(keys)
-                    chunks = self.state_read_batches(keys)
                     if rebase:
                         # Reusing a previous base requires a new listener lifetime.
                         if self.subscription_id in self._used_subscription_ids:

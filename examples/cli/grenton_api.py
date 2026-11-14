@@ -21,6 +21,7 @@ from homeassistant_grenton.domain.api.object_manager import (
     GrentonObjectManagerConnectionError,
     GrentonObjectManagerDataError,
 )
+from homeassistant_grenton.domain.api.tftp import TftpRemoteError
 from homeassistant_grenton.domain.clu import GrentonClu
 from homeassistant_grenton.domain.device_types import attribute_index
 from homeassistant_grenton.domain.encryption import GrentonEncryption
@@ -88,6 +89,12 @@ class GrentonManager:
             )
         except (OSError, ValueError) as error:
             _LOGGER.error("CLU download failed: %s", error)
+            if isinstance(error, TftpRemoteError) and error.code == 0:
+                _LOGGER.info(
+                    "CLU TFTP code 0 is generic: missing or not-yet-generated files "
+                    "can return Server Failure. Compare with an existing file such "
+                    "as a:\\CONFIG.JSON; download does not generate diagnostic files."
+                )
             sys.exit(1)
 
     async def diagnostics(self, config_path: Path, clu_name: str, *, timeout: float = 10) -> dict:

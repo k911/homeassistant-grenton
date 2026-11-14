@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from clu_tftp import TftpError, read_tftp
+from homeassistant_grenton.domain.api.tftp import TftpRemoteError
 
 
 def data(block, body):
@@ -113,6 +114,30 @@ class TftpTests(unittest.IsolatedAsyncioTestCase):
                     self.assertRaisesRegex(TftpError, expected),
                 ):
                     await read_tftp("192.0.2.10", "a:\\CONFIG.JSON", max_bytes=4)
+                transport.close.assert_called_once()
+
+    async def test_explicit_server_error_preserves_code_path_and_stops_retries(self):
+        for code, detail in ((0, "TFTP Server Failure"), (1, "File Not Found")):
+            with self.subTest(code=code):
+                def respond(protocol, request, peer):
+                    protocol.datagram_received(
+                        struct.pack("!HH", 5, code) + detail.encode() + b"\0", peer
+                    )
+
+                create, transport, _ = self.endpoint(respond)
+                path = r"a:\watchdog.log"
+                with (
+                    patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", create),
+                    self.assertRaises(TftpRemoteError) as raised,
+                ):
+                    await read_tftp("192.0.2.10", path)
+                self.assertEqual(raised.exception.code, code)
+                self.assertEqual(raised.exception.detail, detail)
+                self.assertEqual(raised.exception.path, path)
+                self.assertEqual(str(raised.exception), f"TFTP error {code}: {detail}")
+                transport.sendto.assert_called_once_with(
+                    b"\0\1" + path.encode() + b"\0netascii\0"
+                )
                 transport.close.assert_called_once()
 
     async def test_cancellation_closes_socket(self):

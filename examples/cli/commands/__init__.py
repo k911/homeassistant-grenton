@@ -287,6 +287,10 @@ Examples:
             help="Management request deadline in seconds, maximum 300 (default: 10)",
         )
         report_parser.set_defaults(handler=diagnostics_command, report_kind=name)
+        report_parser.add_argument(
+            "--skip-firmware-check", action="store_true",
+            help="Skip the online stable firmware comparison (local inventory only)",
+        )
     download_parser = subparsers.add_parser("download", help="Download an existing file from a CLU")
     download_parser.add_argument("--clu", default="CLU_Z_WAVE_1", help="CLU name")
     download_parser.add_argument("--config", default=None, help="Saved configuration file")

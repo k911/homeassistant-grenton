@@ -15,19 +15,20 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .clu_settings import subscription_id, validate_subscription_id
+from .clu_settings import (
+    registration_interval, subscription_id,
+    validate_registration_interval, validate_subscription_id,
+)
 from .const import DOMAIN
 from .domain.action import GrentonAction, GrentonActionAttribute
 from .domain.api.clu import GrentonCluApi
 from .domain.api.clu_health import (
     KEEPALIVE_INTERVAL,
-    REALTIME_STALE_AFTER,
-    REGISTRATION_INTERVAL,
     CluConnectionHealth,
 )
 from .domain.api.clu_messages import GrentonCluApiActionRequest
 from .domain.clu import GrentonClu
-from .domain.device_types import CLU_GATE_HTTP, attribute_index
+from .domain.device_types import CLU_GATE_HTTP, CLU_Z_WAVE, attribute_index
 from .domain.encryption import GrentonEncryption
 from .domain.enums import GrentonActionEventType
 from .domain.state_object import (
@@ -111,6 +112,10 @@ class GrentonCoordinator(DataUpdateCoordinator):
         self._slow_read_intervals = {
             clu.id: slow_read_interval(config_entry.options, clu.id) for clu in clus
         }
+        self._registration_intervals = {
+            clu.id: registration_interval(config_entry.options, clu.id) for clu in clus
+        }
+        self._registration_changed = {clu.id: asyncio.Event() for clu in clus}
         self._poll_only_clus = {
             clu.id for clu in clus if clu.device_type == CLU_GATE_HTTP
         }
@@ -152,7 +157,7 @@ class GrentonCoordinator(DataUpdateCoordinator):
         stamp = self._realtime_success[clu_id].get(
             key, self.connection_health[clu_id].started_at
         )
-        return monotonic() - stamp < REALTIME_STALE_AFTER
+        return monotonic() - stamp < 2 * self._registration_intervals[clu_id]
 
     def states_available(self, states: list[GrentonStateObject]) -> bool:
         """Expire realtime sources; polled entities retain their existing policy."""
@@ -229,7 +234,25 @@ class GrentonCoordinator(DataUpdateCoordinator):
         """A slow/offline CLU must not delay another CLU's keepalives/refreshes."""
         deadline = monotonic() + interval
         while not self._stopping:
-            await asyncio.sleep(max(0, deadline - monotonic()))
+            delay = max(0, deadline - monotonic())
+            if register:
+                changed = self._registration_changed[clu_id]
+                sleeper = asyncio.create_task(asyncio.sleep(delay))
+                wake = asyncio.create_task(changed.wait())
+                try:
+                    await asyncio.wait((sleeper, wake), return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    sleeper.cancel()
+                    wake.cancel()
+                    await asyncio.gather(sleeper, wake, return_exceptions=True)
+                if changed.is_set():
+                    changed.clear()
+                    interval = self._registration_intervals[clu_id]
+                    # Renew immediately on a change, so extending the interval
+                    # cannot add a full new interval to an already old lease.
+                    deadline = monotonic()
+            else:
+                await asyncio.sleep(delay)
             if self._stopping:
                 return
             try:
@@ -349,7 +372,9 @@ class GrentonCoordinator(DataUpdateCoordinator):
     async def _register_loop(self) -> None:
         await asyncio.gather(
             *(
-                self._periodic_clu_loop(clu_id, REGISTRATION_INTERVAL, register=True)
+                self._periodic_clu_loop(
+                    clu_id, self._registration_intervals[clu_id], register=True
+                )
                 for clu_id in self._apis
                 if self._realtime_keys[clu_id]
             )
@@ -656,6 +681,19 @@ class GrentonCoordinator(DataUpdateCoordinator):
             # Snapshot merging and report versions follow the normal read path.
             # An offline CLU retains the desired ID and retries on its cadence.
             await self._read_registered_states(clu_id)
+
+    async def async_set_registration_interval(self, clu_id: str, interval: int) -> None:
+        """Wake only this CLU's timer without cancelling an in-flight request."""
+        interval = validate_registration_interval(interval)
+        clu = next((clu for clu in self.clus if clu.id == clu_id), None)
+        if clu is None or clu.device_type != CLU_Z_WAVE:
+            raise HomeAssistantError("Registration intervals require a CLU Z-Wave")
+        if self._stopping:
+            raise HomeAssistantError("Grenton is stopping")
+        if self._registration_intervals[clu_id] != interval:
+            self._registration_intervals[clu_id] = interval
+            self._registration_changed[clu_id].set()
+            self._publish_clu_update(clu_id, values_changed=True)
 
     async def async_setup(self) -> None:
         self._stop_listener = self.hass.bus.async_listen_once(

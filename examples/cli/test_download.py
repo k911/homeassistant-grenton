@@ -14,6 +14,7 @@ import test_clu_management as management_tests
 from clu_management import download_file
 from commands import create_parser
 from grenton_api import GrentonManager
+from homeassistant_grenton.domain.api.tftp import TftpRemoteError
 
 
 class DownloadProtocolTests(unittest.IsolatedAsyncioTestCase):
@@ -205,6 +206,39 @@ class DownloadManagerTests(unittest.IsolatedAsyncioTestCase):
         ):
             await GrentonManager().download_file(Path("config.yaml"), "Main", r"a:\USER.LUA")
         self.assertEqual(result.exception.code, 1)
+
+    async def test_generic_server_failure_explains_missing_file_without_reclassifying(self):
+        remote = TftpRemoteError(0, "TFTP Server Failure", r"a:\watchdog.log")
+        with (
+            patch("grenton_api.load_configuration", return_value=self.config()),
+            patch("grenton_api.fetch_file", AsyncMock(side_effect=remote)) as fetch,
+            self.assertLogs("grenton_api", level="INFO") as captured,
+            self.assertRaises(SystemExit) as result,
+        ):
+            await GrentonManager().download_file(
+                Path("config.yaml"), "Main", r"a:\watchdog.log"
+            )
+        self.assertEqual(result.exception.code, 1)
+        self.assertTrue(any("TFTP error 0: TFTP Server Failure" in line for line in captured.output))
+        hints = [line for line in captured.output if "missing or not-yet-generated files" in line]
+        self.assertEqual(len(hints), 1)
+        self.assertIn(r"a:\CONFIG.JSON", hints[0])
+        self.assertEqual(fetch.await_count, 1)
+
+    async def test_other_server_errors_keep_their_specific_message(self):
+        with (
+            patch("grenton_api.load_configuration", return_value=self.config()),
+            patch("grenton_api.fetch_file", AsyncMock(
+                side_effect=TftpRemoteError(2, "Access violation", r"a:\USER.LUA")
+            )),
+            self.assertLogs("grenton_api", level="INFO") as captured,
+            self.assertRaises(SystemExit),
+        ):
+            await GrentonManager().download_file(Path("config.yaml"), "Main", r"a:\USER.LUA")
+        errors = [line for line in captured.output if line.startswith("ERROR:")]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("TFTP error 2: Access violation", errors[0])
+        self.assertFalse(any("missing or not-yet-generated files" in line for line in captured.output))
 
 
 if __name__ == "__main__":

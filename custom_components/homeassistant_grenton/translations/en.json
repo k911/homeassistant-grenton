@@ -230,10 +230,11 @@
       },
       "clu_read_interval": {
         "title": "Configure {clu_name}",
-        "description": "Connection and polling settings.",
+        "description": "Connection and polling settings. CLU Z-Wave subscription renewal defaults to 45 seconds. The lease is nominally 60 seconds; setting renewal to 60 leaves no margin for delays or packet loss.",
         "data": {
           "slow_read_interval": "Polling interval (seconds)",
-          "subscription_id": "Initial subscription ID"
+          "subscription_id": "Initial subscription ID",
+          "registration_interval": "Subscription renewal interval (seconds)"
         }
       },
       "shutter": {

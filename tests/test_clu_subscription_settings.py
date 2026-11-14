@@ -58,10 +58,13 @@ def test_subscription_ids_are_resolved_independently_for_each_clu():
     assert subscription_id(options, "clu3") == 1
 
 
-async def open_settings(tmp_path, options=None, runtime=None):
+async def open_settings(tmp_path, options=None, runtime=None, *, zwave=False, clu_id="clu1"):
     entry = make_entry(
         interface={
-            "clus": [{"id": "clu1", "name": "Main"}, {"id": "clu2", "name": "Gate"}]
+            "clus": [
+                {"id": "clu1", "name": "Main", "serialNumber": "221000921" if zwave else "unknown"},
+                {"id": "clu2", "name": "Gate", "serialNumber": "521000922"},
+            ]
         }
     )
     set_options(entry, options or {})
@@ -73,7 +76,7 @@ async def open_settings(tmp_path, options=None, runtime=None):
     form = await manager.async_configure(
         menu["flow_id"], {"next_step_id": "clu_read_settings"}
     )
-    form = await manager.async_configure(form["flow_id"], {"clu_id": "clu1"})
+    form = await manager.async_configure(form["flow_id"], {"clu_id": clu_id})
     form = await manager.async_configure(
         form["flow_id"], {"next_step_id": "clu_read_interval"}
     )

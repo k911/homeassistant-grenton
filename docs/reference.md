@@ -78,17 +78,58 @@ reduction depends on the number of values and their previous update frequency.
 Each CLU has one control UDP socket for actions, health pings, `fetchValues` and
 direct attribute reads. Realtime-capable CLUs also have one report listener shared by all groups.
 Registrations specify that listener's local address and port; reports are routed
-by subscription ID. Groups contain up to 30 ordinary keys. Large values stay
+by subscription ID. Groups contain up to 30 ordinary keys and fit a 1200-byte
+encrypted request budget, including UTF-8 encoding and AES padding. Large values stay
 isolated, and duplicate bindings share one source.
 
 One health ping runs every **10 seconds** per CLU. Groups renew every
-**45 seconds**, using fresh request message IDs. Timers follow monotonic
+**45 seconds** by default, using fresh request message IDs. For CLU Z-Wave,
+**Configure → CLU → Connection and polling → Subscription renewal interval**
+accepts whole seconds from **1 to 60**, independently for each controller.
+This controls re-registration frequency, not the UDP response timeout or the
+firmware lease. Saving a changed interval wakes that CLU's timer for an immediate
+renewal without cancelling an in-flight request or replacing sockets. Realtime
+state expires after twice the configured interval without a successful update.
+Timers follow monotonic
 deadlines, skip missed ticks and avoid catch-up bursts. Slow reads yield between
 batches so renewals can proceed. Controllers run independently, and outgoing
 datagrams retain at least 20 ms spacing per CLU.
 Large reads wait for in-flight requests to finish, then run exclusively on that
 CLU until their reply or timeout. Pings, renewals and actions wait during the
 large read; unsolicited state reports can still arrive.
+
+The corrected native-code investigation of CLU_ZWAVE_2 5.15.24 and 5.16.03
+supports a nominal **60-second subscription lease** in both images. Keeping
+**45-second renewal** leaves about 15 seconds
+for queueing and recovery. A 55-second interval reduces registrations by about
+18% but leaves only five seconds, equal to the current request timeout; it is
+not the preferred default merely because another app uses it. Registration
+replaces the matching report-IP/port/subscription-ID group, so renewal reuses
+the same tuple rather than adding another group. Although 60 seconds is
+configurable, it leaves no expiry margin and can cause gaps in reports.
+
+Thirty keys is a batching policy, not a firmware size limit. Plan both request
+and reply bytes: a long response can follow a tiny `get` request. As an operating
+target, keep routine encrypted UDP payloads within 1200 bytes; this is not a
+guaranteed CLU allocation bound or a guarantee for an unknown network path. On
+a known 1500-byte IPv4 path without IP options, 1472 encrypted UDP bytes fit
+without fragmentation. A 1350-byte ASCII schedule in an ordinary direct reply
+is about 1392 encrypted bytes with the observed envelope, so one schedule fits
+that LAN; several in one reply do not. The client splits state batches by key
+count and the padded UTF-8 request size, using a worst-case registration envelope.
+It rejects a single key that cannot fit this request budget. This does not bound
+response sizes: returned strings can grow, so configured large values remain
+isolated. Arbitrary action payloads are not split or truncated.
+
+For lower controller work, keep large strings and slow configuration in cached,
+isolated reads, and separate them from rapidly changing subscription values.
+The inspected firmware renders/compares subscribed groups during maintenance,
+then sends the whole group if its serialized value changed. A direct `get`
+avoids subscription retention and maintenance but still incurs encrypted Lua
+request/reply work. Choose polling frequency from the freshness requirement;
+neither 30-key batches nor 20 ms pacing guarantees restart prevention. A native
+maintenance path trims the shared subscription list above 100 entries, which
+is not a safe allowance of 100 UDP groups per integration.
 
 Group replacement, integration reload/unload, failed startup and Home Assistant
 shutdown send bounded `clientDestroy` requests for owned subscriptions, then
@@ -110,7 +151,8 @@ rather than a firmware-reported remote session count.
 
 A CLU is disconnected after **30 seconds** without a valid reply or report.
 Realtime entities using that CLU become unavailable and recover when communication
-returns. Independently, a realtime source expires after **90 seconds** without a
+returns. Independently, a realtime source expires after **two renewal intervals**
+(90 seconds by default) without a
 successful registration snapshot or pushed value, even if keepalives still work.
 Only entities using affected sources are marked unavailable; multi-source widgets
 check every realtime source. Existing polling freshness rules remain unchanged.
@@ -468,11 +510,12 @@ select the controller on which to run a script. Refresh the interface through
 **Reconfigure** when CLUs are added or removed.
 
 For `N` realtime groups, nominal traffic is **6 health pings** and
-`60 × N / 45` registrations per minute,
+`60 × N / R` registrations per minute for renewal interval `R` (default 45 seconds),
 before user actions, readbacks, retries and CLU responses/change reports.
 Slow reads reuse the control socket and add approximately
 `(ceil(S / 30) + L) × 60 / T` requests per minute for `S` ordinary polled
 values and `L` periodically polled large values at an interval of `T` seconds.
+Long encoded keys can split ordinary batches further to fit the request byte budget.
 Here `L` includes thermostat schedules only while their automatic synchronization
 is enabled and they are on in Auto mode.
 See **Temperature Reads and Polling** above for configuration.

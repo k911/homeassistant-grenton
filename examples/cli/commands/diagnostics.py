@@ -7,6 +7,7 @@ import math
 
 from config import get_config_path
 from grenton_api import GrentonManager
+from firmware_catalog import check_firmware
 
 
 def report_timeout(value: str) -> float:
@@ -48,6 +49,17 @@ def format_report(report: dict, kind: str, output: str) -> str:
             ("CLU address", "ipAddress"), ("Cloud connected", "cloudConn"),
         ) if key in report)
         lines.append("Fails are reported device counters; their time window is unspecified.")
+    if check := report.get("firmware_check"):
+        def describe(item):
+            status = item["status"].replace("_", " ")
+            if "latest_version" in item:
+                return f"{status}; installed {item['installed_version']}, latest stable {item['latest_version']}"
+            return f"{status}; {item.get('reason', 'version cannot be compared')}"
+
+        lines.append(f"CLU firmware: {describe(check)}")
+        for device in check.get("devices", []):
+            lines.append(f"Device {device['sn']} firmware: {describe(device)}")
+        lines.append(f"Stable firmware index: {check['source']}")
     return "\n".join(lines)
 
 
@@ -55,5 +67,13 @@ def diagnostics_command(args: argparse.Namespace) -> None:
     """Fetch a fresh diagnostic pack or installed firmware inventory."""
     manager = GrentonManager()
     method = manager.diagnostics if args.report_kind == "diagnostics" else manager.firmware
-    report = asyncio.run(method(get_config_path(args.config), args.clu, timeout=args.timeout))
+    async def collect():
+        report = await method(get_config_path(args.config), args.clu, timeout=args.timeout)
+        if not args.skip_firmware_check:
+            report = {**report, "firmware_check": await check_firmware(
+                report, args.report_kind, timeout=min(args.timeout, 10)
+            )}
+        return report
+
+    report = asyncio.run(collect())
     print(format_report(report, args.report_kind, args.output))

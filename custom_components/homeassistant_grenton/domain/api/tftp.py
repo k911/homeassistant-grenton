@@ -12,6 +12,16 @@ class TftpError(OSError):
     """The CLU rejected a transfer or returned malformed TFTP data."""
 
 
+class TftpRemoteError(TftpError):
+    """An explicit server ERROR packet, preserving its code and requested path."""
+
+    def __init__(self, code: int, detail: str, path: str) -> None:
+        self.code = code
+        self.detail = detail
+        self.path = path
+        super().__init__(f"TFTP error {code}: {detail}")
+
+
 class _TftpProtocol(asyncio.DatagramProtocol):
     def __init__(self) -> None:
         self.transport = None
@@ -98,7 +108,7 @@ async def read_tftp(
                     if end < 0:
                         raise TftpError("Malformed TFTP error response")
                     detail = message[4:end].decode("utf-8", errors="replace")[:200]
-                    raise TftpError(f"TFTP error {block}: {detail}")
+                    raise TftpRemoteError(block, detail, path)
                 if opcode != 3:
                     raise TftpError(f"Unexpected TFTP opcode {opcode}")
                 if len(message) > BLOCK_SIZE + 4:

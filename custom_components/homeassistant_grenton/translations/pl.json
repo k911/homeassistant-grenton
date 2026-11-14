@@ -230,10 +230,11 @@
       },
       "clu_read_interval": {
         "title": "Konfiguracja {clu_name}",
-        "description": "Ustawienia połączenia i odpytywania.",
+        "description": "Ustawienia połączenia i odpytywania. Domyślny interwał odnawiania subskrypcji CLU Z-Wave to 45 sekund. Subskrypcja wygasa nominalnie po 60 sekundach; interwał 60 sekund nie pozostawia zapasu na opóźnienia lub utratę pakietów.",
         "data": {
           "slow_read_interval": "Interwał odpytywania (sekundy)",
-          "subscription_id": "Początkowy identyfikator subskrypcji"
+          "subscription_id": "Początkowy identyfikator subskrypcji",
+          "registration_interval": "Interwał odnawiania subskrypcji (sekundy)"
         }
       },
       "shutter": {

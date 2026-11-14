@@ -167,7 +167,21 @@ and revision, firmware type and API version. Diagnostics also includes reported
 voltages, failure counters and banned flags where available. A dash means the
 export does not provide that field. Failure-counter time windows are unspecified;
 the numbers do not by themselves identify recent failures. JSON output preserves
-the full exported fields, including any additional metadata.
+the full exported fields, including any additional metadata, and adds a
+`firmware_check` object.
+
+Both commands also fetch the small stable release index at
+`https://objectmanager.grenton.com/firmware/v5/firmware.list`. They compare numeric
+version/build components after matching **hwType, hwVer and fwType**, for the CLU
+and each device with sufficient metadata. Results distinguish **up to date**,
+**update available**, **newer than stable** (for example a beta), and **unknown**.
+The repository index is the source of available versions; this is not a
+compatibility check for a complete CLU/module upgrade bundle. No firmware binary
+is downloaded. An unreachable/blocked repository reports **unavailable** while
+preserving the local diagnostics and a successful exit status. The index request
+has a separate deadline of at most 10 seconds and a 64 KiB decoded size limit.
+Use `--skip-firmware-check` for local inventory only, including the original
+unmodified JSON export shape.
 
 Both commands select the CLU by its name in the saved configuration. They accept
 `--config /path/to/config.yaml`, `--output text|json` (also `--format`), and
@@ -179,8 +193,8 @@ fixed-port TFTP protocol on UDP/69. TFTP preserves raw bytes and retries lost
 blocks, with a 60-second transfer deadline and a 4 MiB size limit. Management
 messages use the configured encrypted UDP connection, normally port 1234.
 
-These commands read installed versions; they do not query a vendor release
-catalog or upload firmware/source code. They fail with exit code 1 on request,
+These commands read installed versions and check available stable releases.
+They fail with exit code 1 on CLU management request,
 transfer or export-validation errors. All sockets close on completion, error or
 cancellation.
 
@@ -190,9 +204,7 @@ Download an existing file using its CLU path and an explicit local destination:
 
 ```bash
 python3 main.py download --clu CLU_Z_WAVE_1 \
-  --remote 'a:\user.lua' --output user.lua
-python3 main.py download --clu CLU_Z_WAVE_1 \
-  --remote 'a:\debug.bin' --output debug.bin
+  --remote 'a:\CONFIG.JSON' --output clu-config.json --max-bytes 1000000
 ```
 
 Quote remote paths so the shell preserves their backslashes. `--clu` selects a
@@ -215,6 +227,46 @@ This command reads existing files without refreshing generated exports. Use
 `diagnostics` or `firmware` to request fresh JSON data. A missing `debug.bin` or a
 TFTP server error is reported as a failed download; an empty file that downloads
 successfully remains a valid zero-byte result, not proof that no fault occurred.
+
+The inspected CLU_ZWAVE_2 5.15.24/5.16.03 firmware contains native paths for
+`a:\watchdog.log`, `a:\error_lua.txt` and `a:\log.txt`. These files are
+conditional; a firmware reference does not guarantee they exist or that TFTP
+can read them on a particular controller. The watchdog writer records the task
+name before reset; Lua-error helpers append/read their separate error file.
+
+If the controller has created these files, candidate reads are:
+
+```bash
+python3 main.py download --clu CLU_Z_WAVE_1 \
+  --remote 'a:\watchdog.log' --output watchdog.log --max-bytes 1000000
+python3 main.py download --clu CLU_Z_WAVE_1 \
+  --remote 'a:\error_lua.txt' --output error_lua.txt --max-bytes 1000000
+```
+
+**`TFTP error 0: TFTP Server Failure` can mean the requested file does not
+exist.** A live 5.15.24 check successfully read CONFIG.JSON but returned this
+same error for nonexistent filenames. It is a generic server result, so the
+CLI preserves its code/message and adds an explanation rather than classifying
+every code-0 failure as File Not Found. If CONFIG.JSON works while a log path
+fails, first check whether that conditional artifact has actually been created;
+changing the timeout or switching transfer mode does not generate it.
+
+The firmware's generated diagnostic-log export uses the literal **`m:debug.bin`**,
+with a RAM-volume writer that formats text records. This differs from the
+previous failed `a:\debug.bin` downloads and is not a proven automatic crash
+dump. If that export is already known to exist, a candidate read is:
+
+```bash
+python3 main.py download --clu CLU_Z_WAVE_1 \
+  --remote 'm:debug.bin' --output debug-export.bin --max-bytes 1000000
+```
+
+This command does not generate the export; its activation method and successful
+TFTP retrieval remain unverified. Preserve the exact path and do not assume
+`a:\debug.bin`, `m:debug.bin` and `m:\debug.bin` are aliases. Collect existing
+files one at a time, using unique local names, before changing logging settings
+or regenerating diagnostic exports. The explicit 1,000,000-byte cap above is a
+client collection choice, not a firmware file-size limit.
 
 ### Watch attribute changes
 

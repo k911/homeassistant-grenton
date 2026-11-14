@@ -9,12 +9,18 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
 from .clu_settings import (
+    CONF_REGISTRATION_INTERVAL,
     CONF_SUBSCRIPTION_ID,
+    MAX_REGISTRATION_INTERVAL,
     MAX_SUBSCRIPTION_ID,
     MIN_SUBSCRIPTION_ID,
+    MIN_REGISTRATION_INTERVAL,
+    registration_interval,
     subscription_id,
     validate_subscription_id,
+    validate_registration_interval,
 )
+from .domain.device_types import CLU_Z_WAVE, clu_device_type
 from .domain.entities.clu_variables import (
     CluVariableConfigurationSchema,
     normalize_variable,
@@ -119,6 +125,12 @@ class GrentonOptionsFlow(RollerShutterOptionsMixin, OptionsFlowWithReload):
         interval = slow_read_interval(self.config_entry.options, self._clu_id)
         saved_subscription_id = subscription_id(self.config_entry.options, self._clu_id)
         selected_subscription_id = saved_subscription_id
+        zwave = any(
+            clu["id"] == self._clu_id
+            and clu_device_type(str(clu.get("serialNumber", ""))) == CLU_Z_WAVE
+            for clu in self.config_entry.data.get("interface", {}).get("clus", [])
+        )
+        renewal = registration_interval(self.config_entry.options, self._clu_id)
         if user_input is not None:
             try:
                 interval = validate_slow_read_interval(
@@ -132,6 +144,13 @@ class GrentonOptionsFlow(RollerShutterOptionsMixin, OptionsFlowWithReload):
                 )
             except vol.Invalid:
                 errors[CONF_SUBSCRIPTION_ID] = "invalid_configuration"
+            if zwave:
+                try:
+                    renewal = validate_registration_interval(
+                        user_input.get(CONF_REGISTRATION_INTERVAL, renewal)
+                    )
+                except vol.Invalid:
+                    errors[CONF_REGISTRATION_INTERVAL] = "invalid_configuration"
             if not errors:
                 options = dict(self.config_entry.options)
                 settings = dict(options.get(CONF_CLU_READ_SETTINGS, {}))
@@ -141,12 +160,18 @@ class GrentonOptionsFlow(RollerShutterOptionsMixin, OptionsFlowWithReload):
                     CONF_SUBSCRIPTION_ID: selected_subscription_id,
                 }
                 options[CONF_CLU_READ_SETTINGS] = settings
+                if zwave:
+                    settings[self._clu_id][CONF_REGISTRATION_INTERVAL] = renewal
                 runtime = getattr(self.config_entry, "runtime_data", None)
                 try:
                     if runtime is not None:
                         await runtime.coordinator.async_set_subscription_id(
                             self._clu_id, selected_subscription_id
                         )
+                        if zwave:
+                            await runtime.coordinator.async_set_registration_interval(
+                                self._clu_id, renewal
+                            )
                         if interval != slow_read_interval(
                             self.config_entry.options, self._clu_id
                         ):
@@ -188,6 +213,19 @@ class GrentonOptionsFlow(RollerShutterOptionsMixin, OptionsFlowWithReload):
                             mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
+                    **({
+                        vol.Required(
+                            CONF_REGISTRATION_INTERVAL, default=renewal
+                        ): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=MIN_REGISTRATION_INTERVAL,
+                                max=MAX_REGISTRATION_INTERVAL,
+                                step=1,
+                                mode=selector.NumberSelectorMode.BOX,
+                                unit_of_measurement="s",
+                            )
+                        ),
+                    } if zwave else {}),
                 }
             ),
         )
