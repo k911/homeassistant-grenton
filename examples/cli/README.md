@@ -175,6 +175,12 @@ Both commands also fetch the small stable release index at
 version/build components after matching **hwType, hwVer and fwType**, for the CLU
 and each device with sufficient metadata. Results distinguish **up to date**,
 **update available**, **newer than stable** (for example a beta), and **unknown**.
+TF-bus devices often report only `major.minor.patch`, without a build. These
+compare against the same three repository version components: a matching version
+is shown as **version matches**, with **installed build not reported**, rather
+than claiming an exact build match. Older/newer reported versions are still
+identified. JSON results expose `comparison_scope` as `version` or
+`version_and_build` when a comparison is possible.
 The repository index is the source of available versions; this is not a
 compatibility check for a complete CLU/module upgrade bundle. No firmware binary
 is downloaded. An unreachable/blocked repository reports **unavailable** while

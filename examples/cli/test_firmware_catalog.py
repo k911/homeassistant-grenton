@@ -24,6 +24,37 @@ firmware.list
 firmware.list.prev
 """
 
+# Versions and hardware signatures reported by a real CLU firmware inventory.
+TFBUS_INDEX = INDEX + """TOUCH_PANEL_FM_8-27-2-2-1.2.7-2228.fw
+ANALOG_IN_DIN-25-2-2-1.2.13-2125.fw
+ROLLER_SH_DIN_3-42-1-2-3.2.9-2626.fw
+IO_MODULE_DIN_8-30-1-2-2.0.2-2438A.fw
+DIMMER_MOSFET_DIN-26-1-2-1.1.13-2308A.fw
+DIGITAL_IN_FM-51-1-2-1.1.4-2334.fw
+LED_RGBW_FM-29-1-2-3.0.1-2629.fw
+LED_RGBW_DIN-24-1-2-4.0.3-2629.fw
+"""
+TFBUS_DEVICES = [
+    (27, 2, 2, "1.2.7", "version_matches"),
+    (25, 2, 2, "1.2.13", "version_matches"),
+    (42, 1, 2, "3.2.9", "version_matches"),
+    (30, 1, 2, "2.0.2", "version_matches"),
+    (21, 1, 2, "2.0.0", "version_matches"),
+    (26, 1, 2, "2.1.2", "newer_than_stable"),
+    (51, 1, 2, "1.1.4", "version_matches"),
+    (3, 1, 3, "6.3.7", "unknown"),
+    (29, 1, 2, "3.0.1", "version_matches"),
+    (24, 1, 2, "4.0.3", "version_matches"),
+]
+
+
+def tfbus_devices():
+    return [
+        {"sn": index, "hwType": hw_type, "hwVer": hw_ver,
+         "fwType": fw_type, "fwVer": version}
+        for index, (hw_type, hw_ver, fw_type, version, _) in enumerate(TFBUS_DEVICES)
+    ]
+
 
 def report(version="5.15.24-2635"):
     return {"sn": 221000001, "hwType": 19, "hwVer": 1, "fwType": 3, "fwVer": version,
@@ -58,6 +89,71 @@ class CatalogTests(unittest.TestCase):
         for contents in ("<html>blocked</html>", "CLU_ZWAVE_2-19-1-3-5.15.24-2635.json"):
             with self.assertRaises(ValueError):
                 parse_catalog(contents)
+
+    def test_real_tfbus_inventory_compares_versions_without_builds(self):
+        catalog = parse_catalog(TFBUS_INDEX)
+        for device, (_, _, _, _, expected) in zip(tfbus_devices(), TFBUS_DEVICES):
+            with self.subTest(device=device):
+                result = compare_device(device, catalog)
+                self.assertEqual(result["status"], expected)
+                if expected == "unknown":
+                    self.assertIn("No matching hardware", result["reason"])
+                else:
+                    self.assertEqual(result["comparison_scope"], "version")
+                    self.assertNotEqual(result["status"], "up_to_date")
+
+    def test_release_only_versions_order_numerically_without_inventing_a_build(self):
+        catalog = parse_catalog(TFBUS_INDEX)
+        for version, expected in (("1.2.6", "update_available"),
+                                  ("1.02.007", "version_matches"),
+                                  ("1.2.8", "newer_than_stable"),
+                                  ("1.10.1", "newer_than_stable")):
+            device = {"hwType": 27, "hwVer": 2, "fwType": 2, "fwVer": version}
+            with self.subTest(version=version):
+                result = compare_device(device, catalog)
+                self.assertEqual(result["status"], expected)
+                self.assertEqual(result["comparison_scope"], "version")
+
+    def test_reported_builds_still_compare_exact_build_and_letter_revision(self):
+        catalog = parse_catalog(TFBUS_INDEX)
+        for version, expected in (("2.0.2-2438", "update_available"),
+                                  ("2.0.2-2438A", "up_to_date"),
+                                  ("2.0.2-2438B", "newer_than_stable")):
+            result = compare_device({"hwType": 30, "hwVer": 1, "fwType": 2, "fwVer": version}, catalog)
+            self.assertEqual(result["status"], expected)
+            self.assertEqual(result["comparison_scope"], "version_and_build")
+
+    def test_malformed_partial_versions_stay_unknown(self):
+        catalog = parse_catalog(TFBUS_INDEX)
+        for version in (None, 1.2, "1.2", "1.2.7-", "1.2.7-222", "1.2.7junk", "v1.2.7"):
+            result = compare_device({"hwType": 27, "hwVer": 2, "fwType": 2, "fwVer": version}, catalog)
+            self.assertEqual(result["status"], "unknown")
+
+    def test_both_cli_reports_show_release_only_comparisons_in_text_and_json(self):
+        for kind in ("diagnostics", "firmware"):
+            for output_format in ("text", "json"):
+                with self.subTest(kind=kind, output=output_format):
+                    inventory = report()
+                    inventory.pop("tfbusDiagnostic")
+                    inventory.pop("zwaveDiagnostic")
+                    tfbus_key = "tfbusDiagnostic" if kind == "diagnostics" else "tfbusDevices"
+                    zwave_key = "zwaveDiagnostic" if kind == "diagnostics" else "zwaveDevices"
+                    inventory.update({tfbus_key: tfbus_devices(), zwave_key: []})
+                    manager = SimpleNamespace(**{kind: AsyncMock(return_value=inventory)})
+                    args = create_parser().parse_args([kind, "--output", output_format])
+                    output = io.StringIO()
+                    with (patch("commands.diagnostics.GrentonManager", return_value=manager),
+                          patch("firmware_catalog.fetch_catalog", AsyncMock(return_value=parse_catalog(TFBUS_INDEX))),
+                          contextlib.redirect_stdout(output)):
+                        args.handler(args)
+                    if output_format == "json":
+                        result = json.loads(output.getvalue())["firmware_check"]
+                        self.assertEqual(result["status"], "up_to_date")
+                        self.assertEqual([device["status"] for device in result["devices"]],
+                                         [device[-1] for device in TFBUS_DEVICES])
+                    else:
+                        self.assertIn("version matches; installed 1.2.7, latest stable 1.2.7-2228; installed build not reported", output.getvalue())
+                        self.assertNotIn("Unrecognized installed firmware version", output.getvalue())
 
     def test_cli_enriches_json_by_default_and_keeps_local_fields(self):
         args = create_parser().parse_args(["diagnostics", "--output", "json"])

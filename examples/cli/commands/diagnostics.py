@@ -53,7 +53,10 @@ def format_report(report: dict, kind: str, output: str) -> str:
         def describe(item):
             status = item["status"].replace("_", " ")
             if "latest_version" in item:
-                return f"{status}; installed {item['installed_version']}, latest stable {item['latest_version']}"
+                description = f"{status}; installed {item['installed_version']}, latest stable {item['latest_version']}"
+                if item.get("comparison_scope") == "version":
+                    description += "; installed build not reported"
+                return description
             return f"{status}; {item.get('reason', 'version cannot be compared')}"
 
         lines.append(f"CLU firmware: {describe(check)}")
